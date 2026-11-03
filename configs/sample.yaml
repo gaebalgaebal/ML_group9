@@ -5,6 +5,7 @@ sample_users:
 complete_journey_history_week: 90
 complete_journey:
   exclude_departments: []
+  min_target_items: 3
 candidates:
   recent_items: 10
   neighbors_per_item: 20

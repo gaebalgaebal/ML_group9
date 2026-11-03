@@ -107,6 +107,32 @@ def clean_complete_journey(
     return cleaned, stats
 
 
+def first_future_basket(future: pd.DataFrame, min_items: int) -> pd.DataFrame:
+    """Each user's earliest future basket with at least min_items distinct items."""
+    sizes = future.groupby(["user_id", "basket_seq"], observed=True)["item_id"].nunique()
+    qualifying = sizes[sizes.ge(min_items)].reset_index()
+    first = qualifying.groupby("user_id", observed=True)["basket_seq"].min().rename("target_seq")
+    frame = future.merge(first, left_on="user_id", right_index=True, how="inner")
+    return frame[frame["basket_seq"].eq(frame["target_seq"])].drop(columns="target_seq")
+
+
+def _target_summary(target: pd.DataFrame, min_items: int) -> dict[str, object]:
+    baskets = target.groupby("user_id", observed=True).agg(
+        size=("item_id", "nunique"), week=("WEEK_NO", "first")
+    )
+    if baskets.empty:
+        return {"min_items": min_items, "households": 0}
+    return {
+        "min_items": min_items,
+        "households": int(len(baskets)),
+        "basket_size_median": float(baskets["size"].median()),
+        "basket_size_at_most_2_share": float(baskets["size"].le(2).mean()),
+        "week_min": int(baskets["week"].min()),
+        "week_median": float(baskets["week"].median()),
+        "week_max": int(baskets["week"].max()),
+    }
+
+
 def complete_journey_department_summary(config: dict[str, object], top_commodities: int = 3) -> list[dict[str, object]]:
     """Transaction share and top commodities per DEPARTMENT, to choose exclusions."""
     products, transactions = _read_complete_journey(Path(config["raw_dir"]))
@@ -244,6 +270,7 @@ def prepare_complete_journey(config: dict[str, object]) -> dict[str, object]:
     sample_size = config["sample_users"]["complete_journey"]
     seed = int(config["seed"])
     exclude_departments = list(config["complete_journey"]["exclude_departments"])
+    min_target_items = int(config["complete_journey"]["min_target_items"])
 
     products, transactions = _read_complete_journey(Path(config["raw_dir"]))
     transactions, cleaning = clean_complete_journey(transactions, products, exclude_departments)
@@ -279,22 +306,26 @@ def prepare_complete_journey(config: dict[str, object]) -> dict[str, object]:
     )[COMMON_COLUMNS + ["WEEK_NO"]]
     history = common[common["WEEK_NO"].le(cutoff)].copy()
     future = common[common["WEEK_NO"].gt(cutoff)].copy()
-    first_future = future.groupby("user_id", observed=True)["basket_seq"].transform("min")
-    target = future[first_future.eq(future["basket_seq"])].copy()
-    eligible_users = set(
+    history_users = set(
         history.groupby("user_id", observed=True)["basket_id"].nunique().loc[lambda s: s >= 3].index
     )
+    future = future[future["user_id"].isin(history_users)]
+    target = first_future_basket(future, min_target_items)
+    reference = first_future_basket(future, 1)
+    eligible_users = set(target["user_id"])
     history = history[history["user_id"].isin(eligible_users)][COMMON_COLUMNS]
-    target = target[target["user_id"].isin(eligible_users)][COMMON_COLUMNS]
 
     out = Path(config["processed_dir"]) / "complete_journey"
-    _write_frames(out, {"items": items, "eval_history": history, "eval_target": target})
+    _write_frames(out, {"items": items, "eval_history": history, "eval_target": target[COMMON_COLUMNS]})
     return {
         "users": history["user_id"].nunique(),
         "eval_interactions": len(history),
         "targets": len(target),
         "items": len(items),
         "cleaning": cleaning,
+        "households_with_history": len(history_users),
+        "target": _target_summary(target, min_target_items),
+        "target_first_future_basket": _target_summary(reference, 1),
     }
 
 

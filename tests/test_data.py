@@ -74,7 +74,7 @@ def synthetic_complete_journey(tmp_path):
         "seed": 42,
         "sample_users": {"complete_journey": None},
         "complete_journey_history_week": 90,
-        "complete_journey": {"exclude_departments": ["KIOSK-GAS"]},
+        "complete_journey": {"exclude_departments": ["KIOSK-GAS"], "min_target_items": 3},
         "raw_dir": tmp_path / "raw",
         "processed_dir": tmp_path / "processed",
         "report_dir": tmp_path / "reports",
@@ -98,3 +98,26 @@ def test_complete_journey_drops_non_product_rows_before_sequencing(tmp_path):
     h1 = history[history["user_id"].eq("h1")].drop_duplicates("basket_id").set_index("basket_id")["basket_seq"]
     assert h1.to_dict() == {"b1": 1, "b2": 2, "b3": 3}
     assert not items["item_id"].isin(["90", "91"]).any()
+
+
+def test_complete_journey_target_skips_baskets_below_minimum_size(tmp_path):
+    config = synthetic_complete_journey(tmp_path)
+    result = prepare_complete_journey(config)
+    history = pd.read_parquet(tmp_path / "processed" / "complete_journey" / "eval_history.parquet")
+    target = pd.read_parquet(tmp_path / "processed" / "complete_journey" / "eval_target.parquet")
+
+    assert set(target["basket_id"]) == {"b5"}
+    assert set(target["item_id"]) == {"1", "2", "4"}
+    # h2's only future basket has two distinct items, so the household is dropped entirely.
+    assert set(history["user_id"]) == {"h1"}
+    assert result["target"] == {
+        "min_items": 3,
+        "households": 1,
+        "basket_size_median": 3.0,
+        "basket_size_at_most_2_share": 0.0,
+        "week_min": 93,
+        "week_median": 93.0,
+        "week_max": 93,
+    }
+    assert result["target_first_future_basket"]["households"] == 2
+    assert result["target_first_future_basket"]["basket_size_median"] == 2.0
