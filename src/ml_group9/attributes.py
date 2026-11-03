@@ -133,6 +133,42 @@ def category_sets(table: pd.DataFrame) -> dict[str, set[str]]:
     return sets
 
 
+def item_departments(items: pd.DataFrame) -> pd.Series:
+    """Department per item: CJ DEPARTMENT, otherwise the coarse category (Instacart department)."""
+    column = "DEPARTMENT" if "DEPARTMENT" in items.columns else "coarse_category"
+    table = items.drop_duplicates("item_id")
+    return pd.Series(table[column].astype("string").to_numpy(), index=table["item_id"].astype(str).to_numpy())
+
+
+def exclude_nonfood_categories(
+    table: pd.DataFrame, items: pd.DataFrame, nonfood_departments: list[str]
+) -> pd.DataFrame:
+    """Drop non-food fine categories from C_a.
+
+    A fine category's department is the most common department among its items (ties by name).
+    """
+    table_items = items.drop_duplicates("item_id")
+    frame = pd.DataFrame(
+        {
+            "fine_category": table_items["fine_category"].astype("string").fillna("UNKNOWN").to_numpy(),
+            "department": item_departments(items).fillna("UNKNOWN").to_numpy(),
+        }
+    )
+    counts = frame.value_counts(["fine_category", "department"]).reset_index(name="n")
+    modal = counts.sort_values(["fine_category", "n", "department"], ascending=[True, False, True])
+    modal = modal.drop_duplicates("fine_category").set_index("fine_category")["department"]
+    result = table.copy()
+    result["department"] = result["fine_category"].astype(str).map(modal).fillna("UNKNOWN")
+    result["nonfood"] = result["department"].isin(nonfood_departments)
+    result["included"] = result["included"] & ~result["nonfood"]
+    return result
+
+
+def category_set_sizes(table: pd.DataFrame) -> dict[str, int]:
+    """|C_a| per attribute."""
+    return {name: len(categories) for name, categories in category_sets(table).items()}
+
+
 def preference_counts(
     history: pd.DataFrame, items: pd.DataFrame, categories: dict[str, set[str]]
 ) -> pd.DataFrame:

@@ -31,6 +31,10 @@ attributes:
   # "Distinct preference" diagnostic subgroup: n_C >= distinct_min_n and |pi - pi_bar| >= distinct_min_gap.
   distinct_min_n: 10
   distinct_min_gap: 0.2
+  # Departments whose fine categories are left out of C_a (aisle department = modal item department).
+  exclude_departments:
+    instacart: [household, personal care, pets, missing, other]
+    complete_journey: []
 candidates:
   recent_items: 10
   neighbors_per_item: 20

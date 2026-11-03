@@ -4,8 +4,10 @@ import pytest
 from ml_group9.attributes import (
     TEXT_ATTRIBUTES,
     applicable_categories,
+    category_set_sizes,
     category_sets,
     complete_journey_attributes,
+    exclude_nonfood_categories,
     instacart_text_diagnostics,
     text_attribute_flags,
 )
@@ -80,6 +82,24 @@ def test_applicable_categories_threshold_boundaries():
     assert included == {"five_each": True, "four_with": False, "four_without": False}
     assert table.set_index("fine_category").loc["four_with", "n_with"] == 4
     assert category_sets(table) == {"organic": {"five_each"}}
+
+
+def test_non_food_aisles_leave_applicable_categories_even_with_many_attribute_items():
+    items = pd.concat(
+        [
+            category_items(20, 20, "yogurt").assign(coarse_category="dairy eggs"),
+            category_items(20, 20, "skin care").assign(coarse_category="personal care"),
+            # One mislabelled item does not move the aisle's modal department.
+            category_items(1, 0, "skin care").assign(coarse_category="dairy eggs"),
+        ],
+        ignore_index=True,
+    )
+    items["item_id"] = [str(index) for index in range(len(items))]
+    table = applicable_categories(items, ["organic"], min_with=5, min_without=5)
+    assert category_set_sizes(table) == {"organic": 2}
+    food = exclude_nonfood_categories(table, items, ["personal care", "pets"])
+    assert category_sets(food) == {"organic": {"yogurt"}}
+    assert food.set_index("fine_category").loc["skin care", "department"] == "personal care"
 
 
 def test_complete_journey_attributes_use_brand_and_category_text():

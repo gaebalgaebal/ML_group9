@@ -11,7 +11,13 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 
-from .attributes import attribute_column, population_rates, preference_counts, smoothed_preferences
+from .attributes import (
+    attribute_column,
+    item_departments,
+    population_rates,
+    preference_counts,
+    smoothed_preferences,
+)
 from .recommender import item_cosine_neighbors
 
 
@@ -271,13 +277,6 @@ def explore_candidates(
 def explore_scores(candidates: pd.DataFrame, beta: float, epsilon: float) -> np.ndarray:
     """s_exp(u, i) = log(s_cf + epsilon) + beta * l_u(i)."""
     return np.log(candidates["s_cf"].to_numpy() + epsilon) + beta * candidates["ell"].to_numpy()
-
-
-def item_departments(items: pd.DataFrame) -> pd.Series:
-    """Department per item: CJ DEPARTMENT, otherwise the coarse category (Instacart department)."""
-    column = "DEPARTMENT" if "DEPARTMENT" in items.columns else "coarse_category"
-    table = items.drop_duplicates("item_id")
-    return pd.Series(table[column].astype("string").to_numpy(), index=table["item_id"].astype(str).to_numpy())
 
 
 def scope_mask(items: pd.DataFrame, item_ids: pd.Index, mode: str, nonfood_departments: list[str]) -> np.ndarray:
