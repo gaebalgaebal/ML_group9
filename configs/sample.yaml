@@ -4,7 +4,19 @@ sample_users:
   complete_journey: 500
 complete_journey_history_week: 90
 complete_journey:
-  exclude_departments: []
+  # Confirmed 2026-11-03 from inspect-cj: fuel, coupon, gift-card and undescribed transactions.
+  exclude_departments:
+    - "KIOSK-GAS"
+    - "MISC SALES TRAN"
+    - "MISC. TRANS."
+    - "COUP/STR & MFG"
+    - "AUTOMOTIVE"
+    - "GM MERCH EXP"
+    - "CNTRL/STORE SUP"
+    - "MEAT-WHSE"
+    - "PHARMACY SUPPLY"
+    - "ELECT &PLUMBING"
+    - "CHARITABLE CONT"
   min_target_items: 3
 attributes:
   instacart: [fat_reduced, sugar_reduced, gluten_free, low_sodium, organic]
