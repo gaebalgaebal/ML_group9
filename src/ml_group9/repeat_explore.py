@@ -271,3 +271,130 @@ def explore_candidates(
 def explore_scores(candidates: pd.DataFrame, beta: float, epsilon: float) -> np.ndarray:
     """s_exp(u, i) = log(s_cf + epsilon) + beta * l_u(i)."""
     return np.log(candidates["s_cf"].to_numpy() + epsilon) + beta * candidates["ell"].to_numpy()
+
+
+def item_departments(items: pd.DataFrame) -> pd.Series:
+    """Department per item: CJ DEPARTMENT, otherwise the coarse category (Instacart department)."""
+    column = "DEPARTMENT" if "DEPARTMENT" in items.columns else "coarse_category"
+    table = items.drop_duplicates("item_id")
+    return pd.Series(table[column].astype("string").to_numpy(), index=table["item_id"].astype(str).to_numpy())
+
+
+def scope_mask(items: pd.DataFrame, item_ids: pd.Index, mode: str, nonfood_departments: list[str]) -> np.ndarray:
+    """F as a boolean mask over item_ids: every item for "all", non-food departments removed for "food"."""
+    if mode == "all":
+        return np.ones(len(item_ids), dtype=bool)
+    if mode == "food":
+        departments = item_departments(items).reindex(item_ids)
+        return ~departments.isin(nonfood_departments).to_numpy()
+    raise ValueError(f"Unknown scope mode: {mode!r}")
+
+
+def scope_targets(
+    target_sets: dict[str, set[str]], allowed: set[str] | None
+) -> tuple[dict[str, set[str]], int]:
+    """Restrict targets to F; users whose restricted target is empty are dropped and counted."""
+    if allowed is None:
+        return {user: set(truth) for user, truth in target_sets.items() if truth}, 0
+    restricted = {user: truth & allowed for user, truth in target_sets.items()}
+    kept = {user: truth for user, truth in restricted.items() if truth}
+    return kept, len(restricted) - len(kept)
+
+
+def repeat_counts(interactions: Interactions, in_scope: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """n(u): in-scope (basket, item) pairs from the user's second basket on; n_rep(u): those already bought."""
+    frame = pd.DataFrame(
+        {"user": interactions.user_index, "item": interactions.item_index, "seq": interactions.basket_seq}
+    )
+    first_basket = frame.groupby("user")["seq"].transform("min").to_numpy()
+    first_purchase = frame.groupby(["user", "item"])["seq"].transform("min").to_numpy()
+    seq = frame["seq"].to_numpy()
+    later = (seq > first_basket) & in_scope[frame["item"].to_numpy()]
+    repeated = later & (seq > first_purchase)
+    n_users = interactions.shape[0]
+    users = frame["user"].to_numpy()
+    return (
+        np.bincount(users[later], minlength=n_users).astype(np.float64),
+        np.bincount(users[repeated], minlength=n_users).astype(np.float64),
+    )
+
+
+def repeat_ratio(n: np.ndarray, n_rep: np.ndarray, kappa: float) -> tuple[np.ndarray, float]:
+    """rho_u = (n_rep(u) + kappa * rho_bar) / (n(u) + kappa) with rho_bar pooled over the same history."""
+    rho_bar = float(n_rep.sum() / n.sum()) if n.sum() else 0.0
+    denominator = n + kappa
+    rho = np.divide(n_rep + kappa * rho_bar, denominator, out=np.full_like(n, rho_bar), where=denominator > 0)
+    return rho, rho_bar
+
+
+def repeat_ranking(repeat: sparse.csr_matrix, in_scope: np.ndarray) -> pd.DataFrame:
+    """I_u intersected with F, ranked by s_rep (ties by item index)."""
+    coo = repeat.tocoo()
+    frame = pd.DataFrame({"user": coo.row, "item": coo.col, "score": coo.data})
+    frame = frame[in_scope[frame["item"].to_numpy()]]
+    frame = frame.sort_values(["user", "score", "item"], ascending=[True, False, True], kind="mergesort")
+    frame["rank"] = frame.groupby("user").cumcount()
+    return frame.reset_index(drop=True)
+
+
+def explore_ranking(candidates: pd.DataFrame, scores: np.ndarray) -> pd.DataFrame:
+    """E_u ranked by s_exp (ties by item index)."""
+    frame = candidates.assign(score=scores)
+    frame = frame.sort_values(["user", "score", "item"], ascending=[True, False, True], kind="mergesort")
+    frame["rank"] = frame.groupby("user").cumcount()
+    return frame.reset_index(drop=True)
+
+
+def slot_counts(rho: np.ndarray, top_k: int, available: np.ndarray) -> np.ndarray:
+    """r_u = round(K * rho_u), clipped to [0, K] and to |I_u intersected with F|."""
+    slots = np.clip(np.floor(top_k * rho + 0.5), 0, top_k).astype(np.int64)
+    return np.minimum(slots, available.astype(np.int64))
+
+
+def allocate_slots(
+    repeat_ranked: pd.DataFrame,
+    explore_ranked: pd.DataFrame,
+    repeat_slots: np.ndarray,
+    top_k: int,
+) -> pd.DataFrame:
+    """Top r_u repeats followed by top K - r_u explores; a short side is filled from the other.
+
+    Explore rows already in the repeat ranking are dropped first, so lists have no duplicates.
+    """
+    n_users = len(repeat_slots)
+    explore = explore_ranked.merge(
+        repeat_ranked[["user", "item"]], on=["user", "item"], how="left", indicator=True
+    )
+    explore = explore[explore["_merge"].eq("left_only")].drop(columns="_merge")
+    explore = explore.sort_values(["user", "rank"], kind="mergesort")
+    explore["rank"] = explore.groupby("user").cumcount()
+    repeat_available = np.bincount(repeat_ranked["user"].to_numpy(np.int64), minlength=n_users)
+    explore_available = np.bincount(explore["user"].to_numpy(np.int64), minlength=n_users)
+    repeat_take = np.minimum(repeat_slots, repeat_available)
+    explore_take = np.minimum(top_k - repeat_take, explore_available)
+    repeat_take = np.minimum(repeat_available, top_k - explore_take)
+    repeat_users = repeat_ranked["user"].to_numpy(np.int64)
+    explore_users = explore["user"].to_numpy(np.int64)
+    chosen_repeat = repeat_ranked[repeat_ranked["rank"].to_numpy() < repeat_take[repeat_users]]
+    chosen_explore = explore[explore["rank"].to_numpy() < explore_take[explore_users]]
+    result = pd.concat(
+        [
+            chosen_repeat.assign(slot="repeat", position=chosen_repeat["rank"]),
+            chosen_explore.assign(
+                slot="explore",
+                position=chosen_explore["rank"] + repeat_take[chosen_explore["user"].to_numpy(np.int64)],
+            ),
+        ],
+        ignore_index=True,
+    )
+    return result.sort_values(["user", "position"], kind="mergesort").reset_index(drop=True)
+
+
+def to_lists(
+    ranked: pd.DataFrame, users: pd.Index, items: pd.Index, order: str = "position"
+) -> dict[str, list[str]]:
+    """Per-user item-id lists sorted by the given column."""
+    frame = ranked.sort_values(["user", order], kind="mergesort")
+    item_ids = items.to_numpy()[frame["item"].to_numpy(np.int64)]
+    user_ids = users.to_numpy()[frame["user"].to_numpy(np.int64)]
+    return {str(user): list(group) for user, group in pd.Series(item_ids).groupby(user_ids, sort=False)}
