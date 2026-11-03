@@ -3,6 +3,8 @@ sample_users:
   instacart: null
   complete_journey: null
 complete_journey_history_week: 90
+complete_journey:
+  exclude_departments: []
 candidates:
   recent_items: 10
   neighbors_per_item: 20

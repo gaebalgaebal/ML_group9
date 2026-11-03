@@ -6,7 +6,7 @@ import argparse
 import json
 
 from .config import load_config
-from .data import prepare
+from .data import complete_journey_department_summary, prepare
 from .pipeline import evaluate, run, train
 
 
@@ -27,6 +27,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Run the complete pipeline")
     run_parser.add_argument("--profile", choices=["sample", "full"], default="sample")
+
+    inspect_parser = subparsers.add_parser(
+        "inspect-cj", help="Print Complete Journey DEPARTMENT shares to choose excluded departments"
+    )
+    inspect_parser.add_argument("--profile", choices=["sample", "full"], default="sample")
     return parser
 
 
@@ -39,6 +44,8 @@ def main() -> None:
         result = train(config)
     elif args.command == "evaluate":
         result = evaluate(config, args.dataset)
+    elif args.command == "inspect-cj":
+        result = complete_journey_department_summary(config)
     else:
         result = run(config)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))

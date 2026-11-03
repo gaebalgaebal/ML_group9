@@ -51,6 +51,84 @@ def _read_csv(archive: zipfile.ZipFile, member: str, **kwargs: object) -> pd.Dat
         return pd.read_csv(stream, **kwargs)
 
 
+def _read_complete_journey(raw_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Read CJ products and the transaction columns used downstream."""
+    archive_path = discover_archive(raw_dir, COMPLETE_JOURNEY_MEMBERS)
+    with zipfile.ZipFile(archive_path) as archive:
+        products = _read_csv(archive, "product.csv", dtype={"PRODUCT_ID": "string"})
+        with archive.open("transaction_data.csv") as stream:
+            transactions = pd.read_csv(
+                stream,
+                usecols=[
+                    "household_key",
+                    "BASKET_ID",
+                    "DAY",
+                    "PRODUCT_ID",
+                    "QUANTITY",
+                    "SALES_VALUE",
+                    "TRANS_TIME",
+                    "WEEK_NO",
+                ],
+                dtype={"household_key": "string", "BASKET_ID": "string", "PRODUCT_ID": "string"},
+            )
+    # Blank DEPARTMENT strings are treated as missing.
+    products["DEPARTMENT"] = products["DEPARTMENT"].astype("string").str.strip().replace("", pd.NA)
+    return products, transactions
+
+
+def clean_complete_journey(
+    transactions: pd.DataFrame, products: pd.DataFrame, exclude_departments: list[str]
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    """Drop non-product and non-positive-quantity rows before any user or basket logic.
+
+    Reasons are applied in order, so each row is counted under its first failing rule.
+    """
+    department = transactions["PRODUCT_ID"].map(products.set_index("PRODUCT_ID")["DEPARTMENT"])
+    known = transactions["PRODUCT_ID"].isin(products["PRODUCT_ID"])
+    rules = [
+        ("unknown_product", ~known),
+        ("missing_department", known & department.isna()),
+        ("excluded_department", department.isin(exclude_departments)),
+        ("non_positive_quantity", transactions["QUANTITY"].le(0)),
+    ]
+    keep = pd.Series(True, index=transactions.index)
+    removed: dict[str, int] = {}
+    for reason, mask in rules:
+        mask = mask.fillna(False).astype(bool)
+        removed[reason] = int((keep & mask).sum())
+        keep &= ~mask
+    cleaned = transactions[keep].copy()
+    stats = {
+        "raw_rows": int(len(transactions)),
+        "kept_rows": int(len(cleaned)),
+        **{f"removed_{reason}": count for reason, count in removed.items()},
+        "kept_non_positive_sales_value_rows": int(cleaned["SALES_VALUE"].le(0).sum()),
+    }
+    return cleaned, stats
+
+
+def complete_journey_department_summary(config: dict[str, object], top_commodities: int = 3) -> list[dict[str, object]]:
+    """Transaction share and top commodities per DEPARTMENT, to choose exclusions."""
+    products, transactions = _read_complete_journey(Path(config["raw_dir"]))
+    lines = transactions[["PRODUCT_ID"]].merge(
+        products[["PRODUCT_ID", "DEPARTMENT", "COMMODITY_DESC"]], on="PRODUCT_ID", how="left"
+    )
+    lines["DEPARTMENT"] = lines["DEPARTMENT"].fillna("<missing>")
+    lines["COMMODITY_DESC"] = lines["COMMODITY_DESC"].fillna("<unknown product>")
+    summary: list[dict[str, object]] = []
+    for department, group in lines.groupby("DEPARTMENT", observed=True):
+        commodities = group["COMMODITY_DESC"].value_counts().head(top_commodities)
+        summary.append(
+            {
+                "department": str(department),
+                "rows": int(len(group)),
+                "row_share": len(group) / len(lines),
+                "top_commodities": {str(name): int(count) for name, count in commodities.items()},
+            }
+        )
+    return sorted(summary, key=lambda row: -row["rows"])
+
+
 def _sample_ids(ids: Iterable[object], size: int | None, seed: int) -> set[str]:
     values = np.array(sorted({str(value) for value in ids}), dtype=object)
     if size is None or size >= len(values):
@@ -160,37 +238,23 @@ def prepare_instacart(config: dict[str, object]) -> dict[str, int]:
     }
 
 
-def prepare_complete_journey(config: dict[str, object]) -> dict[str, int]:
+def prepare_complete_journey(config: dict[str, object]) -> dict[str, object]:
     """Prepare a global week-cutoff external evaluation split."""
-    raw_dir = Path(config["raw_dir"])
-    archive_path = discover_archive(raw_dir, COMPLETE_JOURNEY_MEMBERS)
     cutoff = int(config["complete_journey_history_week"])
     sample_size = config["sample_users"]["complete_journey"]
     seed = int(config["seed"])
+    exclude_departments = list(config["complete_journey"]["exclude_departments"])
 
-    with zipfile.ZipFile(archive_path) as archive:
-        products = _read_csv(archive, "product.csv", dtype={"PRODUCT_ID": "string"})
-        items = products.rename(
-            columns={
-                "PRODUCT_ID": "item_id",
-                "COMMODITY_DESC": "coarse_category",
-                "SUB_COMMODITY_DESC": "fine_category",
-            }
-        )[["item_id", "DEPARTMENT", "BRAND", "coarse_category", "fine_category"]]
-        with archive.open("transaction_data.csv") as stream:
-            transactions = pd.read_csv(
-                stream,
-                usecols=[
-                    "household_key",
-                    "BASKET_ID",
-                    "DAY",
-                    "PRODUCT_ID",
-                    "QUANTITY",
-                    "TRANS_TIME",
-                    "WEEK_NO",
-                ],
-                dtype={"household_key": "string", "BASKET_ID": "string", "PRODUCT_ID": "string"},
-            )
+    products, transactions = _read_complete_journey(Path(config["raw_dir"]))
+    transactions, cleaning = clean_complete_journey(transactions, products, exclude_departments)
+    products = products[products["DEPARTMENT"].notna() & ~products["DEPARTMENT"].isin(exclude_departments)]
+    items = products.rename(
+        columns={
+            "PRODUCT_ID": "item_id",
+            "COMMODITY_DESC": "coarse_category",
+            "SUB_COMMODITY_DESC": "fine_category",
+        }
+    )[["item_id", "DEPARTMENT", "BRAND", "coarse_category", "fine_category"]]
 
     user_weeks = transactions.groupby("household_key")["WEEK_NO"].agg(["min", "max"])
     candidates = user_weeks[(user_weeks["min"] <= cutoff) & (user_weeks["max"] > cutoff)].index
@@ -211,7 +275,7 @@ def prepare_complete_journey(config: dict[str, object]) -> dict[str, int]:
         user_id=transactions["household_key"].astype("string"),
         basket_id=transactions["BASKET_ID"].astype("string"),
         item_id=transactions["PRODUCT_ID"].astype("string"),
-        quantity=transactions["QUANTITY"].clip(lower=1).astype("int16"),
+        quantity=transactions["QUANTITY"].astype("int32"),
     )[COMMON_COLUMNS + ["WEEK_NO"]]
     history = common[common["WEEK_NO"].le(cutoff)].copy()
     future = common[common["WEEK_NO"].gt(cutoff)].copy()
@@ -230,12 +294,13 @@ def prepare_complete_journey(config: dict[str, object]) -> dict[str, int]:
         "eval_interactions": len(history),
         "targets": len(target),
         "items": len(items),
+        "cleaning": cleaning,
     }
 
 
-def prepare(config: dict[str, object], dataset: str) -> dict[str, dict[str, int]]:
+def prepare(config: dict[str, object], dataset: str) -> dict[str, dict[str, object]]:
     """Prepare one dataset or both datasets."""
-    result: dict[str, dict[str, int]] = {}
+    result: dict[str, dict[str, object]] = {}
     if dataset in {"instacart", "all"}:
         result["instacart"] = prepare_instacart(config)
     if dataset in {"complete_journey", "all"}:
