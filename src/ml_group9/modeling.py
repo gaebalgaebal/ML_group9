@@ -14,7 +14,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from .metrics import ranking_metrics
-from .recommender import FEATURE_COLUMNS
+from .recommender import FEATURE_COLUMNS_BASE
 
 
 def _negative_sample(frame: pd.DataFrame, ratio: int, seed: int) -> pd.DataFrame:
@@ -55,7 +55,10 @@ def _new_model(alpha: float, max_iter: int, seed: int) -> Pipeline:
 
 
 def train_ranker(
-    frame: pd.DataFrame, target_sets: dict[str, set[str]], config: dict[str, object]
+    frame: pd.DataFrame,
+    target_sets: dict[str, set[str]],
+    config: dict[str, object],
+    feature_columns: list[str] = FEATURE_COLUMNS_BASE,
 ) -> tuple[dict[str, object], dict[str, float]]:
     """Select alpha on a user holdout, then refit on all sampled candidates."""
     seed = int(config["seed"])
@@ -77,8 +80,8 @@ def train_ranker(
     valid_targets = {user: truth for user, truth in target_sets.items() if user in valid_users}
     for alpha in training["alphas"]:
         model = _new_model(float(alpha), int(training["max_iter"]), seed)
-        model.fit(sampled_train[FEATURE_COLUMNS], sampled_train["label"])
-        valid_frame["score_lr"] = model.predict_proba(valid_frame[FEATURE_COLUMNS])[:, 1]
+        model.fit(sampled_train[feature_columns], sampled_train["label"])
+        valid_frame["score_lr"] = model.predict_proba(valid_frame[feature_columns])[:, 1]
         metrics = ranking_metrics(
             valid_frame,
             valid_targets,
@@ -92,10 +95,10 @@ def train_ranker(
 
     sampled_all = _negative_sample(frame, int(training["negative_ratio"]), seed)
     final_model = _new_model(float(best_alpha), int(training["max_iter"]), seed)
-    final_model.fit(sampled_all[FEATURE_COLUMNS], sampled_all["label"])
+    final_model.fit(sampled_all[feature_columns], sampled_all["label"])
     artifact = {
         "model": final_model,
-        "feature_columns": FEATURE_COLUMNS,
+        "feature_columns": list(feature_columns),
         "alpha": best_alpha,
         "seed": seed,
         "training_rows": len(sampled_all),

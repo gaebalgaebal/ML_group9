@@ -15,7 +15,10 @@ attributes:
   private_label_brands: [Private]
   min_with: 5
   min_without: 5
+  smoothing: 10
+  # "Distinct preference" diagnostic subgroup: n_C >= distinct_min_n and |pi - pi_bar| >= distinct_min_gap.
   distinct_min_n: 10
+  distinct_min_gap: 0.2
 candidates:
   recent_items: 10
   neighbors_per_item: 20

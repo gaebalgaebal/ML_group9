@@ -1,4 +1,4 @@
-"""Product attribute extraction, applicable categories, and history-based preference counts."""
+"""Product attribute extraction, applicable categories, and history-based preferences."""
 
 from __future__ import annotations
 
@@ -173,6 +173,49 @@ def population_rates(counts: pd.DataFrame, attribute_names: list[str]) -> dict[s
         total = int(rows["n_c"].sum())
         rates[name] = float(rows["n_a"].sum()) / total if total else 0.5
     return rates
+
+
+def smoothed_preferences(
+    counts: pd.DataFrame, rates: dict[str, float], smoothing: float
+) -> dict[tuple[str, str], float]:
+    """pi(u, a) = (n_a + lambda * pi_bar(a)) / (n_C + lambda) for users with counts."""
+    prior = counts["attribute"].map(rates).astype(float)
+    pi = (counts["n_a"] + smoothing * prior) / (counts["n_c"] + smoothing)
+    return {
+        (str(user), str(name)): float(value)
+        for user, name, value in zip(counts["user_id"], counts["attribute"], pi)
+    }
+
+
+def congruence(
+    flags: list[tuple[str, int]],
+    user: str,
+    preferences: dict[tuple[str, str], float],
+    rates: dict[str, float],
+) -> float:
+    """Mean agreement between an item's attributes and the user's preferences; 0.5 if none apply."""
+    if not flags:
+        return 0.5
+    values = []
+    for name, flag in flags:
+        pi = preferences.get((user, name), rates[name])
+        values.append(flag * pi + (1 - flag) * (1 - pi))
+    return float(np.mean(values))
+
+
+def distinct_preference_users(
+    counts: pd.DataFrame,
+    preferences: dict[tuple[str, str], float],
+    rates: dict[str, float],
+    min_n: int,
+    min_gap: float,
+) -> set[str]:
+    """Users with n_C >= min_n and |pi - pi_bar| >= min_gap for at least one attribute."""
+    users: set[str] = set()
+    for user, name, n_c in zip(counts["user_id"], counts["attribute"], counts["n_c"]):
+        if n_c >= min_n and abs(preferences[(str(user), str(name))] - rates[str(name)]) >= min_gap:
+            users.add(str(user))
+    return users
 
 
 def attribute_report(
