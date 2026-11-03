@@ -184,6 +184,61 @@ def build_preferences(
     return PreferenceModel(names, prior, pi, n_c, item_flag, item_applicable)
 
 
+def seen_item_sets(seen: sparse.csr_matrix) -> list[set[int]]:
+    """I_u as Python sets of item indices, one per user row."""
+    return [set(seen.indices[seen.indptr[row] : seen.indptr[row + 1]].tolist()) for row in range(seen.shape[0])]
+
+
+def popularity_order(popularity: np.ndarray) -> np.ndarray:
+    """Item indices by descending history popularity (ties by index)."""
+    return np.lexsort((np.arange(len(popularity)), -popularity))
+
+
+def preference_candidates(
+    seen_sets: list[set[int]],
+    in_scope: np.ndarray,
+    preferences: PreferenceModel,
+    item_fine: np.ndarray,
+    popularity: np.ndarray,
+    settings: dict[str, object],
+) -> pd.DataFrame:
+    """Candidates (b): for each attribute with pi > pi_bar and n_C >= pref_min_n_c, the most popular
+    unseen in-scope attribute items from the user's history aisles that belong to C_a.
+
+    Independent of gamma and beta, so it can be computed once per split and scope.
+    """
+    per_attr = int(settings["pref_items_per_attr"])
+    preferring = preferences.preferring_users(int(settings["pref_min_n_c"]))
+    order = popularity_order(popularity)
+    rows: list[tuple[int, int]] = []
+    user_fine_sets: dict[int, set[str]] = {}
+    for column, _ in enumerate(preferences.attributes):
+        eligible = order[
+            (preferences.item_flag[order, column] == 1) & preferences.item_applicable[order, column] & in_scope[order]
+        ]
+        by_fine: dict[str, list[int]] = {}
+        for item in eligible:
+            by_fine.setdefault(item_fine[item], []).append(int(item))
+        for user in np.flatnonzero(preferring[:, column]):
+            if user not in user_fine_sets:
+                user_fine_sets[user] = {item_fine[item] for item in seen_sets[user]}
+            seen_items = seen_sets[user]
+            chosen: list[int] = []
+            # Each aisle contributes at most per_attr unseen items, which is enough for an exact top per_attr.
+            for fine in user_fine_sets[user].intersection(by_fine):
+                taken = 0
+                for item in by_fine[fine]:
+                    if item in seen_items:
+                        continue
+                    chosen.append(item)
+                    taken += 1
+                    if taken == per_attr:
+                        break
+            chosen.sort(key=lambda item: (-popularity[item], item))
+            rows.extend((int(user), item) for item in chosen[:per_attr])
+    return pd.DataFrame(rows, columns=["user", "item"]).drop_duplicates().reset_index(drop=True)
+
+
 def explore_candidates(
     cf: sparse.csr_matrix,
     seen: sparse.csr_matrix,
@@ -193,6 +248,8 @@ def explore_candidates(
     popularity: np.ndarray,
     settings: dict[str, object],
     top_k: int,
+    preferred: pd.DataFrame | None = None,
+    seen_sets: list[set[int]] | None = None,
 ) -> pd.DataFrame:
     """E_u: CF neighbours (a), preferred-attribute items (b), popular fill-ins (c); all in F and not in I_u.
 
@@ -200,45 +257,13 @@ def explore_candidates(
     candidate set does not depend on beta and beta = 0 is a like-for-like CF-only comparison.
     """
     n_users = cf.shape[0]
+    if seen_sets is None:
+        seen_sets = seen_item_sets(seen)
+    if preferred is None:
+        preferred = preference_candidates(seen_sets, in_scope, preferences, item_fine, popularity, settings)
     coo = cf.tocoo()
     from_cf = pd.DataFrame({"user": coo.row, "item": coo.col, "s_cf": coo.data})
-
-    seen_sets = [set(seen.indices[seen.indptr[row] : seen.indptr[row + 1]]) for row in range(n_users)]
-    per_attr = int(settings["pref_items_per_attr"])
-    preferring = preferences.preferring_users(int(settings["pref_min_n_c"]))
-    pref_rows: list[tuple[int, int]] = []
-    user_fine_sets: dict[int, set[str]] = {}
-    order = np.lexsort((np.arange(len(popularity)), -popularity))
-    for column, _ in enumerate(preferences.attributes):
-        eligible = order[
-            (preferences.item_flag[order, column] == 1)
-            & preferences.item_applicable[order, column]
-            & in_scope[order]
-        ]
-        by_fine: dict[str, list[int]] = {}
-        for item in eligible:
-            by_fine.setdefault(item_fine[item], []).append(int(item))
-        applicable_fines = set(item_fine[preferences.item_applicable[:, column]])
-        for user in np.flatnonzero(preferring[:, column]):
-            if user not in user_fine_sets:
-                user_fine_sets[user] = {item_fine[item] for item in seen_sets[user]}
-            user_fines = user_fine_sets[user] & applicable_fines
-            chosen: list[int] = []
-            for fine in user_fines:
-                taken = 0
-                for item in by_fine.get(fine, []):
-                    if item in seen_sets[user]:
-                        continue
-                    chosen.append(item)
-                    taken += 1
-                    if taken == per_attr:
-                        break
-            chosen.sort(key=lambda item: (-popularity[item], item))
-            pref_rows.extend((int(user), item) for item in chosen[:per_attr])
-    from_pref = pd.DataFrame(pref_rows, columns=["user", "item"]).drop_duplicates()
-    from_pref["from_pref"] = True
-
-    candidates = from_cf.merge(from_pref, on=["user", "item"], how="outer")
+    candidates = from_cf.merge(preferred.assign(from_pref=True), on=["user", "item"], how="outer")
     candidates["s_cf"] = candidates["s_cf"].fillna(0.0)
     candidates["from_pref"] = candidates["from_pref"].eq(True)
     candidates["from_popular"] = False
@@ -246,8 +271,8 @@ def explore_candidates(
     counts = np.bincount(candidates["user"].to_numpy(np.int64), minlength=n_users)
     short_users = np.flatnonzero(counts < top_k)
     if len(short_users):
-        popular = [int(item) for item in order if in_scope[item]]
-        existing = candidates.groupby("user")["item"].apply(set).to_dict()
+        popular = [int(item) for item in popularity_order(popularity) if in_scope[item]]
+        existing = candidates[candidates["user"].isin(short_users)].groupby("user")["item"].apply(set).to_dict()
         fill_rows: list[tuple[int, int]] = []
         for user in short_users:
             have = existing.get(user, set())

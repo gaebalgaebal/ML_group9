@@ -1,0 +1,74 @@
+seed: 42
+sample_users:
+  instacart: 20000
+  complete_journey: null
+complete_journey_history_week: 90
+complete_journey:
+  # Confirmed 2026-11-03 from inspect-cj: fuel, coupon, gift-card and undescribed transactions.
+  exclude_departments:
+    - "KIOSK-GAS"
+    - "MISC SALES TRAN"
+    - "MISC. TRANS."
+    - "COUP/STR & MFG"
+    - "AUTOMOTIVE"
+    - "GM MERCH EXP"
+    - "CNTRL/STORE SUP"
+    - "MEAT-WHSE"
+    - "PHARMACY SUPPLY"
+    - "ELECT &PLUMBING"
+    - "CHARITABLE CONT"
+  min_target_items: 3
+attributes:
+  instacart: [fat_reduced, sugar_reduced, gluten_free, low_sodium, organic]
+  complete_journey: [private_label, organic]
+  # Instacart aisles where "0%", "1%" or "2%" in a product name means milk fat.
+  percent_fat_aisles: [milk, yogurt, other creams cheeses, soy lactosefree]
+  percent_fat_levels: [0, 1, 2]
+  private_label_brands: [Private]
+  min_with: 5
+  min_without: 5
+  smoothing: 10
+  # "Distinct preference" diagnostic subgroup: n_C >= distinct_min_n and |pi - pi_bar| >= distinct_min_gap.
+  distinct_min_n: 10
+  distinct_min_gap: 0.2
+  # Departments whose fine categories are left out of C_a (aisle department = modal item department).
+  exclude_departments:
+    instacart: [household, personal care, pets, missing, other]
+    complete_journey: []
+candidates:
+  recent_items: 10
+  neighbors_per_item: 20
+  preferred_categories: 3
+  category_popular: 50
+  global_popular: 50
+  max_per_user: 500
+item_cf:
+  top_k: 20
+  block_size: 256
+training:
+  negative_ratio: 10
+  validation_fraction: 0.2
+  alphas: [0.00001, 0.0001, 0.001]
+  max_iter: 1000
+evaluation:
+  top_k: 10
+repeat_explore:
+  gammas: [0.8, 0.9, 1.0]
+  kappas: [5, 20]
+  betas: [0, 0.25, 0.5, 1, 2]
+  global_r: [4, 5, 6, 7, 8]
+explore:
+  epsilon: 1.0e-4
+  max_candidates: 500
+  pref_items_per_attr: 20
+  pref_min_n_c: 10
+slots:
+  mode: user
+scope:
+  modes: [all, food]
+  nonfood_departments:
+    instacart: [household, personal care, pets, missing, other]
+    complete_journey: []
+bootstrap:
+  n: 1000
+  seed: 42

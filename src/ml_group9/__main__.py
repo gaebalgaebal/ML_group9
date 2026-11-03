@@ -8,6 +8,10 @@ import json
 from .config import load_config
 from .data import complete_journey_department_summary, prepare
 from .pipeline import evaluate, run, train
+from .re_pipeline import eval_re, tune_re
+
+
+PROFILES = ["sample", "medium", "full"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -16,22 +20,31 @@ def build_parser() -> argparse.ArgumentParser:
 
     prepare_parser = subparsers.add_parser("prepare", help="Normalize raw archives and create temporal splits")
     prepare_parser.add_argument("--dataset", choices=["instacart", "complete_journey", "all"], default="all")
-    prepare_parser.add_argument("--profile", choices=["sample", "full"], default="sample")
+    prepare_parser.add_argument("--profile", choices=PROFILES, default="sample")
 
     train_parser = subparsers.add_parser("train", help="Train the Instacart logistic ranker")
-    train_parser.add_argument("--profile", choices=["sample", "full"], default="sample")
+    train_parser.add_argument("--profile", choices=PROFILES, default="sample")
 
     evaluate_parser = subparsers.add_parser("evaluate", help="Evaluate the frozen ranker")
     evaluate_parser.add_argument("--dataset", choices=["instacart", "complete_journey"], required=True)
-    evaluate_parser.add_argument("--profile", choices=["sample", "full"], default="sample")
+    evaluate_parser.add_argument("--profile", choices=PROFILES, default="sample")
 
     run_parser = subparsers.add_parser("run", help="Run the complete pipeline")
-    run_parser.add_argument("--profile", choices=["sample", "full"], default="sample")
+    run_parser.add_argument("--profile", choices=PROFILES, default="sample")
 
     inspect_parser = subparsers.add_parser(
         "inspect-cj", help="Print Complete Journey DEPARTMENT shares to choose excluded departments"
     )
-    inspect_parser.add_argument("--profile", choices=["sample", "full"], default="sample")
+    inspect_parser.add_argument("--profile", choices=PROFILES, default="sample")
+
+    tune_parser = subparsers.add_parser(
+        "tune-re", help="Tune repeat-explore on the Instacart fit split (and the CJ fit split for refit)"
+    )
+    tune_parser.add_argument("--profile", choices=PROFILES, default="sample")
+
+    eval_re_parser = subparsers.add_parser("eval-re", help="Evaluate repeat-explore and baselines on an eval split")
+    eval_re_parser.add_argument("--dataset", choices=["instacart", "complete_journey"], required=True)
+    eval_re_parser.add_argument("--profile", choices=PROFILES, default="sample")
     return parser
 
 
@@ -46,6 +59,10 @@ def main() -> None:
         result = evaluate(config, args.dataset)
     elif args.command == "inspect-cj":
         result = complete_journey_department_summary(config)
+    elif args.command == "tune-re":
+        result = tune_re(config)
+    elif args.command == "eval-re":
+        result = eval_re(config, args.dataset)
     else:
         result = run(config)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
