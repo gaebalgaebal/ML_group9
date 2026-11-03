@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
+import json
 import zipfile
 from pathlib import Path
 from typing import Iterable
 
 import numpy as np
 import pandas as pd
+
+from .attributes import (
+    applicable_categories,
+    attribute_report,
+    complete_journey_attributes,
+    complete_journey_text_diagnostics,
+    instacart_attributes,
+    instacart_text_diagnostics,
+    used_attributes,
+)
 
 
 COMMON_COLUMNS = [
@@ -169,6 +180,27 @@ def _write_frames(base: Path, frames: dict[str, pd.DataFrame]) -> None:
         frame.to_parquet(base / f"{name}.parquet", index=False)
 
 
+def _attribute_outputs(
+    config: dict[str, object], dataset: str, items: pd.DataFrame, history: pd.DataFrame, extra: dict[str, object]
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Build C_a from the item list and merge per-dataset coverage into the profile report."""
+    settings = config["attributes"]
+    table = applicable_categories(
+        items, used_attributes(items), int(settings["min_with"]), int(settings["min_without"])
+    )
+    payload = {
+        "history_split": "eval_history",
+        "attributes": attribute_report(items, history, table, int(settings["distinct_min_n"])),
+        **extra,
+    }
+    path = Path(config["report_dir"]) / "metrics" / f"{config['profile']}_attributes.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    report = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    report[dataset] = payload
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    return table, payload
+
+
 def prepare_instacart(config: dict[str, object]) -> dict[str, int]:
     """Prepare Instacart fit and official-train evaluation splits."""
     raw_dir = Path(config["raw_dir"])
@@ -197,6 +229,7 @@ def prepare_instacart(config: dict[str, object]) -> dict[str, int]:
             )[["item_id", "product_name", "coarse_category", "fine_category"]]
         )
         items["item_id"] = items["item_id"].astype("string")
+        items = instacart_attributes(items, config)
 
         prior_order_ids = set(orders.loc[orders["eval_set"].eq("prior"), "order_id"])
         train_order_ids = set(orders.loc[orders["eval_set"].eq("train"), "order_id"])
@@ -245,11 +278,23 @@ def prepare_instacart(config: dict[str, object]) -> dict[str, int]:
     fit_history = fit_history[fit_history["user_id"].isin(eligible_users)]
     fit_target = fit_target[fit_target["user_id"].isin(eligible_users)]
 
+    table, attributes = _attribute_outputs(
+        config,
+        "instacart",
+        items,
+        prior,
+        {
+            "percent_fat_aisles": list(config["attributes"]["percent_fat_aisles"]),
+            "percent_fat_levels": list(config["attributes"]["percent_fat_levels"]),
+            "text_diagnostics": instacart_text_diagnostics(items, config),
+        },
+    )
     out = Path(config["processed_dir"]) / "instacart"
     _write_frames(
         out,
         {
             "items": items,
+            "attribute_categories": table,
             "fit_history": fit_history,
             "fit_target": fit_target,
             "eval_history": prior,
@@ -261,6 +306,7 @@ def prepare_instacart(config: dict[str, object]) -> dict[str, int]:
         "fit_interactions": len(fit_history),
         "eval_interactions": len(prior),
         "items": len(items),
+        "attributes": attributes["attributes"],
     }
 
 
@@ -282,6 +328,7 @@ def prepare_complete_journey(config: dict[str, object]) -> dict[str, object]:
             "SUB_COMMODITY_DESC": "fine_category",
         }
     )[["item_id", "DEPARTMENT", "BRAND", "coarse_category", "fine_category"]]
+    items = complete_journey_attributes(items, config)
 
     user_weeks = transactions.groupby("household_key")["WEEK_NO"].agg(["min", "max"])
     candidates = user_weeks[(user_weeks["min"] <= cutoff) & (user_weeks["max"] > cutoff)].index
@@ -315,8 +362,29 @@ def prepare_complete_journey(config: dict[str, object]) -> dict[str, object]:
     eligible_users = set(target["user_id"])
     history = history[history["user_id"].isin(eligible_users)][COMMON_COLUMNS]
 
+    table, attributes = _attribute_outputs(
+        config,
+        "complete_journey",
+        items,
+        history,
+        {
+            "private_label_brands": list(config["attributes"]["private_label_brands"]),
+            "brand_distribution": {
+                str(brand): int(count) for brand, count in items["BRAND"].fillna("<missing>").value_counts().items()
+            },
+            "text_diagnostics": complete_journey_text_diagnostics(items),
+        },
+    )
     out = Path(config["processed_dir"]) / "complete_journey"
-    _write_frames(out, {"items": items, "eval_history": history, "eval_target": target[COMMON_COLUMNS]})
+    _write_frames(
+        out,
+        {
+            "items": items,
+            "attribute_categories": table,
+            "eval_history": history,
+            "eval_target": target[COMMON_COLUMNS],
+        },
+    )
     return {
         "users": history["user_id"].nunique(),
         "eval_interactions": len(history),
@@ -326,6 +394,7 @@ def prepare_complete_journey(config: dict[str, object]) -> dict[str, object]:
         "households_with_history": len(history_users),
         "target": _target_summary(target, min_target_items),
         "target_first_future_basket": _target_summary(reference, 1),
+        "attributes": attributes["attributes"],
     }
 
 

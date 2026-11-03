@@ -75,6 +75,13 @@ def synthetic_complete_journey(tmp_path):
         "sample_users": {"complete_journey": None},
         "complete_journey_history_week": 90,
         "complete_journey": {"exclude_departments": ["KIOSK-GAS"], "min_target_items": 3},
+        "attributes": {
+            "complete_journey": ["private_label", "organic"],
+            "private_label_brands": ["Private"],
+            "min_with": 1,
+            "min_without": 1,
+            "distinct_min_n": 1,
+        },
         "raw_dir": tmp_path / "raw",
         "processed_dir": tmp_path / "processed",
         "report_dir": tmp_path / "reports",
@@ -121,3 +128,18 @@ def test_complete_journey_target_skips_baskets_below_minimum_size(tmp_path):
     }
     assert result["target_first_future_basket"]["households"] == 2
     assert result["target_first_future_basket"]["basket_size_median"] == 2.0
+
+
+def test_complete_journey_items_carry_attributes_and_applicable_categories(tmp_path):
+    config = synthetic_complete_journey(tmp_path)
+    prepare_complete_journey(config)
+    base = tmp_path / "processed" / "complete_journey"
+    items = pd.read_parquet(base / "items.parquet").set_index("item_id")
+    table = pd.read_parquet(base / "attribute_categories.parquet")
+
+    assert items.loc["2", "attr_private_label"] == 1
+    assert items.loc["3", "attr_organic"] == 1
+    assert list(table.columns) == ["attribute", "fine_category", "n_with", "n_without", "included"]
+    fluid_milk = table[table["attribute"].eq("private_label") & table["fine_category"].eq("FLUID MILK")].iloc[0]
+    assert (fluid_milk["n_with"], fluid_milk["n_without"], bool(fluid_milk["included"])) == (1, 1, True)
+    assert (tmp_path / "reports" / "metrics" / "test_attributes.json").exists()
