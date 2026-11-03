@@ -1,0 +1,61 @@
+{
+  "profile": "sample",
+  "dataset": "instacart",
+  "history_users": 1500,
+  "target_users": 1500,
+  "candidate_rows": 541128,
+  "candidate_recall": 0.6734638146896227,
+  "model_sha256_before": "c33f637d47fe03c2389564d30715a7b104b511bf5ebddbc135eb0d38f028fa4a",
+  "model_sha256_after": "c33f637d47fe03c2389564d30715a7b104b511bf5ebddbc135eb0d38f028fa4a",
+  "frozen_model_verified": true,
+  "metrics": {
+    "popularity": {
+      "precision_at_k": 0.07293333333333334,
+      "recall_at_k": 0.06901577310136671,
+      "f1_at_k": 0.06296396064521054,
+      "ndcg_at_k": 0.10013482876104195,
+      "catalog_coverage": 0.00020125583641925616,
+      "users_evaluated": 1500
+    },
+    "personal_repeat": {
+      "precision_at_k": 0.2687333333333333,
+      "recall_at_k": 0.31386307983191786,
+      "f1_at_k": 0.25107371825269076,
+      "ndcg_at_k": 0.3851913092352479,
+      "catalog_coverage": 0.1071687328932539,
+      "users_evaluated": 1500
+    },
+    "item_cf": {
+      "precision_at_k": 0.05253333333333334,
+      "recall_at_k": 0.05858065783962445,
+      "f1_at_k": 0.04884414238810669,
+      "ndcg_at_k": 0.0690229186284608,
+      "catalog_coverage": 0.1551682498792465,
+      "users_evaluated": 1500
+    },
+    "content": {
+      "precision_at_k": 0.027800000000000002,
+      "recall_at_k": 0.03170575986285472,
+      "f1_at_k": 0.025119719321132914,
+      "ndcg_at_k": 0.03323223472691633,
+      "catalog_coverage": 0.025579616808887456,
+      "users_evaluated": 1500
+    },
+    "weighted_hybrid": {
+      "precision_at_k": 0.2604666666666667,
+      "recall_at_k": 0.2992126177659401,
+      "f1_at_k": 0.24186244013957486,
+      "ndcg_at_k": 0.3733921668186634,
+      "catalog_coverage": 0.11916358074384158,
+      "users_evaluated": 1500
+    },
+    "lr_hybrid": {
+      "precision_at_k": 0.2739333333333333,
+      "recall_at_k": 0.3203910351388314,
+      "f1_at_k": 0.25555370161181296,
+      "ndcg_at_k": 0.39068586658546234,
+      "catalog_coverage": 0.08662051199484785,
+      "users_evaluated": 1500
+    }
+  }
+}

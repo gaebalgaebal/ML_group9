@@ -1,0 +1,29 @@
+{
+  "profile": "sample",
+  "users": 1500,
+  "candidates": 533113,
+  "positive_candidates": 10395,
+  "candidate_recall": 0.6664972889071229,
+  "selected_alpha": 0.001,
+  "alpha_ndcg_at_10": {
+    "1e-05": 0.3904186511411128,
+    "0.0001": 0.39132404302512863,
+    "0.001": 0.39472018150690624
+  },
+  "model_sha256": "c33f637d47fe03c2389564d30715a7b104b511bf5ebddbc135eb0d38f028fa4a",
+  "feature_columns": [
+    "user_item_rate",
+    "user_item_count_log",
+    "recency_normalized",
+    "mean_gap_normalized",
+    "item_popularity",
+    "item_repeat_rate",
+    "item_cf_max",
+    "item_cf_sum",
+    "content_affinity",
+    "source_history",
+    "source_cf",
+    "source_content",
+    "source_popular"
+  ]
+}

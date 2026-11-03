@@ -1,0 +1,61 @@
+{
+  "profile": "sample",
+  "dataset": "complete_journey",
+  "history_users": 498,
+  "target_users": 498,
+  "candidate_rows": 240096,
+  "candidate_recall": 0.39607868155784187,
+  "model_sha256_before": "c33f637d47fe03c2389564d30715a7b104b511bf5ebddbc135eb0d38f028fa4a",
+  "model_sha256_after": "c33f637d47fe03c2389564d30715a7b104b511bf5ebddbc135eb0d38f028fa4a",
+  "frozen_model_verified": true,
+  "metrics": {
+    "popularity": {
+      "precision_at_k": 0.04799196787148594,
+      "recall_at_k": 0.06952581689958119,
+      "f1_at_k": 0.0399728553568326,
+      "ndcg_at_k": 0.08211516077454971,
+      "catalog_coverage": 0.00045477678039695517,
+      "users_evaluated": 498
+    },
+    "personal_repeat": {
+      "precision_at_k": 0.09939759036144578,
+      "recall_at_k": 0.1371378518534585,
+      "f1_at_k": 0.08504575812045001,
+      "ndcg_at_k": 0.16881063194104898,
+      "catalog_coverage": 0.024243933602590063,
+      "users_evaluated": 498
+    },
+    "item_cf": {
+      "precision_at_k": 0.007228915662650603,
+      "recall_at_k": 0.008881854251466129,
+      "f1_at_k": 0.005952447016849553,
+      "ndcg_at_k": 0.010563785899556165,
+      "catalog_coverage": 0.04391844336404881,
+      "users_evaluated": 498
+    },
+    "content": {
+      "precision_at_k": 0.013453815261044179,
+      "recall_at_k": 0.01643068936367313,
+      "f1_at_k": 0.011184684648659031,
+      "ndcg_at_k": 0.017751387305816685,
+      "catalog_coverage": 0.01666432059597414,
+      "users_evaluated": 498
+    },
+    "weighted_hybrid": {
+      "precision_at_k": 0.07028112449799197,
+      "recall_at_k": 0.08715030455832252,
+      "f1_at_k": 0.05892281052111594,
+      "ndcg_at_k": 0.10991588069800612,
+      "catalog_coverage": 0.03506112416488907,
+      "users_evaluated": 498
+    },
+    "lr_hybrid": {
+      "precision_at_k": 0.08192771084337348,
+      "recall_at_k": 0.11245783748214201,
+      "f1_at_k": 0.06945403568534313,
+      "ndcg_at_k": 0.13869251651317843,
+      "catalog_coverage": 0.009019739477872943,
+      "users_evaluated": 498
+    }
+  }
+}

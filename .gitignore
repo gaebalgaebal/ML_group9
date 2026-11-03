@@ -1,0 +1,17 @@
+# Course materials are local references and must not be committed.
+/Machine-Learning-module-*.pdf
+/Machine-Learning_term-project_*.pdf
+
+# Raw datasets are large and should be downloaded separately.
+/data/raw/
+/data/processed/
+/artifacts/
+
+# Local/generated artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.venv/
+venv/
+.DS_Store

@@ -1,0 +1,22 @@
+seed: 42
+sample_users:
+  instacart: null
+  complete_journey: null
+complete_journey_history_week: 90
+candidates:
+  recent_items: 10
+  neighbors_per_item: 20
+  preferred_categories: 3
+  category_popular: 50
+  global_popular: 50
+  max_per_user: 500
+item_cf:
+  top_k: 20
+  block_size: 512
+training:
+  negative_ratio: 10
+  validation_fraction: 0.2
+  alphas: [0.00001, 0.0001, 0.001]
+  max_iter: 1000
+evaluation:
+  top_k: 10
