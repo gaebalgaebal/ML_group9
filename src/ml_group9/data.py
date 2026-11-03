@@ -310,13 +310,80 @@ def prepare_instacart(config: dict[str, object]) -> dict[str, int]:
     }
 
 
+def _complete_journey_common(transactions: pd.DataFrame, items: pd.DataFrame) -> pd.DataFrame:
+    """Sequence each household's cleaned baskets by time and map them to the common schema."""
+    transactions = transactions.sort_values(["household_key", "DAY", "TRANS_TIME", "BASKET_ID"])
+    basket_order = transactions[["household_key", "BASKET_ID", "DAY", "TRANS_TIME"]].drop_duplicates()
+    basket_order["basket_seq"] = basket_order.groupby("household_key").cumcount().add(1).astype("int32")
+    transactions = transactions.merge(basket_order[["household_key", "BASKET_ID", "basket_seq"]], on=["household_key", "BASKET_ID"])
+    transactions = transactions.merge(
+        items[["item_id", "coarse_category", "fine_category"]],
+        left_on="PRODUCT_ID",
+        right_on="item_id",
+        how="left",
+    )
+    return transactions.assign(
+        dataset="complete_journey",
+        user_id=transactions["household_key"].astype("string"),
+        basket_id=transactions["BASKET_ID"].astype("string"),
+        item_id=transactions["PRODUCT_ID"].astype("string"),
+        quantity=transactions["QUANTITY"].astype("int32"),
+    )[COMMON_COLUMNS + ["WEEK_NO"]]
+
+
+def _history_and_target(
+    common: pd.DataFrame, history_end: int, target_end: int | None, min_target_items: int
+) -> tuple[pd.DataFrame, set[str], pd.DataFrame, pd.DataFrame]:
+    """History up to history_end; target = first qualifying basket in (history_end, target_end].
+
+    Users need at least three history baskets. Also returns the first-future-basket reference.
+    """
+    history = common[common["WEEK_NO"].le(history_end)]
+    future = common[common["WEEK_NO"].gt(history_end)]
+    if target_end is not None:
+        future = future[future["WEEK_NO"].le(target_end)]
+    history_users = set(
+        history.groupby("user_id", observed=True)["basket_id"].nunique().loc[lambda s: s >= 3].index
+    )
+    future = future[future["user_id"].isin(history_users)]
+    return history, history_users, first_future_basket(future, min_target_items), first_future_basket(future, 1)
+
+
+def _complete_journey_splits(
+    common: pd.DataFrame, cutoff: int, fit_week: int | None, min_target_items: int
+) -> dict[str, object]:
+    """Eval split (history <= cutoff, target after it) and, if fit_week is set, a fit split
+    (history <= fit_week, target in (fit_week, cutoff]). Eligible users can form every configured split."""
+    eval_history, eval_history_users, eval_target, eval_reference = _history_and_target(
+        common, cutoff, None, min_target_items
+    )
+    eval_users = set(eval_target["user_id"])
+    splits: dict[str, object] = {
+        "eval_history": eval_history,
+        "eval_history_users": eval_history_users,
+        "eval_target": eval_target,
+        "eval_reference": eval_reference,
+        "eval_users": eval_users,
+        "eligible": eval_users,
+    }
+    if fit_week is not None:
+        fit_history, _, fit_target, _ = _history_and_target(common, int(fit_week), cutoff, min_target_items)
+        fit_users = set(fit_target["user_id"])
+        splits.update(
+            {"fit_history": fit_history, "fit_target": fit_target, "fit_users": fit_users, "eligible": eval_users & fit_users}
+        )
+    return splits
+
+
 def prepare_complete_journey(config: dict[str, object]) -> dict[str, object]:
-    """Prepare a global week-cutoff external evaluation split."""
+    """Prepare the global week-cutoff evaluation split and, when configured, an earlier fit split."""
     cutoff = int(config["complete_journey_history_week"])
     sample_size = config["sample_users"]["complete_journey"]
     seed = int(config["seed"])
     exclude_departments = list(config["complete_journey"]["exclude_departments"])
     min_target_items = int(config["complete_journey"]["min_target_items"])
+    fit_week = config["complete_journey"].get("fit_history_week")
+    filter_before_sampling = bool(config["complete_journey"].get("filter_before_sampling", False))
 
     products, transactions = _read_complete_journey(Path(config["raw_dir"]))
     transactions, cleaning = clean_complete_journey(transactions, products, exclude_departments)
@@ -332,35 +399,34 @@ def prepare_complete_journey(config: dict[str, object]) -> dict[str, object]:
 
     user_weeks = transactions.groupby("household_key")["WEEK_NO"].agg(["min", "max"])
     candidates = user_weeks[(user_weeks["min"] <= cutoff) & (user_weeks["max"] > cutoff)].index
+    spanning_households = len(candidates)
+    if filter_before_sampling:
+        # Basket sequences are per household, so qualifying before sampling changes only who is drawn.
+        pool = _complete_journey_common(transactions[transactions["household_key"].isin(candidates)], items)
+        candidates = _complete_journey_splits(pool, cutoff, fit_week, min_target_items)["eligible"]
     selected = _sample_ids(candidates, sample_size, seed)
-    transactions = transactions[transactions["household_key"].isin(selected)].copy()
-    transactions = transactions.sort_values(["household_key", "DAY", "TRANS_TIME", "BASKET_ID"])
-    basket_order = transactions[["household_key", "BASKET_ID", "DAY", "TRANS_TIME"]].drop_duplicates()
-    basket_order["basket_seq"] = basket_order.groupby("household_key").cumcount().add(1).astype("int32")
-    transactions = transactions.merge(basket_order[["household_key", "BASKET_ID", "basket_seq"]], on=["household_key", "BASKET_ID"])
-    transactions = transactions.merge(
-        items[["item_id", "coarse_category", "fine_category"]],
-        left_on="PRODUCT_ID",
-        right_on="item_id",
-        how="left",
-    )
-    common = transactions.assign(
-        dataset="complete_journey",
-        user_id=transactions["household_key"].astype("string"),
-        basket_id=transactions["BASKET_ID"].astype("string"),
-        item_id=transactions["PRODUCT_ID"].astype("string"),
-        quantity=transactions["QUANTITY"].astype("int32"),
-    )[COMMON_COLUMNS + ["WEEK_NO"]]
-    history = common[common["WEEK_NO"].le(cutoff)].copy()
-    future = common[common["WEEK_NO"].gt(cutoff)].copy()
-    history_users = set(
-        history.groupby("user_id", observed=True)["basket_id"].nunique().loc[lambda s: s >= 3].index
-    )
-    future = future[future["user_id"].isin(history_users)]
-    target = first_future_basket(future, min_target_items)
-    reference = first_future_basket(future, 1)
-    eligible_users = set(target["user_id"])
-    history = history[history["user_id"].isin(eligible_users)][COMMON_COLUMNS]
+    common = _complete_journey_common(transactions[transactions["household_key"].isin(selected)], items)
+    splits = _complete_journey_splits(common, cutoff, fit_week, min_target_items)
+    eligible = splits["eligible"]
+    history = splits["eval_history"]
+    history = history[history["user_id"].isin(eligible)][COMMON_COLUMNS]
+    target = splits["eval_target"]
+    target = target[target["user_id"].isin(eligible)]
+    frames = {"eval_history": history, "eval_target": target[COMMON_COLUMNS]}
+    fit_summary: dict[str, object] = {}
+    if fit_week is not None:
+        fit_history = splits["fit_history"]
+        fit_target = splits["fit_target"]
+        fit_target = fit_target[fit_target["user_id"].isin(eligible)]
+        frames["fit_history"] = fit_history[fit_history["user_id"].isin(eligible)][COMMON_COLUMNS]
+        frames["fit_target"] = fit_target[COMMON_COLUMNS]
+        fit_summary = {
+            "fit_history_week": int(fit_week),
+            "households_with_fit_target": len(splits["fit_users"]),
+            "households_with_eval_target": len(splits["eval_users"]),
+            "households_with_both_splits": len(eligible),
+            "fit_target": _target_summary(fit_target, min_target_items),
+        }
 
     table, attributes = _attribute_outputs(
         config,
@@ -381,8 +447,7 @@ def prepare_complete_journey(config: dict[str, object]) -> dict[str, object]:
         {
             "items": items,
             "attribute_categories": table,
-            "eval_history": history,
-            "eval_target": target[COMMON_COLUMNS],
+            **frames,
         },
     )
     return {
@@ -391,9 +456,14 @@ def prepare_complete_journey(config: dict[str, object]) -> dict[str, object]:
         "targets": len(target),
         "items": len(items),
         "cleaning": cleaning,
-        "households_with_history": len(history_users),
+        "filter_before_sampling": filter_before_sampling,
+        "households_spanning_cutoff": spanning_households,
+        "households_in_sampling_pool": len(candidates),
+        "sampled_households": len(selected),
+        "households_with_history": len(splits["eval_history_users"]),
         "target": _target_summary(target, min_target_items),
-        "target_first_future_basket": _target_summary(reference, 1),
+        "target_first_future_basket": _target_summary(splits["eval_reference"], 1),
+        **fit_summary,
         "attributes": attributes["attributes"],
     }
 

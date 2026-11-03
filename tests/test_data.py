@@ -143,3 +143,88 @@ def test_complete_journey_items_carry_attributes_and_applicable_categories(tmp_p
     fluid_milk = table[table["attribute"].eq("private_label") & table["fine_category"].eq("FLUID MILK")].iloc[0]
     assert (fluid_milk["n_with"], fluid_milk["n_without"], bool(fluid_milk["included"])) == (1, 1, True)
     assert (tmp_path / "reports" / "metrics" / "test_attributes.json").exists()
+
+
+def fit_split_journey(tmp_path, filter_before_sampling, sample_size):
+    products = pd.DataFrame(
+        [(str(item), 1, "GROCERY", "National", "MILK", "FLUID MILK", "") for item in range(1, 6)],
+        columns=PRODUCT_COLUMNS,
+    )
+    rows = []
+
+    def basket(household, basket_id, week, items):
+        rows.extend((household, basket_id, week * 7, str(item), 1, 1.0, 1, 900, week) for item in items)
+
+    # g1 forms both splits: three baskets by week 10, a 2-item then a 3-item basket in weeks 11-20.
+    for week in [1, 2, 3]:
+        basket("g1", f"g1-{week}", week, [week])
+    basket("g1", "g1-12", 12, [1, 2])
+    basket("g1", "g1-14", 14, [1, 2, 3])
+    basket("g1", "g1-18", 18, [4])
+    basket("g1", "g1-22", 22, [3, 4, 5])
+    # g2 has no 3-item basket in weeks 11-20, so it cannot form the fit split.
+    for week in [1, 2, 3]:
+        basket("g2", f"g2-{week}", week, [week])
+    basket("g2", "g2-15", 15, [1])
+    basket("g2", "g2-25", 25, [1, 2, 3])
+    # g3 has only two baskets by week 10.
+    for week in [1, 2, 15]:
+        basket("g3", f"g3-{week}", week, [1])
+    basket("g3", "g3-16", 16, [1, 2, 3])
+    basket("g3", "g3-22", 22, [1, 2, 3])
+    raw = tmp_path / "raw" / "complete_journey"
+    raw.mkdir(parents=True)
+    with zipfile.ZipFile(raw / "cj.zip", "w") as archive:
+        archive.writestr("product.csv", products.to_csv(index=False))
+        archive.writestr("transaction_data.csv", pd.DataFrame(rows, columns=TRANSACTION_COLUMNS).to_csv(index=False))
+    return {
+        "profile": "test",
+        "seed": 42,
+        "sample_users": {"complete_journey": sample_size},
+        "complete_journey_history_week": 20,
+        "complete_journey": {
+            "exclude_departments": [],
+            "min_target_items": 3,
+            "fit_history_week": 10,
+            "filter_before_sampling": filter_before_sampling,
+        },
+        "attributes": {
+            "complete_journey": ["private_label"],
+            "private_label_brands": ["Private"],
+            "min_with": 1,
+            "min_without": 1,
+            "distinct_min_n": 1,
+        },
+        "raw_dir": tmp_path / "raw",
+        "processed_dir": tmp_path / "processed",
+        "report_dir": tmp_path / "reports",
+    }
+
+
+def test_complete_journey_fit_split_precedes_eval_split_and_needs_both(tmp_path):
+    result = prepare_complete_journey(fit_split_journey(tmp_path, filter_before_sampling=False, sample_size=None))
+    base = tmp_path / "processed" / "complete_journey"
+    frames = {name: pd.read_parquet(base / f"{name}.parquet") for name in ["fit_history", "fit_target", "eval_history", "eval_target"]}
+
+    assert all(set(frame["user_id"]) == {"g1"} for frame in frames.values())
+    assert set(frames["fit_target"]["basket_id"]) == {"g1-14"}
+    assert set(frames["eval_target"]["basket_id"]) == {"g1-22"}
+    assert frames["fit_history"]["basket_seq"].max() < frames["fit_target"]["basket_seq"].min()
+    assert frames["eval_history"]["basket_seq"].max() < frames["eval_target"]["basket_seq"].min()
+    # The fit target lies inside the eval history window (week 14 <= 20).
+    assert "g1-14" in set(frames["eval_history"]["basket_id"])
+    assert set(frames["fit_history"]["basket_id"]) == {"g1-1", "g1-2", "g1-3"}
+    assert result["fit_target"]["week_min"] == 14 and result["fit_target"]["week_max"] == 14
+    assert result["households_with_fit_target"] == 1
+    assert result["households_with_eval_target"] == 3
+    assert result["households_with_both_splits"] == 1
+    assert result["sampled_households"] == 3
+
+
+def test_complete_journey_filter_before_sampling_draws_only_qualifying_households(tmp_path):
+    result = prepare_complete_journey(fit_split_journey(tmp_path, filter_before_sampling=True, sample_size=1))
+    assert result["households_spanning_cutoff"] == 3
+    assert result["households_in_sampling_pool"] == 1
+    assert result["sampled_households"] == 1
+    assert result["households_with_both_splits"] == 1
+    assert result["users"] == 1

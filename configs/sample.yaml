@@ -18,9 +18,14 @@ complete_journey:
     - "ELECT &PLUMBING"
     - "CHARITABLE CONT"
   min_target_items: 3
+  # Apply the target and both-split requirements before drawing the household sample.
+  filter_before_sampling: true
+  # Fit split for CJ refit: history weeks 1..80, target = first qualifying basket in weeks 81..90.
+  fit_history_week: 80
 attributes:
   instacart: [fat_reduced, sugar_reduced, gluten_free, low_sodium, organic]
-  complete_journey: [private_label, organic]
+  # organic dropped: only one applicable CJ category.
+  complete_journey: [private_label]
   # Instacart aisles where "0%", "1%" or "2%" in a product name means milk fat.
   percent_fat_aisles: [milk, yogurt, other creams cheeses, soy lactosefree]
   percent_fat_levels: [0, 1, 2]
@@ -34,7 +39,20 @@ attributes:
   # Departments whose fine categories are left out of C_a (aisle department = modal item department).
   exclude_departments:
     instacart: [household, personal care, pets, missing, other]
-    complete_journey: []
+    complete_journey:
+      # Confirmed 2026-11-03 from inspect-cj: non-food departments (DRUG GM is mostly HBC/GM).
+      &cj_nonfood
+      - "DRUG GM"
+      - "COSMETICS"
+      - "FLORAL"
+      - "GARDEN CENTER"
+      - "RX"
+      - "TOYS"
+      - "VIDEO RENTAL"
+      - "HBC"
+      - "PROD-WHS SALES"
+      - "HOUSEWARES"
+      - "DELI/SNACK BAR"
 candidates:
   recent_items: 10
   neighbors_per_item: 20
@@ -68,7 +86,7 @@ scope:
   modes: [all, food]
   nonfood_departments:
     instacart: [household, personal care, pets, missing, other]
-    complete_journey: []
+    complete_journey: *cj_nonfood
 bootstrap:
   n: 1000
   seed: 42
