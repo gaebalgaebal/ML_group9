@@ -103,3 +103,26 @@ health_subgroup:
   beta_fixed: 0.5
   # Flag an attribute when fewer eval users have a non-empty N_u^a.
   min_eval_users_warning: 200
+# Hierarchical recommender (stage-1 key -> ingredient type x attributes -> item) and the H* analysis.
+hierarchical:
+  mapping:
+    # Read only; prepare-types copies it to path and records its sha256.
+    source: C:/dev/food_recipe_preprocessing_gu/data/processed/product_ingredient_mapping_v2.parquet
+    path: data/raw/mapping/product_ingredient_mapping_v2.parquet
+    expected_version: "2026-11-02.v2.1"
+    auto_statuses: [auto_exact, auto_fixed, auto_normalized, auto_partial]
+  stage1_key: {instacart: fine_category, complete_journey: commodity}
+  type_key: {instacart: ingredient_type, complete_journey: fine_category}
+  attributes: {instacart: [fat_reduced, sugar_reduced, gluten_free, low_sodium], complete_journey: [private_label]}
+  type_attr_min_with: 2
+  type_attr_min_without: 2
+  alphas: [1, 5, 20]
+  mus: [0.1, 1, 10]
+  knn_k: [0, 20, 50]
+  lambda_type: [2, 10]
+  # Fixed during the first grid step.
+  lambda_type_initial: 10
+  candidate_cells: 30
+  items_per_cell: 20
+  user_block: 1000
+  hstar: {taste_attributes: [chocolate, vanilla, strawberry], placebo_reps: 50, min_n_c_each_half: 10, seed: 42}
