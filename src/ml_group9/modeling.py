@@ -1,4 +1,7 @@
-"""Transferable logistic-ranker training and persistence."""
+"""Transferable logistic-ranker training and persistence.
+
+Library module: pipeline.train saves the models with joblib under artifacts/<profile>/models/.
+"""
 
 from __future__ import annotations
 

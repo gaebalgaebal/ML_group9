@@ -11,6 +11,9 @@ the user's attribute preference is associated with the attribute of the target i
 - a diagnostic of attribute combinations without items inside a type.
 
 All probabilities come from history; the target only defines rows and labels.
+Entry point: `python -m ml_group9.hier_followup --profile <profile> --dataset {instacart,complete_journey}
+[--reference-dir <dir>]`; it reads <profile>_hier_tuning.json and <profile>_re_tuning.json and writes
+reports/metrics/<profile>_hier_followup.json (Instacart) or <profile>_hier_followup_complete_journey.json.
 """
 
 from __future__ import annotations

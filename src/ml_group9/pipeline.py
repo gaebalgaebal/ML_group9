@@ -1,4 +1,9 @@
-"""End-to-end training, evaluation, reporting, and orchestration."""
+"""End-to-end training, evaluation, reporting, and orchestration.
+
+Entry points: `python -m ml_group9 train`, `evaluate --dataset ...` and `run`. Outputs: models and
+predictions under artifacts/<profile>/, reports/metrics/<profile>_training.json,
+<profile>_<dataset>.json and reports/figures/<profile>_<dataset>.png.
+"""
 
 from __future__ import annotations
 

@@ -12,6 +12,9 @@ Two keyword layers are counted separately and never merged:
 A category-level match gives every product of that category the same value, which differs from the
 product-level Instacart attributes. Transaction counts use the cleaned full period, target weeks
 included, and are for reference only.
+
+Input: the CJ ZIP under data/raw/. Output: reports/metrics/cj_keyword_audit.json and
+reports/tables/cj_keyword_matches.csv (no profile prefix). Entry point: `python -m ml_group9.cj_keyword_audit`.
 """
 
 from __future__ import annotations

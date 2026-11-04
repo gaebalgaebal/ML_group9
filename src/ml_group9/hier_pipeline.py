@@ -3,6 +3,8 @@
 Parameters are selected on fit splits only. Instacart uses its own fit split; CJ reports transfer
 (Instacart parameters and gamma) and refit (CJ fit-split parameters and CJ gamma). This design was
 fixed after the repeat-explore results (post-hoc).
+Entry points: `python -m ml_group9 tune-hier` and `eval-hier --dataset ...`, which write
+reports/metrics/<profile>_hier_tuning.json and <profile>_hier_<dataset>.json.
 """
 
 from __future__ import annotations

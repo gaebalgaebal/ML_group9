@@ -2,6 +2,8 @@
 
 Subgroup membership, pi, pi_bar, n_a and n_C all come from one split's history; targets are only used
 for metrics. This is a post-hoc subgroup analysis chosen after the repeat-explore results.
+Entry points: `python -m ml_group9 tune-hs` and `eval-hs`, which write
+reports/metrics/<profile>_hs_tuning.json and <profile>_hs_instacart.json.
 """
 
 from __future__ import annotations

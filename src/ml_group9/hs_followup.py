@@ -1,4 +1,9 @@
-"""Post-hoc multiplicity tests and direct displacement accounting for health subgroups."""
+"""Post-hoc multiplicity tests and direct displacement accounting for health subgroups.
+
+Input: the Instacart eval split and <profile>_hs_instacart.json under REFERENCE_ROOT. Output:
+reports/metrics/<profile>_hs_followup.json and <profile>_hs_followup_peruser_<label>.parquet.
+Entry point: `python -m ml_group9.hs_followup --profile {sample,medium}`; it runs only from WORKTREE on BRANCH.
+"""
 
 from __future__ import annotations
 

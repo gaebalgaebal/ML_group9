@@ -1,6 +1,7 @@
 """Repeat-explore recommender: recency-weighted repeats, item-CF exploration, preference log-ratios.
 
 All statistics are computed from one split's history; targets are only used for metrics.
+Library module used by re_pipeline, health_subgroup and the hierarchical recommender.
 """
 
 from __future__ import annotations

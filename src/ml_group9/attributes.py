@@ -1,4 +1,8 @@
-"""Product attribute extraction, applicable categories, and history-based preferences."""
+"""Product attribute extraction, applicable categories, and history-based preferences.
+
+Library module: Instacart attributes come from product names, the CJ attribute (private_label) from
+BRAND. Used by data.prepare and the downstream models; it reads and writes no files itself.
+"""
 
 from __future__ import annotations
 

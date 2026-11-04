@@ -1,4 +1,7 @@
-"""Item-CF, content profiles, candidate generation, and transferable features."""
+"""Item-CF, content profiles, candidate generation, and transferable features.
+
+Library module for the LR baseline (pipeline, re_pipeline); it reads and writes no files itself.
+"""
 
 from __future__ import annotations
 

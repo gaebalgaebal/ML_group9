@@ -1,4 +1,8 @@
-"""Raw archive discovery, normalization, and leakage-safe temporal splits."""
+"""Raw archive discovery, normalization, and leakage-safe temporal splits.
+
+Input: the ZIP archives under data/raw/. Output: data/processed/<profile>/<dataset>/*.parquet and
+reports/metrics/<profile>_attributes.json. Entry points: `python -m ml_group9 prepare` and `inspect-cj`.
+"""
 
 from __future__ import annotations
 

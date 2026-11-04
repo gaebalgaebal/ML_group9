@@ -9,6 +9,8 @@ On the Instacart eval split history, for every health and taste attribute:
 
 The bootstrap draws one user weight vector per resample shared by every attribute, placebo and check.
 Nothing here changes the pre-registered H* verdicts or the hstar_followup results.
+Entry point: `python -m ml_group9.hstar_robust --profile <profile> [--reference <hstar_followup JSON>]`,
+which writes reports/metrics/<profile>_hstar_robust.json.
 """
 
 from __future__ import annotations

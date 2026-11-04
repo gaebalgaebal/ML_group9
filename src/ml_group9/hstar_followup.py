@@ -10,6 +10,8 @@ Follows up on `hstar.analyze` on the Instacart eval split:
 - M1 on new items only (M1_new), which removes repeat purchases of the same item by construction.
 
 Everything is computed from history only; the target is never read.
+Entry point: `python -m ml_group9.hstar_followup --profile <profile> [--reference <hstar JSON>]`, which
+writes reports/metrics/<profile>_hstar_followup.json and reports/figures/<profile>_hstar_delta.png.
 """
 
 from __future__ import annotations

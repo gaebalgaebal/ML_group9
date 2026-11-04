@@ -1,4 +1,9 @@
-"""Command-line interface for the recommendation project."""
+"""Command-line interface for the recommendation project.
+
+Entry point: `python -m ml_group9 <command> --profile {sample,medium,full}` with the commands prepare,
+prepare-types, train, evaluate, run, inspect-cj, tune-re, eval-re, tune-hs, eval-hs, tune-hier,
+eval-hier and analyze-hstar. Each command writes its own files and prints its result as JSON.
+"""
 
 from __future__ import annotations
 

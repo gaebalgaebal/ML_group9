@@ -5,6 +5,8 @@ Instacart eval split. M1 (stability) and M3 (concentration) use history only; M2
 uses the target. Placebo attributes are random non-attribute items matched on aisle and popularity
 decile. The decision rule in `verdict` was fixed before the results were seen. This is a post-hoc
 design, chosen after the repeat-explore results; recommendation metrics play no part in it.
+Entry point: `python -m ml_group9 analyze-hstar`, which writes reports/metrics/<profile>_hstar.json
+and reports/figures/<profile>_hstar_m1.png, <profile>_hstar_m3_lorenz.png.
 """
 
 from __future__ import annotations

@@ -4,7 +4,7 @@ P(i | u) = theta_u(c) * tau_u(t | c) * A_u(x(i) | t) * phi_u(i | t, x(i)), ranke
 c is the stage-1 key (Instacart aisle, CJ commodity), t a type nested in c (the unit is the (c, t)
 pair), x(i) the item's attributes that apply to t (C_a^type), and the cell (t, x) the item's group in
 the last stage. All statistics come from one split's history inside the food scope F; targets are only
-used for metrics and candidate diagnostics.
+used for metrics and candidate diagnostics. Library module used by hier_pipeline and hier_followup.
 """
 
 from __future__ import annotations

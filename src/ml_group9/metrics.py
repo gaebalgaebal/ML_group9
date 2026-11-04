@@ -1,4 +1,7 @@
-"""Basket-level Top-K evaluation metrics."""
+"""Basket-level Top-K evaluation metrics.
+
+Library module: ranking and list metrics, candidate and subset recall, and paired bootstrap CIs.
+"""
 
 from __future__ import annotations
 

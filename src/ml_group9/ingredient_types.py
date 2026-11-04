@@ -3,6 +3,8 @@
 The mapping parquet is produced by the food_recipe_preprocessing_gu project, which is read only; a
 copy is kept under data/raw/mapping/. Types are nested in stage-1 keys, so the unit everywhere is
 the (stage-1 key, type) pair. C_a^type uses the item list only.
+Entry point: `python -m ml_group9 prepare-types`, which adds type columns to
+data/processed/<profile>/*/items.parquet and writes reports/metrics/<profile>_types.json.
 """
 
 from __future__ import annotations

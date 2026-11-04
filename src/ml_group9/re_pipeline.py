@@ -1,4 +1,8 @@
-"""Tuning and evaluation of the repeat-explore recommender for each recommendation scope."""
+"""Tuning and evaluation of the repeat-explore recommender for each recommendation scope.
+
+Entry points: `python -m ml_group9 tune-re` and `eval-re --dataset ...`, which write
+reports/metrics/<profile>_re_tuning.json and <profile>_re_<dataset>.json.
+"""
 
 from __future__ import annotations
 
