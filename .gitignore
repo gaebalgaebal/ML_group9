@@ -7,6 +7,15 @@
 /data/processed/
 /artifacts/
 
+# Generated reports and documents (submitted separately).
+reports/metrics/medium_*.json
+reports/metrics/full_*.json
+reports/figures/medium_*.png
+reports/figures/full_*.png
+reports/figures/report_*.png
+reports/tables/
+*.docx
+
 # Local/generated artifacts
 __pycache__/
 *.py[cod]
