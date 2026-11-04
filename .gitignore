@@ -15,6 +15,17 @@ reports/figures/full_*.png
 reports/figures/report_*.png
 reports/tables/
 *.docx
+# Every other generated result; tracked files such as the sample results stay tracked.
+reports/metrics/*
+reports/figures/*
+reports/**/*.parquet
+!reports/metrics/.gitkeep
+!reports/metrics/sample_training.json
+!reports/metrics/sample_instacart.json
+!reports/metrics/sample_complete_journey.json
+!reports/figures/.gitkeep
+!reports/figures/sample_instacart.png
+!reports/figures/sample_complete_journey.png
 
 # Local/generated artifacts
 __pycache__/
