@@ -90,3 +90,16 @@ scope:
 bootstrap:
   n: 1000
   seed: 42
+# Post-hoc subgroup analysis of the preference term among health-attribute buyers (Instacart only).
+health_subgroup:
+  attributes: [fat_reduced, sugar_reduced, gluten_free, low_sodium]
+  scopes: [food]
+  # G_a: users with at least this many history purchases of attribute-a items inside C_a.
+  min_attribute_purchases: 1
+  # S_a (sensitivity): G_a with n_C >= min_n_c and pi - pi_bar >= min_gap.
+  strict: {min_n_c: 10, min_gap: 0.2}
+  betas: [0, 0.1, 0.25, 0.5, 1, 2]
+  # Reported against beta = 0 regardless of the selected beta.
+  beta_fixed: 0.5
+  # Flag an attribute when fewer eval users have a non-empty N_u^a.
+  min_eval_users_warning: 200

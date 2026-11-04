@@ -131,16 +131,25 @@ class PreferenceModel:
     n_c: np.ndarray  # users x attributes
     item_flag: np.ndarray  # items x attributes, attr_a(i)
     item_applicable: np.ndarray  # items x attributes, fine_category(i) in C_a
+    n_a: np.ndarray | None = None  # users x attributes, attribute purchases inside C_a
 
-    def log_ratio(self, user_index: np.ndarray, item_index: np.ndarray) -> np.ndarray:
-        """l_u(i) = sum over a in A_i of the attribute log-likelihood ratio; 0 when A_i is empty."""
+    def log_ratio(
+        self, user_index: np.ndarray, item_index: np.ndarray, user_mask: np.ndarray | None = None
+    ) -> np.ndarray:
+        """l_u(i) = sum over a in A_i of the attribute log-likelihood ratio; 0 when A_i is empty.
+
+        user_mask (users x attributes, bool) keeps only the terms of attributes enabled for the user.
+        """
         if not self.attributes:
             return np.zeros(len(user_index))
         pi = self.pi[user_index]
         positive = np.log(pi / self.prior)
         negative = np.log((1.0 - pi) / (1.0 - self.prior))
         terms = np.where(self.item_flag[item_index] == 1, positive, negative)
-        return (terms * self.item_applicable[item_index]).sum(axis=1)
+        terms = terms * self.item_applicable[item_index]
+        if user_mask is not None:
+            terms = terms * user_mask[user_index]
+        return terms.sum(axis=1)
 
     def preferring_users(self, min_n_c: int) -> np.ndarray:
         """users x attributes mask of pi(u, a) > pi_bar(a) and n_C(u, a) >= min_n_c."""
@@ -163,6 +172,7 @@ def build_preferences(
     prior = np.clip(np.array([rates[name] for name in names], dtype=np.float64), *clip)
     pi = np.tile(prior, (len(interactions.users), 1))
     n_c = np.zeros_like(pi)
+    n_a = np.zeros_like(pi)
     if len(counts):
         users = interactions.users.get_indexer(counts["user_id"].astype(str))
         columns = pd.Index(names).get_indexer(counts["attribute"])
@@ -172,6 +182,7 @@ def build_preferences(
             for user, name in zip(counts["user_id"][keep], counts["attribute"][keep])
         ]
         n_c[users[keep], columns[keep]] = counts["n_c"].to_numpy()[keep]
+        n_a[users[keep], columns[keep]] = counts["n_a"].to_numpy()[keep]
     pi = np.clip(pi, *clip)
     table = items.drop_duplicates("item_id").assign(item_id=lambda frame: frame["item_id"].astype(str))
     table = table.set_index("item_id").reindex(interactions.items)
@@ -181,7 +192,7 @@ def build_preferences(
     for column, name in enumerate(names):
         item_flag[:, column] = table[attribute_column(name)].fillna(0).to_numpy(np.int8)
         item_applicable[:, column] = fine.isin(categories[name]).to_numpy()
-    return PreferenceModel(names, prior, pi, n_c, item_flag, item_applicable)
+    return PreferenceModel(names, prior, pi, n_c, item_flag, item_applicable, n_a)
 
 
 def seen_item_sets(seen: sparse.csr_matrix) -> list[set[int]]:
