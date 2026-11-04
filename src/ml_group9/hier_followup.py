@@ -41,6 +41,8 @@ DOMINANT_SHARE = 0.5
 MIN_POSITIVE_ROWS = 100
 MIN_TYPES = 5
 DIAGNOSTIC_USERS = 2000
+# Type labels of items without a mapped ingredient type fall back to the aisle.
+FALLBACK_PREFIX = "aisle:"
 REPRODUCTION_TOLERANCE = 1e-9
 
 
@@ -164,6 +166,10 @@ def _with_ci(value: float | None, draws: list[float]) -> dict[str, object]:
         low, high = level_ci(draws, level)
         result[f"ci{level * 100:g}_low"], result[f"ci{level * 100:g}_high"] = low, high
     return result
+
+
+def _minus(a: float | None, b: float | None) -> float | None:
+    return a - b if a is not None and b is not None else None
 
 
 def _subset_statistic(mask: np.ndarray, frame: pd.DataFrame, score: str):
@@ -296,8 +302,32 @@ def scored_rows(state: HierState, params: Params) -> pd.DataFrame:
     return pd.concat([frame, pd.concat(extra, ignore_index=True)], axis=1) if extra else frame
 
 
+def is_fallback(type_key: str) -> bool:
+    """A type key "aisle|type" whose type is the aisle fallback ("aisle:<aisle>") rather than a mapped type."""
+    return str(type_key).split("|", 1)[-1].startswith(FALLBACK_PREFIX)
+
+
+def fallback_pair_share(table: pd.DataFrame, fallback: np.ndarray) -> float | None:
+    """Share of the within-type positive-negative pairs that fall in fallback types."""
+    total = table["pairs"].sum()
+    return float(table["pairs"][fallback[table["type"].to_numpy()]].sum() / total) if total else None
+
+
+def difference_statistic(first: WithinAUC, second: WithinAUC):
+    """Bootstrap statistic: AUC_within(first) - AUC_within(second) under the same row weights."""
+
+    def statistic(weights: np.ndarray) -> float | None:
+        a, b = first.value(weights), second.value(weights)
+        return a - b if a is not None and b is not None else None
+
+    return statistic
+
+
 def modal_key(hierarchy: Hierarchy, item_keys: np.ndarray, t: int) -> str | None:
-    """Most common mapping key among the type's items (readable label of a hashed type id)."""
+    """Most common mapping key among the type's items (readable label of a hashed type id); None for an
+    aisle fallback type."""
+    if is_fallback(hierarchy.type_labels[t]):
+        return None
     members = hierarchy.type_members[hierarchy.type_ptr[t] : hierarchy.type_ptr[t + 1]]
     keys = pd.Series(item_keys[members])
     keys = keys[keys != ""]
@@ -305,14 +335,31 @@ def modal_key(hierarchy: Hierarchy, item_keys: np.ndarray, t: int) -> str | None
 
 
 def attribute_analysis(
-    rows: pd.DataFrame, hierarchy: Hierarchy, product_names: np.ndarray, item_keys: np.ndarray, resamples: int, seed: int
+    rows: pd.DataFrame,
+    hierarchy: Hierarchy,
+    product_names: np.ndarray,
+    item_keys: np.ndarray,
+    resamples: int,
+    seed: int,
+    sensitivity: bool = False,
 ) -> dict[str, object]:
+    """sensitivity adds the mapped-type-only AUC and the paired difference AUC(a) - AUC(b). The extra
+    statistics share the bootstrap draws, so every other value is unchanged."""
     users = rows["user"].to_numpy()
     statistics: dict[str, object] = {}
     result: dict[str, object] = {"rows": int(len(rows)), "users": int(rows["user"].nunique())}
     all_rows = np.ones(len(rows), dtype=bool)
     for key, column in SCORES.items():
         statistics[key] = _subset_statistic(all_rows & rows[column].notna().to_numpy(), rows, column)
+    fallback = np.array([is_fallback(label) for label in hierarchy.type_labels], dtype=bool)
+    mapped = ~fallback[rows["type"].to_numpy()]
+    if sensitivity:
+        for key in ["a", "c"]:
+            statistics[f"mapped_{key}"] = _subset_statistic(mapped & rows[SCORES[key]].notna().to_numpy(), rows, SCORES[key])
+        estimators = {
+            key: WithinAUC(rows["type"].to_numpy(), rows[SCORES[key]].to_numpy(), rows["label"].to_numpy()) for key in ["a", "b"]
+        }
+        statistics["a_minus_b"] = difference_statistic(estimators["a"], estimators["b"])
     split = rows["n_type"].to_numpy() > 0
     for label, mask in [("n_type_zero", ~split), ("n_type_positive", split)]:
         statistics[label] = _subset_statistic(mask, rows, SCORES["a"])
@@ -337,6 +384,15 @@ def attribute_analysis(
         summary = within_summary(rows, column)
         scores[key] = {"score": column, **summary, **_with_ci(summary["auc_within"], draws[key])}
     result["within_type_auc"] = scores
+    if sensitivity:
+        mapped_rows = rows[mapped]
+        result["within_type_auc_mapped"] = {
+            key: {"score": SCORES[key], **summary, **_with_ci(summary["auc_within"], draws[f"mapped_{key}"])}
+            for key in ["a", "c"]
+            for summary in [within_summary(mapped_rows, SCORES[key])]
+        }
+        result["fallback_pair_share"] = fallback_pair_share(table, fallback)
+        result["diff_a_minus_b"] = _with_ci(_minus(scores["a"]["auc_within"], scores["b"]["auc_within"]), draws["a_minus_b"])
 
     top = []
     for _, row in table.head(TOP_TYPES).iterrows():
@@ -492,7 +548,9 @@ def analyze(
     for name in hierarchy.attributes:
         rows = frame[frame["attribute"].eq(name)]
         analyses[name] = {
-            part: attribute_analysis(subset.reset_index(drop=True), hierarchy, product_names, item_keys, resamples, seed)
+            part: attribute_analysis(
+                subset.reset_index(drop=True), hierarchy, product_names, item_keys, resamples, seed, sensitivity=part == "new"
+            )
             for part, subset in [("new", rows[rows["new"]]), ("repeat", rows[~rows["new"]])]
         }
     sample = np.random.default_rng(seed).choice(state.target_rows, size=min(DIAGNOSTIC_USERS, len(state.target_rows)), replace=False)

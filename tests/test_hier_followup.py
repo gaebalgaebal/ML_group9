@@ -7,8 +7,11 @@ import pytest
 from ml_group9.hier_followup import (
     WithinAUC,
     bootstrap_draws,
+    difference_statistic,
     dominant_type,
+    fallback_pair_share,
     fit_offset_logit,
+    is_fallback,
     present_mass,
     scored_rows,
     type_patterns,
@@ -99,6 +102,30 @@ def test_missing_mass_by_hand():
     patterns = type_patterns(hierarchy)
     milk = int(np.flatnonzero(hierarchy.type_labels == "milk|i_milk")[0])
     assert patterns[milk][1] == {0, 1} and len(patterns) == 1
+
+
+def test_fallback_types_are_excluded_by_hand():
+    types, scores, labels = two_types()
+    labels_by_type = np.array(["milk|i_abc", "soup|aisle:soup", "milk|i_def"], dtype=object)
+    fallback = np.array([is_fallback(label) for label in labels_by_type])
+    assert fallback.tolist() == [False, True, False]
+    table = WithinAUC(types, scores, labels).per_type()
+    assert fallback_pair_share(table, fallback) == pytest.approx(2 / 6)
+    mapped = ~fallback[types]
+    # Only type 0 is mapped and has both classes.
+    assert WithinAUC(types[mapped], scores[mapped], labels[mapped]).value() == pytest.approx(0.875)
+
+
+def test_paired_difference_is_reproducible_by_seed():
+    types, scores, labels = two_types()
+    first, second = WithinAUC(types, scores, labels), WithinAUC(types, scores[::-1].copy(), labels)
+    users = np.array([0, 0, 1, 2, 3, 3, 4, 5, 5])
+    statistic = {"diff": difference_statistic(first, second), "a": first.value, "b": second.value}
+    a, b = bootstrap_draws(users, statistic, 30, 42), bootstrap_draws(users, statistic, 30, 42)
+    assert a == b and a != bootstrap_draws(users, statistic, 30, 7)
+    # Same weights per resample: each draw of the difference equals the difference of the draws.
+    assert len(a["diff"]) == len(a["a"]) == len(a["b"])
+    assert np.allclose(a["diff"], np.array(a["a"]) - np.array(a["b"]))
 
 
 def test_bootstrap_is_reproducible_by_seed():
