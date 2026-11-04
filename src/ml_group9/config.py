@@ -1,4 +1,8 @@
-"""Configuration and project-path helpers."""
+"""Configuration and project-path helpers.
+
+load_config(profile) reads configs/<profile>.yaml and adds raw_dir, processed_dir, artifact_dir and
+report_dir under the project root.
+"""
 
 from __future__ import annotations
 

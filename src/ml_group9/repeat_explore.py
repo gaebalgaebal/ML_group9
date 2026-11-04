@@ -1,0 +1,436 @@
+"""Repeat-explore recommender: recency-weighted repeats, item-CF exploration, preference log-ratios.
+
+All statistics are computed from one split's history; targets are only used for metrics.
+Library module used by re_pipeline, health_subgroup and the hierarchical recommender.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+import pandas as pd
+from scipy import sparse
+
+from .attributes import (
+    attribute_column,
+    item_departments,
+    population_rates,
+    preference_counts,
+    smoothed_preferences,
+)
+from .recommender import item_cosine_neighbors
+
+
+PROBABILITY_CLIP = 1e-6
+
+
+@dataclass
+class Interactions:
+    """History rows deduplicated by (user, basket, item) and mapped to matrix indices."""
+
+    users: pd.Index
+    items: pd.Index
+    user_index: np.ndarray
+    item_index: np.ndarray
+    basket_seq: np.ndarray
+    exponent: np.ndarray  # t_u - t_b; the user's latest basket has exponent 0
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        return len(self.users), len(self.items)
+
+
+def build_interactions(history: pd.DataFrame, items: pd.DataFrame) -> Interactions:
+    """Index history purchases of catalogue items; users are those with at least one such purchase."""
+    item_ids = pd.Index(items["item_id"].astype(str).drop_duplicates().to_numpy())
+    implicit = history[["user_id", "basket_id", "basket_seq", "item_id"]].copy()
+    for column in ["user_id", "basket_id", "item_id"]:
+        implicit[column] = implicit[column].astype(str)
+    implicit = implicit.drop_duplicates(["user_id", "basket_id", "item_id"])
+    implicit = implicit[implicit["item_id"].isin(item_ids)]
+    user_ids = pd.Index(np.sort(implicit["user_id"].unique()))
+    latest = implicit.groupby("user_id")["basket_seq"].transform("max")
+    return Interactions(
+        users=user_ids,
+        items=item_ids,
+        user_index=user_ids.get_indexer(implicit["user_id"]),
+        item_index=item_ids.get_indexer(implicit["item_id"]),
+        basket_seq=implicit["basket_seq"].to_numpy(np.int64),
+        exponent=(latest - implicit["basket_seq"]).to_numpy(np.int64),
+    )
+
+
+def item_fine_categories(items: pd.DataFrame, interactions: Interactions) -> np.ndarray:
+    """fine_category per interaction item ("UNKNOWN" when missing)."""
+    table = items.drop_duplicates("item_id").assign(item_id=lambda frame: frame["item_id"].astype(str))
+    fine = table.set_index("item_id")["fine_category"].reindex(interactions.items)
+    return fine.astype("string").fillna("UNKNOWN").astype(str).to_numpy(dtype=object)
+
+
+def item_popularity(interactions: Interactions) -> np.ndarray:
+    """Number of history baskets containing each item."""
+    return np.bincount(interactions.item_index, minlength=interactions.shape[1]).astype(np.float64)
+
+
+def seen_matrix(interactions: Interactions) -> sparse.csr_matrix:
+    """Binary user x item matrix of I_u."""
+    matrix = sparse.csr_matrix(
+        (np.ones(len(interactions.user_index)), (interactions.user_index, interactions.item_index)),
+        shape=interactions.shape,
+    )
+    matrix.data[:] = 1.0
+    return matrix
+
+
+def repeat_scores(interactions: Interactions, gamma: float) -> sparse.csr_matrix:
+    """s_rep(u, i) = sum over history baskets b of gamma^(t_u - t_b) * 1[i in b]."""
+    weights = np.power(float(gamma), interactions.exponent.astype(np.float64))
+    # Duplicate (user, item) coordinates are summed when converting to CSR.
+    return sparse.csr_matrix((weights, (interactions.user_index, interactions.item_index)), shape=interactions.shape)
+
+
+def similarity_matrix(
+    history: pd.DataFrame, item_ids: pd.Index, top_k: int, block_size: int
+) -> sparse.csr_matrix:
+    """Item x item matrix with Sim[i, j] = cosine(i, j) for j among i's top-k neighbours."""
+    neighbors = item_cosine_neighbors(history, top_k=top_k, block_size=block_size)
+    rows: list[int] = []
+    cols: list[int] = []
+    values: list[float] = []
+    sources = item_ids.get_indexer(list(neighbors))
+    for source, pairs in zip(sources, neighbors.values()):
+        if source < 0 or not pairs:
+            continue
+        targets = item_ids.get_indexer([item for item, _ in pairs])
+        for target, (_, score) in zip(targets, pairs):
+            if target >= 0:
+                rows.append(int(source))
+                cols.append(int(target))
+                values.append(score)
+    return sparse.csr_matrix((values, (rows, cols)), shape=(len(item_ids), len(item_ids)))
+
+
+def cf_scores(
+    repeat: sparse.csr_matrix, similarity: sparse.csr_matrix, seen: sparse.csr_matrix, in_scope: np.ndarray
+) -> sparse.csr_matrix:
+    """s_cf = S_rep @ Sim^T, zeroed on I_u and outside the scope F."""
+    scores = (repeat @ similarity.T).tocsr()
+    scores = scores - scores.multiply(seen)
+    scores = (scores @ sparse.diags(in_scope.astype(np.float64))).tocsr()
+    scores.eliminate_zeros()
+    return scores
+
+
+@dataclass
+class PreferenceModel:
+    """Smoothed per-user attribute preferences pi(u, a) aligned to interaction indices."""
+
+    attributes: list[str]
+    prior: np.ndarray  # pi_bar(a), clipped
+    pi: np.ndarray  # users x attributes, clipped; users without C_a purchases get pi_bar
+    n_c: np.ndarray  # users x attributes
+    item_flag: np.ndarray  # items x attributes, attr_a(i)
+    item_applicable: np.ndarray  # items x attributes, fine_category(i) in C_a
+    n_a: np.ndarray | None = None  # users x attributes, attribute purchases inside C_a
+
+    def log_ratio(
+        self, user_index: np.ndarray, item_index: np.ndarray, user_mask: np.ndarray | None = None
+    ) -> np.ndarray:
+        """l_u(i) = sum over a in A_i of the attribute log-likelihood ratio; 0 when A_i is empty.
+
+        user_mask (users x attributes, bool) keeps only the terms of attributes enabled for the user.
+        """
+        if not self.attributes:
+            return np.zeros(len(user_index))
+        pi = self.pi[user_index]
+        positive = np.log(pi / self.prior)
+        negative = np.log((1.0 - pi) / (1.0 - self.prior))
+        terms = np.where(self.item_flag[item_index] == 1, positive, negative)
+        terms = terms * self.item_applicable[item_index]
+        if user_mask is not None:
+            terms = terms * user_mask[user_index]
+        return terms.sum(axis=1)
+
+    def preferring_users(self, min_n_c: int) -> np.ndarray:
+        """users x attributes mask of pi(u, a) > pi_bar(a) and n_C(u, a) >= min_n_c."""
+        return (self.pi > self.prior) & (self.n_c >= min_n_c)
+
+
+def build_preferences(
+    history: pd.DataFrame,
+    items: pd.DataFrame,
+    interactions: Interactions,
+    categories: dict[str, set[str]],
+    smoothing: float,
+) -> PreferenceModel:
+    """Estimate pi(u, a) and pi_bar(a) from history purchases inside C_a."""
+    names = list(categories)
+    counts = preference_counts(history, items, categories)
+    rates = population_rates(counts, names)
+    preferences = smoothed_preferences(counts, rates, smoothing)
+    clip = (PROBABILITY_CLIP, 1.0 - PROBABILITY_CLIP)
+    prior = np.clip(np.array([rates[name] for name in names], dtype=np.float64), *clip)
+    pi = np.tile(prior, (len(interactions.users), 1))
+    n_c = np.zeros_like(pi)
+    n_a = np.zeros_like(pi)
+    if len(counts):
+        users = interactions.users.get_indexer(counts["user_id"].astype(str))
+        columns = pd.Index(names).get_indexer(counts["attribute"])
+        keep = users >= 0
+        pi[users[keep], columns[keep]] = [
+            preferences[(str(user), str(name))]
+            for user, name in zip(counts["user_id"][keep], counts["attribute"][keep])
+        ]
+        n_c[users[keep], columns[keep]] = counts["n_c"].to_numpy()[keep]
+        n_a[users[keep], columns[keep]] = counts["n_a"].to_numpy()[keep]
+    pi = np.clip(pi, *clip)
+    table = items.drop_duplicates("item_id").assign(item_id=lambda frame: frame["item_id"].astype(str))
+    table = table.set_index("item_id").reindex(interactions.items)
+    fine = table["fine_category"].astype("string").fillna("UNKNOWN")
+    item_flag = np.zeros((len(interactions.items), len(names)), dtype=np.int8)
+    item_applicable = np.zeros_like(item_flag, dtype=bool)
+    for column, name in enumerate(names):
+        item_flag[:, column] = table[attribute_column(name)].fillna(0).to_numpy(np.int8)
+        item_applicable[:, column] = fine.isin(categories[name]).to_numpy()
+    return PreferenceModel(names, prior, pi, n_c, item_flag, item_applicable, n_a)
+
+
+def seen_item_sets(seen: sparse.csr_matrix) -> list[set[int]]:
+    """I_u as Python sets of item indices, one per user row."""
+    return [set(seen.indices[seen.indptr[row] : seen.indptr[row + 1]].tolist()) for row in range(seen.shape[0])]
+
+
+def popularity_order(popularity: np.ndarray) -> np.ndarray:
+    """Item indices by descending history popularity (ties by index)."""
+    return np.lexsort((np.arange(len(popularity)), -popularity))
+
+
+def preference_candidates(
+    seen_sets: list[set[int]],
+    in_scope: np.ndarray,
+    preferences: PreferenceModel,
+    item_fine: np.ndarray,
+    popularity: np.ndarray,
+    settings: dict[str, object],
+) -> pd.DataFrame:
+    """Candidates (b): for each attribute with pi > pi_bar and n_C >= pref_min_n_c, the most popular
+    unseen in-scope attribute items from the user's history aisles that belong to C_a.
+
+    Independent of gamma and beta, so it can be computed once per split and scope.
+    """
+    per_attr = int(settings["pref_items_per_attr"])
+    preferring = preferences.preferring_users(int(settings["pref_min_n_c"]))
+    order = popularity_order(popularity)
+    rows: list[tuple[int, int]] = []
+    user_fine_sets: dict[int, set[str]] = {}
+    for column, _ in enumerate(preferences.attributes):
+        eligible = order[
+            (preferences.item_flag[order, column] == 1) & preferences.item_applicable[order, column] & in_scope[order]
+        ]
+        by_fine: dict[str, list[int]] = {}
+        for item in eligible:
+            by_fine.setdefault(item_fine[item], []).append(int(item))
+        for user in np.flatnonzero(preferring[:, column]):
+            if user not in user_fine_sets:
+                user_fine_sets[user] = {item_fine[item] for item in seen_sets[user]}
+            seen_items = seen_sets[user]
+            chosen: list[int] = []
+            # Each aisle contributes at most per_attr unseen items, which is enough for an exact top per_attr.
+            for fine in user_fine_sets[user].intersection(by_fine):
+                taken = 0
+                for item in by_fine[fine]:
+                    if item in seen_items:
+                        continue
+                    chosen.append(item)
+                    taken += 1
+                    if taken == per_attr:
+                        break
+            chosen.sort(key=lambda item: (-popularity[item], item))
+            rows.extend((int(user), item) for item in chosen[:per_attr])
+    return pd.DataFrame(rows, columns=["user", "item"]).drop_duplicates().reset_index(drop=True)
+
+
+def explore_candidates(
+    cf: sparse.csr_matrix,
+    seen: sparse.csr_matrix,
+    in_scope: np.ndarray,
+    preferences: PreferenceModel,
+    item_fine: np.ndarray,
+    popularity: np.ndarray,
+    settings: dict[str, object],
+    top_k: int,
+    preferred: pd.DataFrame | None = None,
+    seen_sets: list[set[int]] | None = None,
+) -> pd.DataFrame:
+    """E_u: CF neighbours (a), preferred-attribute items (b), popular fill-ins (c); all in F and not in I_u.
+
+    (b) and (c) are always kept; (a) is truncated by s_cf to respect max_candidates, so the
+    candidate set does not depend on beta and beta = 0 is a like-for-like CF-only comparison.
+    """
+    n_users = cf.shape[0]
+    if seen_sets is None:
+        seen_sets = seen_item_sets(seen)
+    if preferred is None:
+        preferred = preference_candidates(seen_sets, in_scope, preferences, item_fine, popularity, settings)
+    coo = cf.tocoo()
+    from_cf = pd.DataFrame({"user": coo.row, "item": coo.col, "s_cf": coo.data})
+    candidates = from_cf.merge(preferred.assign(from_pref=True), on=["user", "item"], how="outer")
+    candidates["s_cf"] = candidates["s_cf"].fillna(0.0)
+    candidates["from_pref"] = candidates["from_pref"].eq(True)
+    candidates["from_popular"] = False
+
+    counts = np.bincount(candidates["user"].to_numpy(np.int64), minlength=n_users)
+    short_users = np.flatnonzero(counts < top_k)
+    if len(short_users):
+        popular = [int(item) for item in popularity_order(popularity) if in_scope[item]]
+        existing = candidates[candidates["user"].isin(short_users)].groupby("user")["item"].apply(set).to_dict()
+        fill_rows: list[tuple[int, int]] = []
+        for user in short_users:
+            have = existing.get(user, set())
+            need = top_k - len(have)
+            for item in popular:
+                if need == 0:
+                    break
+                if item in have or item in seen_sets[user]:
+                    continue
+                fill_rows.append((int(user), item))
+                need -= 1
+        fill = pd.DataFrame(fill_rows, columns=["user", "item"]).assign(s_cf=0.0, from_pref=False, from_popular=True)
+        candidates = pd.concat([candidates, fill], ignore_index=True)
+
+    limit = int(settings["max_candidates"])
+    candidates["keep_always"] = candidates["from_pref"] | candidates["from_popular"]
+    candidates = candidates.sort_values(
+        ["user", "keep_always", "s_cf", "item"], ascending=[True, False, False, True], kind="mergesort"
+    )
+    candidates = candidates[candidates.groupby("user").cumcount() < limit]
+    candidates["ell"] = preferences.log_ratio(
+        candidates["user"].to_numpy(np.int64), candidates["item"].to_numpy(np.int64)
+    )
+    return candidates.drop(columns="keep_always").reset_index(drop=True)
+
+
+def explore_scores(candidates: pd.DataFrame, beta: float, epsilon: float) -> np.ndarray:
+    """s_exp(u, i) = log(s_cf + epsilon) + beta * l_u(i)."""
+    return np.log(candidates["s_cf"].to_numpy() + epsilon) + beta * candidates["ell"].to_numpy()
+
+
+def scope_mask(items: pd.DataFrame, item_ids: pd.Index, mode: str, nonfood_departments: list[str]) -> np.ndarray:
+    """F as a boolean mask over item_ids: every item for "all", non-food departments removed for "food"."""
+    if mode == "all":
+        return np.ones(len(item_ids), dtype=bool)
+    if mode == "food":
+        departments = item_departments(items).reindex(item_ids)
+        return ~departments.isin(nonfood_departments).to_numpy()
+    raise ValueError(f"Unknown scope mode: {mode!r}")
+
+
+def scope_targets(
+    target_sets: dict[str, set[str]], allowed: set[str] | None
+) -> tuple[dict[str, set[str]], int]:
+    """Restrict targets to F; users whose restricted target is empty are dropped and counted."""
+    if allowed is None:
+        return {user: set(truth) for user, truth in target_sets.items() if truth}, 0
+    restricted = {user: truth & allowed for user, truth in target_sets.items()}
+    kept = {user: truth for user, truth in restricted.items() if truth}
+    return kept, len(restricted) - len(kept)
+
+
+def repeat_counts(interactions: Interactions, in_scope: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """n(u): in-scope (basket, item) pairs from the user's second basket on; n_rep(u): those already bought."""
+    frame = pd.DataFrame(
+        {"user": interactions.user_index, "item": interactions.item_index, "seq": interactions.basket_seq}
+    )
+    first_basket = frame.groupby("user")["seq"].transform("min").to_numpy()
+    first_purchase = frame.groupby(["user", "item"])["seq"].transform("min").to_numpy()
+    seq = frame["seq"].to_numpy()
+    later = (seq > first_basket) & in_scope[frame["item"].to_numpy()]
+    repeated = later & (seq > first_purchase)
+    n_users = interactions.shape[0]
+    users = frame["user"].to_numpy()
+    return (
+        np.bincount(users[later], minlength=n_users).astype(np.float64),
+        np.bincount(users[repeated], minlength=n_users).astype(np.float64),
+    )
+
+
+def repeat_ratio(n: np.ndarray, n_rep: np.ndarray, kappa: float) -> tuple[np.ndarray, float]:
+    """rho_u = (n_rep(u) + kappa * rho_bar) / (n(u) + kappa) with rho_bar pooled over the same history."""
+    rho_bar = float(n_rep.sum() / n.sum()) if n.sum() else 0.0
+    denominator = n + kappa
+    rho = np.divide(n_rep + kappa * rho_bar, denominator, out=np.full_like(n, rho_bar), where=denominator > 0)
+    return rho, rho_bar
+
+
+def repeat_ranking(repeat: sparse.csr_matrix, in_scope: np.ndarray) -> pd.DataFrame:
+    """I_u intersected with F, ranked by s_rep (ties by item index)."""
+    coo = repeat.tocoo()
+    frame = pd.DataFrame({"user": coo.row, "item": coo.col, "score": coo.data})
+    frame = frame[in_scope[frame["item"].to_numpy()]]
+    frame = frame.sort_values(["user", "score", "item"], ascending=[True, False, True], kind="mergesort")
+    frame["rank"] = frame.groupby("user").cumcount()
+    return frame.reset_index(drop=True)
+
+
+def explore_ranking(candidates: pd.DataFrame, scores: np.ndarray) -> pd.DataFrame:
+    """E_u ranked by s_exp (ties by item index)."""
+    frame = candidates.assign(score=scores)
+    frame = frame.sort_values(["user", "score", "item"], ascending=[True, False, True], kind="mergesort")
+    frame["rank"] = frame.groupby("user").cumcount()
+    return frame.reset_index(drop=True)
+
+
+def slot_counts(rho: np.ndarray, top_k: int, available: np.ndarray) -> np.ndarray:
+    """r_u = round(K * rho_u), clipped to [0, K] and to |I_u intersected with F|."""
+    slots = np.clip(np.floor(top_k * rho + 0.5), 0, top_k).astype(np.int64)
+    return np.minimum(slots, available.astype(np.int64))
+
+
+def allocate_slots(
+    repeat_ranked: pd.DataFrame,
+    explore_ranked: pd.DataFrame,
+    repeat_slots: np.ndarray,
+    top_k: int,
+) -> pd.DataFrame:
+    """Top r_u repeats followed by top K - r_u explores; a short side is filled from the other.
+
+    Explore rows already in the repeat ranking are dropped first, so lists have no duplicates.
+    """
+    n_users = len(repeat_slots)
+    explore = explore_ranked.merge(
+        repeat_ranked[["user", "item"]], on=["user", "item"], how="left", indicator=True
+    )
+    explore = explore[explore["_merge"].eq("left_only")].drop(columns="_merge")
+    explore = explore.sort_values(["user", "rank"], kind="mergesort")
+    explore["rank"] = explore.groupby("user").cumcount()
+    repeat_available = np.bincount(repeat_ranked["user"].to_numpy(np.int64), minlength=n_users)
+    explore_available = np.bincount(explore["user"].to_numpy(np.int64), minlength=n_users)
+    repeat_take = np.minimum(repeat_slots, repeat_available)
+    explore_take = np.minimum(top_k - repeat_take, explore_available)
+    repeat_take = np.minimum(repeat_available, top_k - explore_take)
+    repeat_users = repeat_ranked["user"].to_numpy(np.int64)
+    explore_users = explore["user"].to_numpy(np.int64)
+    chosen_repeat = repeat_ranked[repeat_ranked["rank"].to_numpy() < repeat_take[repeat_users]]
+    chosen_explore = explore[explore["rank"].to_numpy() < explore_take[explore_users]]
+    result = pd.concat(
+        [
+            chosen_repeat.assign(slot="repeat", position=chosen_repeat["rank"]),
+            chosen_explore.assign(
+                slot="explore",
+                position=chosen_explore["rank"] + repeat_take[chosen_explore["user"].to_numpy(np.int64)],
+            ),
+        ],
+        ignore_index=True,
+    )
+    return result.sort_values(["user", "position"], kind="mergesort").reset_index(drop=True)
+
+
+def to_lists(
+    ranked: pd.DataFrame, users: pd.Index, items: pd.Index, order: str = "position"
+) -> dict[str, list[str]]:
+    """Per-user item-id lists sorted by the given column."""
+    frame = ranked.sort_values(["user", order], kind="mergesort")
+    item_ids = items.to_numpy()[frame["item"].to_numpy(np.int64)]
+    user_ids = users.to_numpy()[frame["user"].to_numpy(np.int64)]
+    return {str(user): list(group) for user, group in pd.Series(item_ids).groupby(user_ids, sort=False)}

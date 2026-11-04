@@ -1,0 +1,128 @@
+seed: 42
+sample_users:
+  instacart: 20000
+  complete_journey: null
+complete_journey_history_week: 90
+complete_journey:
+  # Confirmed 2026-11-03 from inspect-cj: fuel, coupon, gift-card and undescribed transactions.
+  exclude_departments:
+    - "KIOSK-GAS"
+    - "MISC SALES TRAN"
+    - "MISC. TRANS."
+    - "COUP/STR & MFG"
+    - "AUTOMOTIVE"
+    - "GM MERCH EXP"
+    - "CNTRL/STORE SUP"
+    - "MEAT-WHSE"
+    - "PHARMACY SUPPLY"
+    - "ELECT &PLUMBING"
+    - "CHARITABLE CONT"
+  min_target_items: 3
+  # Apply the target and both-split requirements before drawing the household sample.
+  filter_before_sampling: true
+  # Fit split for CJ refit: history weeks 1..80, target = first qualifying basket in weeks 81..90.
+  fit_history_week: 80
+attributes:
+  instacart: [fat_reduced, sugar_reduced, gluten_free, low_sodium, organic]
+  # organic dropped: only one applicable CJ category.
+  complete_journey: [private_label]
+  # Instacart aisles where "0%", "1%" or "2%" in a product name means milk fat.
+  percent_fat_aisles: [milk, yogurt, other creams cheeses, soy lactosefree]
+  percent_fat_levels: [0, 1, 2]
+  private_label_brands: [Private]
+  min_with: 5
+  min_without: 5
+  smoothing: 10
+  # "Distinct preference" diagnostic subgroup: n_C >= distinct_min_n and |pi - pi_bar| >= distinct_min_gap.
+  distinct_min_n: 10
+  distinct_min_gap: 0.2
+  # Departments whose fine categories are left out of C_a (aisle department = modal item department).
+  exclude_departments:
+    instacart: [household, personal care, pets, missing, other]
+    complete_journey:
+      # Confirmed 2026-11-03 from inspect-cj: non-food departments (DRUG GM is mostly HBC/GM).
+      &cj_nonfood
+      - "DRUG GM"
+      - "COSMETICS"
+      - "FLORAL"
+      - "GARDEN CENTER"
+      - "RX"
+      - "TOYS"
+      - "VIDEO RENTAL"
+      - "HBC"
+      - "PROD-WHS SALES"
+      - "HOUSEWARES"
+      - "DELI/SNACK BAR"
+candidates:
+  recent_items: 10
+  neighbors_per_item: 20
+  preferred_categories: 3
+  category_popular: 50
+  global_popular: 50
+  max_per_user: 500
+item_cf:
+  top_k: 20
+  block_size: 256
+training:
+  negative_ratio: 10
+  validation_fraction: 0.2
+  alphas: [0.00001, 0.0001, 0.001]
+  max_iter: 1000
+evaluation:
+  top_k: 10
+repeat_explore:
+  gammas: [0.8, 0.9, 1.0]
+  kappas: [5, 20]
+  betas: [0, 0.25, 0.5, 1, 2]
+  global_r: [4, 5, 6, 7, 8]
+explore:
+  epsilon: 1.0e-4
+  max_candidates: 500
+  pref_items_per_attr: 20
+  pref_min_n_c: 10
+slots:
+  mode: user
+scope:
+  modes: [all, food]
+  nonfood_departments:
+    instacart: [household, personal care, pets, missing, other]
+    complete_journey: *cj_nonfood
+bootstrap:
+  n: 1000
+  seed: 42
+# Post-hoc subgroup analysis of the preference term among health-attribute buyers (Instacart only).
+health_subgroup:
+  attributes: [fat_reduced, sugar_reduced, gluten_free, low_sodium]
+  scopes: [food]
+  # G_a: users with at least this many history purchases of attribute-a items inside C_a.
+  min_attribute_purchases: 1
+  # S_a (sensitivity): G_a with n_C >= min_n_c and pi - pi_bar >= min_gap.
+  strict: {min_n_c: 10, min_gap: 0.2}
+  betas: [0, 0.1, 0.25, 0.5, 1, 2]
+  # Reported against beta = 0 regardless of the selected beta.
+  beta_fixed: 0.5
+  # Flag an attribute when fewer eval users have a non-empty N_u^a.
+  min_eval_users_warning: 200
+# Hierarchical recommender (stage-1 key -> ingredient type x attributes -> item) and the H* analysis.
+hierarchical:
+  mapping:
+    # Read only; prepare-types copies it to path and records its sha256.
+    source: C:/dev/food_recipe_preprocessing_gu/data/processed/product_ingredient_mapping_v2.parquet
+    path: data/raw/mapping/product_ingredient_mapping_v2.parquet
+    expected_version: "2026-11-02.v2.1"
+    auto_statuses: [auto_exact, auto_fixed, auto_normalized, auto_partial]
+  stage1_key: {instacart: fine_category, complete_journey: commodity}
+  type_key: {instacart: ingredient_type, complete_journey: fine_category}
+  attributes: {instacart: [fat_reduced, sugar_reduced, gluten_free, low_sodium], complete_journey: [private_label]}
+  type_attr_min_with: 2
+  type_attr_min_without: 2
+  alphas: [1, 5, 20]
+  mus: [0.1, 1, 10]
+  knn_k: [0, 20, 50]
+  lambda_type: [2, 10]
+  # Fixed during the first grid step.
+  lambda_type_initial: 10
+  candidate_cells: 30
+  items_per_cell: 20
+  user_block: 1000
+  hstar: {taste_attributes: [chocolate, vanilla, strawberry], placebo_reps: 50, min_n_c_each_half: 10, seed: 42}

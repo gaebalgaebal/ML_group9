@@ -1,4 +1,7 @@
-"""Item-CF, content profiles, candidate generation, and transferable features."""
+"""Item-CF, content profiles, candidate generation, and transferable features.
+
+Library module for the LR baseline (pipeline, re_pipeline); it reads and writes no files itself.
+"""
 
 from __future__ import annotations
 
@@ -8,8 +11,18 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 
+from .attributes import (
+    applicable_categories,
+    category_sets,
+    congruence,
+    population_rates,
+    preference_counts,
+    smoothed_preferences,
+    used_attributes,
+)
 
-FEATURE_COLUMNS = [
+
+FEATURE_COLUMNS_BASE = [
     "user_item_rate",
     "user_item_count_log",
     "recency_normalized",
@@ -24,6 +37,9 @@ FEATURE_COLUMNS = [
     "source_content",
     "source_popular",
 ]
+FEATURE_COLUMNS_PREF = FEATURE_COLUMNS_BASE + ["pref_congruence", "pref_applicable"]
+# Kept for callers that predate the preference ablation.
+FEATURE_COLUMNS = FEATURE_COLUMNS_BASE
 
 
 @dataclass
@@ -42,6 +58,10 @@ class RecommendationContext:
     category_popular: dict[str, list[str]]
     global_popular: list[str]
     recent_items: dict[str, list[str]]
+    attribute_counts: pd.DataFrame
+    attribute_prior: dict[str, float]
+    attribute_preferences: dict[tuple[str, str], float]
+    item_attribute_flags: dict[str, list[tuple[str, int]]]
 
 
 def item_cosine_neighbors(
@@ -139,6 +159,23 @@ def build_context(
         top_k=int(config["item_cf"]["top_k"]),
         block_size=int(config["item_cf"]["block_size"]),
     )
+    attribute_names = used_attributes(items)
+    settings = config.get("attributes", {})
+    table = applicable_categories(
+        items, attribute_names, int(settings.get("min_with", 5)), int(settings.get("min_without", 5))
+    )
+    categories = category_sets(table)
+    attribute_counts = preference_counts(implicit, items, categories)
+    attribute_prior = population_rates(attribute_counts, attribute_names)
+    attribute_preferences = smoothed_preferences(
+        attribute_counts, attribute_prior, float(settings.get("smoothing", 10))
+    )
+    item_attribute_flags: dict[str, list[tuple[str, int]]] = {}
+    for name in attribute_names:
+        applicable = item_table["fine_category"].isin(categories[name])
+        for item, flag in zip(item_table.loc[applicable, "item_id"], item_table.loc[applicable, f"attr_{name}"]):
+            item_attribute_flags.setdefault(str(item), []).append((name, int(flag)))
+
     user_item = {
         (str(row.user_id), str(row.item_id)): (
             int(row.item_count),
@@ -160,6 +197,10 @@ def build_context(
         category_popular=category_popular,
         global_popular=global_popular,
         recent_items=recent_items,
+        attribute_counts=attribute_counts,
+        attribute_prior=attribute_prior,
+        attribute_preferences=attribute_preferences,
+        item_attribute_flags=item_attribute_flags,
     )
 
 
@@ -227,6 +268,7 @@ def build_feature_frame(
         for item, _ in prescore[: int(limits["max_per_user"])]:
             count, last_seq, mean_gap = context.user_item.get((user, item), (0, 0, 0.0))
             baskets = max(context.user_baskets[user], 1)
+            flags = context.item_attribute_flags.get(item, [])
             recency = (context.user_next_seq[user] - last_seq) / baskets if count else 1.0
             row = {
                 "user_id": user,
@@ -245,6 +287,10 @@ def build_feature_frame(
                 "source_cf": int(item in sources["cf"]),
                 "source_content": int(item in sources["content"]),
                 "source_popular": int(item in sources["popular"]),
+                "pref_congruence": congruence(
+                    flags, user, context.attribute_preferences, context.attribute_prior
+                ),
+                "pref_applicable": int(bool(flags)),
             }
             rows.append(row)
     return pd.DataFrame(rows), target_sets, context
