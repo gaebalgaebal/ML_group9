@@ -9,6 +9,7 @@ from .config import load_config
 from .data import complete_journey_department_summary, prepare
 from .health_subgroup import eval_hs, tune_hs
 from .hier_pipeline import eval_hier, tune_hier
+from .hstar import analyze_hstar
 from .ingredient_types import prepare_types
 from .pipeline import evaluate, run, train
 from .re_pipeline import eval_re, tune_re
@@ -74,6 +75,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     eval_hier_parser.add_argument("--dataset", choices=["instacart", "complete_journey"], required=True)
     eval_hier_parser.add_argument("--profile", choices=PROFILES, default="sample")
+
+    hstar_parser = subparsers.add_parser(
+        "analyze-hstar", help="Descriptive H* analysis (stability, extension, concentration) on the Instacart eval split"
+    )
+    hstar_parser.add_argument("--profile", choices=PROFILES, default="sample")
     return parser
 
 
@@ -102,6 +108,8 @@ def main() -> None:
         result = tune_hier(config)
     elif args.command == "eval-hier":
         result = eval_hier(config, args.dataset)
+    elif args.command == "analyze-hstar":
+        result = analyze_hstar(config)
     else:
         result = run(config)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
