@@ -5,13 +5,16 @@ import pandas as pd
 import pytest
 
 from ml_group9.hier_followup import (
+    DATASETS,
     WithinAUC,
+    attribute_analysis,
     bootstrap_draws,
     difference_statistic,
     dominant_type,
     fallback_pair_share,
     fit_offset_logit,
     is_fallback,
+    item_labels,
     present_mass,
     scored_rows,
     type_patterns,
@@ -19,7 +22,7 @@ from ml_group9.hier_followup import (
 )
 from ml_group9.hierarchical import Params
 
-from test_hierarchical import purchases, state, target
+from test_hierarchical import items, state, target
 
 
 PARAMS = Params(alpha=3.0, mu=1.0, lambda_type=2.0, k=0)
@@ -126,6 +129,41 @@ def test_paired_difference_is_reproducible_by_seed():
     # Same weights per resample: each draw of the difference equals the difference of the draws.
     assert len(a["diff"]) == len(a["a"]) == len(a["b"])
     assert np.allclose(a["diff"], np.array(a["a"]) - np.array(a["b"]))
+
+
+def test_dataset_option_selects_source_output_and_blocks():
+    instacart, cj = DATASETS["instacart"], DATASETS["complete_journey"]
+    assert (instacart.reference_source, instacart.output, instacart.mapped_types, instacart.mapping_labels) == (
+        "instacart", "hier_followup", True, True,
+    )
+    assert (cj.reference_source, cj.output, cj.mapped_types, cj.mapping_labels) == (
+        "refit", "hier_followup_complete_journey", False, False,
+    )
+
+
+def test_item_labels_fall_back_to_item_ids_without_product_names():
+    hier_state = state()
+    labels = item_labels(items(), hier_state)  # the synthetic catalogue has no product_name column
+    assert labels.tolist() == hier_state.interactions.items.astype(str).tolist()
+    named = items().assign(product_name=lambda f: "name " + f["item_id"])
+    assert item_labels(named, hier_state)[0] == "name " + str(hier_state.interactions.items[0])
+
+
+def test_optional_blocks_leave_the_other_outputs_unchanged():
+    extra = [("u1", "t1", 3, "m4"), ("u3", "t3", 3, "m2"), ("u4", "t4", 3, "m1"), ("u2", "t2", 3, "m2")]
+    hier_state = state(target_frame=target(extra))
+    rows = scored_rows(hier_state, PARAMS)
+    hierarchy = hier_state.hierarchies["full"]
+    names = item_labels(items(), hier_state)
+    keys = np.full(hier_state.n_items, "", dtype=object)
+    base = attribute_analysis(rows, hierarchy, names, keys, 40, 42)
+    full = attribute_analysis(rows, hierarchy, names, keys, 40, 42, mapped_types=True, paired_difference=True)
+    cj = attribute_analysis(rows, hierarchy, names, keys, 40, 42, paired_difference=True)
+    assert set(full) - set(base) == {"within_type_auc_mapped", "fallback_pair_share", "diff_a_minus_b"}
+    assert set(cj) - set(base) == {"diff_a_minus_b"}
+    for key in base:
+        assert full[key] == base[key] and cj[key] == base[key]
+    assert cj["diff_a_minus_b"] == full["diff_a_minus_b"]
 
 
 def test_bootstrap_is_reproducible_by_seed():

@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -44,6 +45,39 @@ DIAGNOSTIC_USERS = 2000
 # Type labels of items without a mapped ingredient type fall back to the aisle.
 FALLBACK_PREFIX = "aisle:"
 REPRODUCTION_TOLERANCE = 1e-9
+
+
+@dataclass(frozen=True)
+class DatasetSpec:
+    """Per-dataset settings: the reference eval source (CJ uses its refit parameters and gamma), the output
+    name, and whether the Instacart-only mapped-type sensitivity and mapping labels apply."""
+
+    reference_source: str
+    output: str
+    design: str
+    type_unit: str
+    mapped_types: bool
+    mapping_labels: bool
+
+
+DATASETS = {
+    "instacart": DatasetSpec(
+        reference_source="instacart",
+        output="hier_followup",
+        design="post-hoc follow-up of the hierarchical attribute stage; health attributes only; observational",
+        type_unit="(aisle, ingredient type) pair of the full hierarchy",
+        mapped_types=True,
+        mapping_labels=True,
+    ),
+    "complete_journey": DatasetSpec(
+        reference_source="refit",
+        output="hier_followup_complete_journey",
+        design="post-hoc replication of the within-type method on Complete Journey (private_label); observational",
+        type_unit="(commodity, sub_commodity = fine_category) pair of the full hierarchy",
+        mapped_types=False,
+        mapping_labels=False,
+    ),
+}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -341,10 +375,11 @@ def attribute_analysis(
     item_keys: np.ndarray,
     resamples: int,
     seed: int,
-    sensitivity: bool = False,
+    mapped_types: bool = False,
+    paired_difference: bool = False,
 ) -> dict[str, object]:
-    """sensitivity adds the mapped-type-only AUC and the paired difference AUC(a) - AUC(b). The extra
-    statistics share the bootstrap draws, so every other value is unchanged."""
+    """mapped_types adds the mapped-type-only AUC and the fallback pair share; paired_difference adds
+    AUC(a) - AUC(b). Extra statistics share the bootstrap draws, so every other value is unchanged."""
     users = rows["user"].to_numpy()
     statistics: dict[str, object] = {}
     result: dict[str, object] = {"rows": int(len(rows)), "users": int(rows["user"].nunique())}
@@ -353,9 +388,10 @@ def attribute_analysis(
         statistics[key] = _subset_statistic(all_rows & rows[column].notna().to_numpy(), rows, column)
     fallback = np.array([is_fallback(label) for label in hierarchy.type_labels], dtype=bool)
     mapped = ~fallback[rows["type"].to_numpy()]
-    if sensitivity:
+    if mapped_types:
         for key in ["a", "c"]:
             statistics[f"mapped_{key}"] = _subset_statistic(mapped & rows[SCORES[key]].notna().to_numpy(), rows, SCORES[key])
+    if paired_difference:
         estimators = {
             key: WithinAUC(rows["type"].to_numpy(), rows[SCORES[key]].to_numpy(), rows["label"].to_numpy()) for key in ["a", "b"]
         }
@@ -384,7 +420,7 @@ def attribute_analysis(
         summary = within_summary(rows, column)
         scores[key] = {"score": column, **summary, **_with_ci(summary["auc_within"], draws[key])}
     result["within_type_auc"] = scores
-    if sensitivity:
+    if mapped_types:
         mapped_rows = rows[mapped]
         result["within_type_auc_mapped"] = {
             key: {"score": SCORES[key], **summary, **_with_ci(summary["auc_within"], draws[f"mapped_{key}"])}
@@ -392,6 +428,7 @@ def attribute_analysis(
             for summary in [within_summary(mapped_rows, SCORES[key])]
         }
         result["fallback_pair_share"] = fallback_pair_share(table, fallback)
+    if paired_difference:
         result["diff_a_minus_b"] = _with_ci(_minus(scores["a"]["auc_within"], scores["b"]["auc_within"]), draws["a_minus_b"])
 
     top = []
@@ -457,10 +494,18 @@ def mapping_keys(config: dict[str, object], state: HierState) -> np.ndarray:
     return keys.reindex(state.interactions.items).fillna("").astype(str).to_numpy(dtype=object)
 
 
-def _reproduce(frame: pd.DataFrame, reference: dict[str, object] | None, attributes: list[str]) -> dict[str, object]:
+def item_labels(items: pd.DataFrame, state: HierState) -> np.ndarray:
+    """Product name per item, or the item id when the catalogue has no names (CJ)."""
+    table = items.drop_duplicates("item_id").assign(item_id=lambda f: f["item_id"].astype(str)).set_index("item_id")
+    if "product_name" not in table.columns:
+        return state.interactions.items.to_numpy().astype(str)
+    return table["product_name"].reindex(state.interactions.items).fillna("").astype(str).to_numpy()
+
+
+def _reproduce(frame: pd.DataFrame, reference: dict[str, object] | None, attributes: list[str], source: str) -> dict[str, object]:
     if reference is None:
         return {"checked": False}
-    stages = reference["sources"][DATASET]["stagewise"]["attribute"]
+    stages = reference["sources"][source]["stagewise"]["attribute"]
     values, worst = {}, 0.0
     for name in attributes:
         rows = frame[frame["attribute"].eq(name)]
@@ -523,6 +568,25 @@ def _interpretation(attributes: list[str], analyses: dict[str, object]) -> dict[
     return result
 
 
+def _interpretation_cj(attributes: list[str], analyses: dict[str, object]) -> dict[str, object]:
+    """CJ labels from the rules fixed before the run (new-item rows, score a, 95% CI); no health statements."""
+    result: dict[str, object] = {}
+    for name in attributes:
+        main = analyses[name]["new"]["within_type_auc"]["a"]
+        low, high = main["ci95_low"], main["ci95_high"]
+        if low is None or high is None:
+            label = None
+        elif low > 0.5:
+            label = "within-type association of the attribute observed in CJ with the same method"
+        elif high < 0.5:
+            label = "opposite direction (not covered by the fixed rules)"
+        else:
+            label = "not established"
+        result[name] = {"auc_within_a": main["value"], "main": label}
+    result["note"] = "Post-hoc method replication on Complete Journey; observational; no statement about health attributes."
+    return result
+
+
 def analyze(
     config: dict[str, object],
     items: pd.DataFrame,
@@ -531,25 +595,28 @@ def analyze(
     params: Params,
     gamma: float,
     reference: dict[str, object] | None = None,
+    dataset: str = DATASET,
 ) -> dict[str, object]:
+    spec = DATASETS[dataset]
     resamples, seed = int(config["bootstrap"]["n"]), int(config["bootstrap"]["seed"])
     started = time.perf_counter()
-    state = build_hier_state(config, DATASET, items, history, target, gamma, ("full",))
+    state = build_hier_state(config, dataset, items, history, target, gamma, ("full",))
     build_seconds = time.perf_counter() - started
     hierarchy = state.hierarchies["full"]
     frame = scored_rows(state, params)
-    reproduction = _reproduce(frame, reference, hierarchy.attributes)
+    reproduction = _reproduce(frame, reference, hierarchy.attributes, spec.reference_source)
     if reproduction["checked"] and not reproduction["passed"]:
         raise RuntimeError(f"Stage-2 AUCs differ from the reference: {json.dumps(reproduction, default=str)}")
-    table = items.drop_duplicates("item_id").assign(item_id=lambda f: f["item_id"].astype(str)).set_index("item_id")
-    product_names = table["product_name"].reindex(state.interactions.items).fillna("").astype(str).to_numpy()
-    item_keys = mapping_keys(config, state)
+    product_names = item_labels(items, state)
+    # The mapping is keyed by Instacart product ids; other datasets get no mapping labels.
+    item_keys = mapping_keys(config, state) if spec.mapping_labels else np.full(state.n_items, "", dtype=object)
     analyses = {}
     for name in hierarchy.attributes:
         rows = frame[frame["attribute"].eq(name)]
         analyses[name] = {
             part: attribute_analysis(
-                subset.reset_index(drop=True), hierarchy, product_names, item_keys, resamples, seed, sensitivity=part == "new"
+                subset.reset_index(drop=True), hierarchy, product_names, item_keys, resamples, seed,
+                mapped_types=spec.mapped_types and part == "new", paired_difference=part == "new",
             )
             for part, subset in [("new", rows[rows["new"]]), ("repeat", rows[~rows["new"]])]
         }
@@ -558,15 +625,18 @@ def analyze(
         "reproduction": reproduction,
         "attributes": analyses,
         "diagnostic_empty_combinations": empty_combinations(state, hierarchy, float(params.lambda_type), np.sort(sample)),
-        "interpretation": _interpretation(hierarchy.attributes, analyses),
+        "interpretation": (
+            _interpretation(hierarchy.attributes, analyses) if dataset == DATASET else _interpretation_cj(hierarchy.attributes, analyses)
+        ),
         "history_users": int(state.n_users),
         "target_users": int(len(state.targets)),
         "build_seconds": build_seconds,
     }
 
 
-def analyze_hier_followup(config: dict[str, object], reference_dir: str | None = None) -> dict[str, object]:
-    """Run the follow-up on the Instacart eval split with the selected hierarchical parameters."""
+def analyze_hier_followup(config: dict[str, object], reference_dir: str | None = None, dataset: str = DATASET) -> dict[str, object]:
+    """Run the follow-up on a dataset's eval split with that dataset's selected hierarchical parameters and gamma."""
+    spec = DATASETS[dataset]
     started = time.perf_counter()
     base = Path(reference_dir) if reference_dir else Path(config["report_dir"]) / "metrics"
     profile = config["profile"]
@@ -574,44 +644,45 @@ def analyze_hier_followup(config: dict[str, object], reference_dir: str | None =
     def read(name: str) -> dict[str, object]:
         return json.loads((base / f"{profile}_{name}.json").read_text(encoding="utf-8"))
 
-    selected = read("hier_tuning")[DATASET]["selected"]
+    selected = read("hier_tuning")[dataset]["selected"]
     params = Params(float(selected["alpha"]), float(selected["mu"]), float(selected["lambda_type"]), int(selected["k"]))
-    gamma = float(read("re_tuning")[DATASET]["scopes"][SCOPE]["selected"]["gamma"])
-    reference_path = base / f"{profile}_hier_{DATASET}.json"
-    reference = read(f"hier_{DATASET}") if reference_path.exists() else None
-    items, history, target = load_split(config, DATASET, "eval")
+    gamma = float(read("re_tuning")[dataset]["scopes"][SCOPE]["selected"]["gamma"])
+    reference_path = base / f"{profile}_hier_{dataset}.json"
+    reference = read(f"hier_{dataset}") if reference_path.exists() else None
+    items, history, target = load_split(config, dataset, "eval")
     report = {
         "profile": profile,
-        "dataset": DATASET,
+        "dataset": dataset,
         "split": "eval",
         "scope": SCOPE,
-        "design": "post-hoc follow-up of the hierarchical attribute stage; health attributes only; observational",
+        "design": spec.design,
         "reference_dir": base.as_posix(),
         "params": {"alpha": params.alpha, "mu": params.mu, "lambda_type": params.lambda_type, "k": params.k, "gamma": gamma},
         "settings": {
             "bootstrap": config["bootstrap"],
-            "type_unit": "(aisle, ingredient type) pair of the full hierarchy",
+            "type_unit": spec.type_unit,
             "scores": SCORES,
             "ci_levels": LEVELS,
             "offset_logistic": "logit P = beta0 + logit pi_bar(a | t) + beta * (logit pi_u(a) - logit pi_bar_a), clip 1e-6",
             "diagnostic_users": f"{DIAGNOSTIC_USERS} target users drawn with seed {config['bootstrap']['seed']}",
         },
-        **analyze(config, items, history, target, params, gamma, reference),
+        **analyze(config, items, history, target, params, gamma, reference, dataset),
     }
     report["runtime_seconds"] = time.perf_counter() - started
-    _write_json(Path(config["report_dir"]) / "metrics" / f"{profile}_hier_followup.json", report)
+    _write_json(Path(config["report_dir"]) / "metrics" / f"{profile}_{spec.output}.json", report)
     return report
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Post-hoc within-type attribute analysis of the hierarchical recommender")
     parser.add_argument("--profile", choices=["sample", "medium", "full"], default="sample")
+    parser.add_argument("--dataset", choices=list(DATASETS), default=DATASET)
     parser.add_argument(
         "--reference-dir", default=None,
-        help="Directory with <profile>_hier_tuning.json, <profile>_re_tuning.json and <profile>_hier_instacart.json (read only)",
+        help="Directory with <profile>_hier_tuning.json, <profile>_re_tuning.json and <profile>_hier_<dataset>.json (read only)",
     )
     args = parser.parse_args()
-    report = analyze_hier_followup(load_config(args.profile), args.reference_dir)
+    report = analyze_hier_followup(load_config(args.profile), args.reference_dir, args.dataset)
     summary = {key: report[key] for key in ["reproduction", "interpretation", "runtime_seconds"]}
     summary["reproduction"] = {key: value for key, value in summary["reproduction"].items() if key != "values"}
     print(json.dumps(summary, ensure_ascii=False, indent=2, default=str))
