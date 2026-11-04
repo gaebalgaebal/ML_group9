@@ -68,6 +68,7 @@ python -m pip install -r requirements.txt
 | 16 | `python -m ml_group9.hs_followup --profile <p>` | 8 | `<p>_hs_instacart.json`, Instacart eval split | `reports/metrics/<p>_hs_followup.json`, `<p>_hs_followup_peruser_<label>.parquet` |
 
 - `--reference`, `--reference-dir`를 주면 이전 결과를 다시 계산해 일치하는지 확인합니다. 생략할 수 있습니다.
+- 결과를 재현·비교할 때는 `PYTHONHASHSEED=0`(PowerShell: `$env:PYTHONHASHSEED = "0"`)을 설정하기를 권장합니다. 설정하지 않으면 `tune-hs`, `eval-hs` 결과가 실행마다 1e-16 수준(마지막 자릿수)에서 달라질 수 있습니다.
 - `python -m ml_group9 run --profile <p>`는 1, 3, 4를 한 번에 실행합니다.
 - `python -m ml_group9 inspect-cj --profile <p>`는 CJ DEPARTMENT별 거래 비중을 표준 출력으로만 보여 줍니다(파일 없음).
 - `hs_followup`은 현재 특정 worktree 경로와 브랜치에서만 실행되도록 고정되어 있습니다(코드 상단 `WORKTREE`, `BRANCH`).
@@ -105,7 +106,9 @@ python scripts/make_report_figures.py reports/metrics/medium_hstar_robust.json \
 - `artifacts/<p>/`: 모델, 후보 feature, Top-10 예측
 - `reports/metrics/`, `reports/figures/`, `reports/tables/`: 위 표의 출력 파일
 
-`sample` 기준 모델 결과(`reports/metrics/sample_{training,instacart,complete_journey}.json`과 그림 2개)만 Git에서 추적합니다. `medium`·`full` 결과, `reports/tables/`, 보고서 문서(`*.docx`)는 별도 제출하며 `.gitignore`로 제외합니다.
+`sample` 기준 모델 결과(`reports/metrics/sample_{training,instacart,complete_journey}.json`과 그림 2개)만 Git에서 추적합니다. 그 밖의 `reports/metrics/`, `reports/figures/` 결과, `reports/tables/`, Parquet 파일, 보고서 문서(`*.docx`)는 별도 제출하며 `.gitignore`로 제외합니다.
+
+`reports/`의 추적 파일(`SAMPLE_RESULTS.md`, `sample_*.json`, `sample_*.png`)은 초기 버전(`d628fd3`) 산출물이며 현재 코드의 출력과 다를 수 있습니다.
 
 ## 코드 구성
 
