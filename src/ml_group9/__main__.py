@@ -8,6 +8,7 @@ import json
 from .config import load_config
 from .data import complete_journey_department_summary, prepare
 from .health_subgroup import eval_hs, tune_hs
+from .hier_pipeline import eval_hier, tune_hier
 from .ingredient_types import prepare_types
 from .pipeline import evaluate, run, train
 from .re_pipeline import eval_re, tune_re
@@ -62,6 +63,17 @@ def build_parser() -> argparse.ArgumentParser:
         "prepare-types", help="Import the ingredient-type mapping and report type-level attribute categories"
     )
     types_parser.add_argument("--profile", choices=PROFILES, default="sample")
+
+    tune_hier_parser = subparsers.add_parser(
+        "tune-hier", help="Tune the hierarchical recommender on the fit splits (food scope)"
+    )
+    tune_hier_parser.add_argument("--profile", choices=PROFILES, default="sample")
+
+    eval_hier_parser = subparsers.add_parser(
+        "eval-hier", help="Evaluate the hierarchical recommender, ablations and baselines on an eval split"
+    )
+    eval_hier_parser.add_argument("--dataset", choices=["instacart", "complete_journey"], required=True)
+    eval_hier_parser.add_argument("--profile", choices=PROFILES, default="sample")
     return parser
 
 
@@ -86,6 +98,10 @@ def main() -> None:
         result = eval_hs(config)
     elif args.command == "prepare-types":
         result = prepare_types(config)
+    elif args.command == "tune-hier":
+        result = tune_hier(config)
+    elif args.command == "eval-hier":
+        result = eval_hier(config, args.dataset)
     else:
         result = run(config)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
