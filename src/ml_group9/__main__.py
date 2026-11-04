@@ -7,6 +7,7 @@ import json
 
 from .config import load_config
 from .data import complete_journey_department_summary, prepare
+from .health_subgroup import eval_hs, tune_hs
 from .pipeline import evaluate, run, train
 from .re_pipeline import eval_re, tune_re
 
@@ -45,6 +46,16 @@ def build_parser() -> argparse.ArgumentParser:
     eval_re_parser = subparsers.add_parser("eval-re", help="Evaluate repeat-explore and baselines on an eval split")
     eval_re_parser.add_argument("--dataset", choices=["instacart", "complete_journey"], required=True)
     eval_re_parser.add_argument("--profile", choices=PROFILES, default="sample")
+
+    tune_hs_parser = subparsers.add_parser(
+        "tune-hs", help="Select beta for health-attribute subgroups on the Instacart fit split"
+    )
+    tune_hs_parser.add_argument("--profile", choices=PROFILES, default="sample")
+
+    eval_hs_parser = subparsers.add_parser(
+        "eval-hs", help="Evaluate health-attribute subgroups on the Instacart eval split"
+    )
+    eval_hs_parser.add_argument("--profile", choices=PROFILES, default="sample")
     return parser
 
 
@@ -63,6 +74,10 @@ def main() -> None:
         result = tune_re(config)
     elif args.command == "eval-re":
         result = eval_re(config, args.dataset)
+    elif args.command == "tune-hs":
+        result = tune_hs(config)
+    elif args.command == "eval-hs":
+        result = eval_hs(config)
     else:
         result = run(config)
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
