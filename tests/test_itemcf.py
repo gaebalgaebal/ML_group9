@@ -90,6 +90,7 @@ def test_deterministic():
     shuffled = HISTORY.sample(frac=1, random_state=2)
     pd.testing.assert_frame_equal(item_neighbors(shuffled, n_neighbors=20), neighbors)
     pd.testing.assert_frame_equal(cf_scores(shuffled, neighbors), cf_scores(HISTORY, neighbors))
+    pd.testing.assert_frame_equal(cf_scores(HISTORY, neighbors, chunk_users=1), cf_scores(HISTORY, neighbors))
 
 
 def test_no_target_argument():

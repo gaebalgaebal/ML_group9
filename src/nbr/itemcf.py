@@ -85,19 +85,30 @@ def item_neighbors(history: pd.DataFrame, n_neighbors: int = 20, block_size: int
     return result[NEIGHBOR_COLUMNS].reset_index(drop=True)
 
 
-def cf_scores(history: pd.DataFrame, neighbors: pd.DataFrame) -> pd.DataFrame:
+def cf_scores(history: pd.DataFrame, neighbors: pd.DataFrame, chunk_users: int = 2000) -> pd.DataFrame:
     """score(u, i) = sum over bought j of sim(j, i), restricted to unbought i.
 
     Each bought item j contributes to its stored neighbours i (rows of
     ``neighbors`` with item_id = j, neighbor_id = i); candidates are items
-    not in I(H_u). Output: [user_id, item_id, score(float64)], sorted.
+    not in I(H_u). Users are processed in blocks of ``chunk_users`` (sorted
+    user_id) to bound the intermediate join; the result does not depend on
+    the block size. Output: [user_id, item_id, score(float64)], sorted.
     """
-    bought = history[PAIR_KEY].drop_duplicates()
-    spread = bought.merge(neighbors, on="item_id", how="inner")
-    spread = spread.drop(columns="item_id").rename(columns={"neighbor_id": "item_id"})
-    scores = spread.groupby(PAIR_KEY, sort=True, as_index=False)["sim"].sum().rename(columns={"sim": "score"})
-    scores = scores.merge(bought, on=PAIR_KEY, how="left", indicator=True)
-    scores = scores[scores["_merge"] == "left_only"].drop(columns="_merge")
+    bought = history[PAIR_KEY].drop_duplicates().sort_values(PAIR_KEY, kind="mergesort")
+    users = bought["user_id"].drop_duplicates().to_numpy()
+    parts = []
+    for start in range(0, len(users), max(1, chunk_users)):
+        block = bought[bought["user_id"].isin(users[start : start + chunk_users])]
+        spread = block.merge(neighbors, on="item_id", how="inner")
+        spread = spread.drop(columns="item_id").rename(columns={"neighbor_id": "item_id"})
+        scores = spread.groupby(PAIR_KEY, sort=True, as_index=False)["sim"].sum().rename(columns={"sim": "score"})
+        scores = scores.merge(block, on=PAIR_KEY, how="left", indicator=True)
+        parts.append(scores[scores["_merge"] == "left_only"].drop(columns="_merge"))
+    if parts:
+        scores = pd.concat(parts, ignore_index=True)
+    else:
+        scores = pd.DataFrame({"user_id": [], "item_id": [], "score": []})
+    scores = scores.sort_values(PAIR_KEY, kind="mergesort")
     scores["score"] = scores["score"].astype("float64")
     return scores[PAIR_KEY + ["score"]].reset_index(drop=True)
 
