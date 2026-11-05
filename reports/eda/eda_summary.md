@@ -18,6 +18,8 @@ medium의 Instacart·Complete Journey(CJ)를 기술한다. 데이터셋 규모·
 | instacart | 20000 | 313281 | 41250 | 21 | 134 | 3209 | 3 | 3 | 9 | 37 | 99 | 8 |
 | complete_journey | 2069 | 206682 | 82354 | 32 | 302 | 2323 | 4 | 25 | 76 | 197.2 | 1167 | 5 |
 
+PPT 표시값: CJ p90 = 197개 바스켓(정수 반올림). 표와 CSV의 원래 계산값 197.2는 유지한다.
+
 - Instacart: 사용자 20,000명, 바스켓 313,281개, 상품 41,250개. 사용자당 history 바스켓 중앙값 9개(p10=3, p90=37), 바스켓별 서로 다른 상품 수 중앙값 8개.
   전체 catalog는 49,688개 상품이며, 위 관측 상품 수와 범위가 다르다.
 - Complete Journey: 사용자 2,069명, 바스켓 206,682개, 상품 82,354개. 사용자당 history 바스켓 중앙값 76개(p10=25, p90=197.2), 바스켓별 서로 다른 상품 수 중앙값 5개.
@@ -52,6 +54,9 @@ medium의 Instacart·Complete Journey(CJ)를 기술한다. 데이터셋 규모·
 | complete_journey | L1 | 15076 | 14928 | 0.990183 |
 | complete_journey | L2 | 15076 | 12708 | 0.842929 |
 | complete_journey | L3 | 15076 | 8878 | 0.588883 |
+
+- 범주 수준은 데이터셋마다 다르다. Instacart는 department / aisle / ingredient type, CJ는 department / commodity / sub-commodity이므로 데이터셋 간 막대 높이를 직접 비교할 수 없다.
+- Instacart L3는 매핑되지 않은 상품에 aisle을 대신 사용한다. medium eval_history 행의 약 19%가 이 fallback에 해당한다(커밋 medium.json의 1 − history_rows_l3_mapped를 정수 %로 반올림).
 
 - Instacart: L1 88.61%, L2 59.95%, L3 20.10%. 분모는 해당 사용자의 history에 없던 신규 정답 상품 85,172개다.
 - Complete Journey: L1 99.02%, L2 84.29%, L3 58.89%. 분모는 해당 사용자의 history에 없던 신규 정답 상품 15,076개다.

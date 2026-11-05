@@ -281,7 +281,7 @@ def style_axis(ax) -> None:
     ax.set_axisbelow(True)
 
 
-def figures() -> None:
+def figures(check: dict) -> None:
     """Render all chart values directly from their companion CSV files."""
     plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 12,
                          "axes.titlesize": 16, "axes.labelsize": 13,
@@ -319,6 +319,7 @@ def figures() -> None:
     axes[0].set_ylabel("Mean repeat-item share in target basket")
     fig.suptitle("Repeat-item share by history length", fontsize=17)
     fig.text(0.10, -0.03, "Medium eval target | distinct items | equal weight per user | n = users", fontsize=10, color="#4D5968")
+    fig.text(0.10, -0.075, "Descriptive; history bins differ between datasets.", fontsize=10, color="#4D5968")
     fig.savefig(OUTPUT / "fig_repeat_share_by_history.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
 
@@ -339,6 +340,13 @@ def figures() -> None:
     style_axis(ax)
     ax.legend(loc="upper right", frameon=False)
     fig.text(0.12, -0.025, "Medium eval target | item-weighted | source: committed data-check report", fontsize=10, color="#4D5968")
+    fallback_pct = round(100 * (1 - check["instacart"]["eval"]["history_rows_l3_mapped"]))
+    notes = (
+        "Category levels are dataset-specific (Instacart: department / aisle / ingredient type;\n"
+        "CJ: department / commodity / sub-commodity); bar heights are not comparable across datasets.\n"
+        f"Instacart L3 falls back to the aisle for unmapped items (≈{fallback_pct}% of history rows)."
+    )
+    fig.text(0.12, -0.065, notes, fontsize=10, color="#4D5968", va="top", linespacing=1.5)
     fig.savefig(OUTPUT / "fig_new_item_level.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
 
@@ -367,6 +375,8 @@ def summary_markdown(datasets, repeats, levels, preprocessing, quality, check):
              "- Instacart: L1=department(coarse_category), L2=aisle(fine_category), L3=ingredient_type(aisle fallback 포함). CJ: L1=DEPARTMENT, L2=commodity(coarse_category 별칭), L3=fine_category.",
              "- holdout 폴더와 원시 ZIP은 열지 않았다. holdout 추출 수치는 커밋된 data/SOURCE.md 기록만 인용했다.", "",
              "## 표 1: 관측 history 규모", "", markdown_table(datasets), ""]
+    cj_p90 = datasets.loc[datasets["dataset"].eq("complete_journey"), "history_baskets_p90"].iloc[0]
+    lines += [f"PPT 표시값: CJ p90 = {cj_p90:.0f}개 바스켓(정수 반올림). 표와 CSV의 원래 계산값 {cj_p90:g}는 유지한다.", ""]
     for row in datasets.itertuples():
         label = DATASETS[row.dataset]["label"]
         lines.append(f"- {label}: 사용자 {row.users:,}명, 바스켓 {row.baskets:,}개, 상품 {row.items:,}개. 사용자당 history 바스켓 중앙값 {row.history_baskets_median:g}개(p10={row.history_baskets_p10:g}, p90={row.history_baskets_p90:g}), 바스켓별 서로 다른 상품 수 중앙값 {row.basket_size_median:g}개.")
@@ -378,6 +388,11 @@ def summary_markdown(datasets, repeats, levels, preprocessing, quality, check):
         first, last = part.iloc[0], part.iloc[-1]
         lines.append(f"- {spec['label']}: {first['history_bin']} 구간의 사용자 평균 재구매 비중은 {first['mean_repeat_share']:.2%}(n={first['users']:,}), {last['history_bin']} 구간은 {last['mean_repeat_share']:.2%}(n={last['users']:,})다.")
     lines += ["", "## 그림 3: 신규 상품의 기존 범주 포함 비율", "", markdown_table(levels[["dataset", "level", "new_target_items", "in_seen_category_items", "share"]]), ""]
+    fallback_pct = round(100 * (1 - check["instacart"]["eval"]["history_rows_l3_mapped"]))
+    lines += [
+        "- 범주 수준은 데이터셋마다 다르다. Instacart는 department / aisle / ingredient type, CJ는 department / commodity / sub-commodity이므로 데이터셋 간 막대 높이를 직접 비교할 수 없다.",
+        f"- Instacart L3는 매핑되지 않은 상품에 aisle을 대신 사용한다. medium eval_history 행의 약 {fallback_pct}%가 이 fallback에 해당한다(커밋 medium.json의 1 − history_rows_l3_mapped를 정수 %로 반올림).", "",
+    ]
     for dataset, spec in DATASETS.items():
         part = levels.loc[levels["dataset"].eq(dataset)]
         values = ", ".join(f"{row.level} {row.share:.2%}" for row in part.itertuples())
@@ -442,7 +457,7 @@ def main() -> None:
     write_csv(repeat_frame, "fig_repeat_share_by_history.csv")
     write_csv(level_frame, "fig_new_item_level.csv")
     write_csv(preprocessing, "table_preprocessing.csv")
-    figures()
+    figures(check)
     summary_markdown(description_frame, repeat_frame, level_frame, preprocessing, quality, check)
     print("Wrote 5 CSV files, 3 PNG figures, and eda_summary.md to reports/eda")
 
