@@ -17,7 +17,7 @@ Complete Journey DEPARTMENT -> commodity (L2) -> sub-commodity (L3) -> item. The
 
 ## Model
 - Repeat score: s_rep(u,i) = sum over history baskets b of gamma^age(b) * 1[i in b]; age = 0 for the most recent basket. gamma = 1 is personal frequency.
-- Explore score (items not in the user's history): theta_u(c) * phi_u(i|c), with theta_u(c) = (decayed category count + alpha * p(c)) / (decayed total + alpha) and phi_u(i|c) = pop(i) / sum of pop over unbought items in c.
+- Explore score (items not in the user's history): theta_u(c) * pop(i) / pop(c), with theta_u(c) = (decayed category count + alpha * p(c)) / (decayed total + alpha) and pop(c) = sum of pop over all items in c (bought or not). Equivalently theta_u(c) / p(c) * pop(i) / sum pop: global popularity reweighted by the user's category lift. With alpha = inf (theta_u = p) it reduces exactly to the H2 comparator (popularity excluding history items).
 - pop(i) = number of history baskets (all users of the split) containing i; p(c) = category share of pop.
 - Final list: top r repeat items + top (10 - r) explore items; if fewer than r repeat items exist, explore items fill the slots.
 
@@ -43,4 +43,4 @@ Decision: lower bound > 0 -> "improvement observed"; CI contains 0 -> "no differ
 - Health-attribute case study: existing H*' results on Instacart medium (ML_group9 commits 2a87fc5, c44bbf6, e74412b); no new tests.
 
 ## Deviations
-(none)
+- v1.1 (2026-11-05, before any model run on any split): within-category normalization changed from unbought items only (Z_u(c)) to all items in c. Reason: with Z_u(c) the alpha -> inf limit does not equal the H2 comparator (categories where the user bought popular items are inflated), so H2 would mix the user-profile effect with a renormalization effect. alpha = inf (theta_u = p) is allowed in code for the comparator and tests; the selection grid stays {1, 10, 100}.
