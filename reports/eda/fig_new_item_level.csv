@@ -1,0 +1,7 @@
+﻿dataset,level,item_column,new_target_items,in_seen_category_items,share,source
+instacart,L1,coarse_category,85172,75467,0.8860541022871367,reports/data_check/medium.json -> instacart.eval.new_item_rows_in_seen_coarse_category
+instacart,L2,fine_category,85172,51060,0.5994927910580942,reports/data_check/medium.json -> instacart.eval.new_item_rows_in_seen_fine_category
+instacart,L3,ingredient_type,85172,17121,0.20101676607335744,reports/data_check/medium.json -> instacart.eval.new_item_rows_in_seen_ingredient_type
+complete_journey,L1,DEPARTMENT,15076,14928,0.9901830724330061,reports/data_check/medium.json -> complete_journey.eval.new_item_rows_in_seen_DEPARTMENT
+complete_journey,L2,commodity,15076,12708,0.8429291589280976,reports/data_check/medium.json -> complete_journey.eval.new_item_rows_in_seen_commodity
+complete_journey,L3,fine_category,15076,8878,0.5888829928362961,reports/data_check/medium.json -> complete_journey.eval.new_item_rows_in_seen_fine_category
