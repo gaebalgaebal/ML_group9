@@ -1,0 +1,137 @@
+{
+  "meta": {
+    "git_commit": "9d51446207bd8d803cd4e3c2a3708f8276752dba",
+    "utc_time": "2026-11-05T10:28:09.704402+00:00",
+    "profile": "holdout",
+    "python_version": "3.12.16",
+    "numpy_version": "1.26.4",
+    "pandas_version": "2.2.3"
+  },
+  "profile": "holdout",
+  "dataset": "complete_journey",
+  "split": "fit",
+  "k": 10,
+  "level": "L2",
+  "n_users": {
+    "all": 2069,
+    "repeat_target": 1828,
+    "new_target": 1965
+  },
+  "stage1_repeat_recall": [
+    {
+      "gamma": 0.5,
+      "recall": 0.18529348710918436
+    },
+    {
+      "gamma": 0.6,
+      "recall": 0.19231650611316883
+    },
+    {
+      "gamma": 0.7,
+      "recall": 0.20545067654954044
+    },
+    {
+      "gamma": 0.8,
+      "recall": 0.23212100149076373
+    },
+    {
+      "gamma": 0.9,
+      "recall": 0.274028125830349
+    },
+    {
+      "gamma": 1.0,
+      "recall": 0.2765862776045085
+    }
+  ],
+  "stage2_explore_new_recall": [
+    {
+      "gamma_c": 0.8,
+      "alpha": 1.0,
+      "recall": 0.011515712156319503
+    },
+    {
+      "gamma_c": 0.8,
+      "alpha": 10.0,
+      "recall": 0.011595071641033922
+    },
+    {
+      "gamma_c": 0.8,
+      "alpha": 100.0,
+      "recall": 0.01020542418475175
+    },
+    {
+      "gamma_c": 0.9,
+      "alpha": 1.0,
+      "recall": 0.01143889041516265
+    },
+    {
+      "gamma_c": 0.9,
+      "alpha": 10.0,
+      "recall": 0.0116938393384339
+    },
+    {
+      "gamma_c": 0.9,
+      "alpha": 100.0,
+      "recall": 0.010465794521808432
+    },
+    {
+      "gamma_c": 1.0,
+      "alpha": 1.0,
+      "recall": 0.009362655579006243
+    },
+    {
+      "gamma_c": 1.0,
+      "alpha": 10.0,
+      "recall": 0.009493351384002303
+    },
+    {
+      "gamma_c": 1.0,
+      "alpha": 100.0,
+      "recall": 0.010521513381757788
+    }
+  ],
+  "stage3_final_ndcg": [
+    {
+      "r": 5,
+      "ndcg": 0.16105458041292403
+    },
+    {
+      "r": 6,
+      "ndcg": 0.17083601378374016
+    },
+    {
+      "r": 7,
+      "ndcg": 0.1783586764715425
+    },
+    {
+      "r": 8,
+      "ndcg": 0.18567146149258576
+    },
+    {
+      "r": 9,
+      "ndcg": 0.19154842966742985
+    },
+    {
+      "r": 10,
+      "ndcg": 0.19726092422896815
+    }
+  ],
+  "selections": {
+    "gamma": 1.0,
+    "gamma_c": 0.9,
+    "alpha": 10.0,
+    "r": 10
+  },
+  "at_grid_edge": {
+    "gamma": true,
+    "gamma_c": false,
+    "alpha": false,
+    "r": true
+  },
+  "timing_seconds": {
+    "prepare": 2.373512499994831,
+    "stage1_repeat": 12.458672699998715,
+    "stage2_explore": 57.27914349999628,
+    "stage3_combine": 8.79620419999992
+  }
+}
