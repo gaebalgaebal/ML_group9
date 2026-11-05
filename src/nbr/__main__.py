@@ -2,7 +2,10 @@
 
     python -m nbr check --profile P
     python -m nbr tune --profile P --dataset D
-    python -m nbr evaluate --profile P --dataset D [--transfer-from instacart] [--final] [--no-itemcf]
+    python -m nbr evaluate --profile P --dataset D [--transfer-from instacart] [--final] [--no-itemcf] [--no-lr]
+
+tune also fits the W6 logistic-regression repeat ranker and stores it under
+artifacts/<profile>/<dataset>_lr_repeat.joblib; evaluate loads it unless --no-lr.
 
 --final is the only way to read the Instacart eval split of a role == "final"
 profile (holdout); without it the holdout guard raises PermissionError.
@@ -60,6 +63,7 @@ def main(argv: list[str] | None = None) -> None:
     eval_parser.add_argument("--transfer-from", default=None, help="use the selections of another dataset")
     eval_parser.add_argument("--final", action="store_true", help="allow reading the holdout eval split")
     eval_parser.add_argument("--no-itemcf", action="store_true", help="skip the item-CF auxiliary models")
+    eval_parser.add_argument("--no-lr", action="store_true", help="skip the logistic-regression repeat ranker (H6, H7)")
     args = parser.parse_args(argv)
 
     if args.command == "check":
@@ -74,7 +78,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         path = run_evaluate(
             config, args.dataset, transfer_from=args.transfer_from,
-            allow_holdout_eval=args.final, include_itemcf=not args.no_itemcf,
+            allow_holdout_eval=args.final, include_itemcf=not args.no_itemcf, include_lr=not args.no_lr,
         )
     print(f"{args.command} {args.profile}/{args.dataset}: wrote {path} in {time.perf_counter() - t0:.1f}s")
 

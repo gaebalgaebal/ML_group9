@@ -21,3 +21,9 @@ bootstrap:
   n: 1000
   seed: 42
   levels: [0.95, 0.99375]                      # 95% and Bonferroni over 8 primary tests
+lr_repeat:                                     # W6: L2 logistic-regression repeat ranker (H6, H7)
+  decay_gammas: [0.5, 0.8, 1.0]
+  C: [0.01, 0.1, 1.0, 10.0]
+  val_fraction: 0.2
+  seed: 42
+  max_iter: 1000

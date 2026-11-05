@@ -2,19 +2,22 @@
 bootstrap (PREREG "Hypotheses"), and the auxiliary history-length breakdown.
 
 All lists are built from history frames only; targets are used solely to
-score them. The holdout guard of nbr.data.load_split applies: the Instacart
-eval split of a role == "final" profile is read only with
+score them (and, in tune, to label the logistic-regression training rows of
+W6). The holdout guard of nbr.data.load_split applies: the Instacart eval
+split of a role == "final" profile is read only with
 ``allow_holdout_eval=True`` (CLI flag --final).
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import time
 from pathlib import Path
 from typing import Any
 
+import joblib
 import pandas as pd
 
 from nbr.baselines import item_popularity, personal_frequency_list, popularity_list
@@ -23,6 +26,7 @@ from nbr.data import attach_levels, load_items, load_split, split_target
 from nbr.explore import category_profile, category_ranking, explore_list, explore_list_cf, population_category_ranking
 from nbr.io import write_json
 from nbr.itemcf import cf_list, cf_scores, item_neighbors
+from nbr.lr_repeat import build_training, fit_select, lr_repeat_list
 from nbr.metrics import paired_bootstrap, per_user_category_hit, per_user_ndcg, per_user_recall
 from nbr.repeat import repeat_list
 
@@ -31,6 +35,14 @@ K = 10
 HISTORY_BINS = {"instacart": [4, 6, 10, 20], "complete_journey": [20, 50, 100]}
 PRIMARY_MODELS = {"final_cf": "final", "final_r10": "final", "explore_L3": "explore_star",
                   "explore_cf": "explore_star", "itemcf_flat": "explore_star"}
+# W6: logistic-regression repeat ranker. Secondary comparisons name -> (comparator, model, metric).
+LR_SECONDARY = {"repeat_lr_vs_repeat_pf_repeat_recall": ("repeat_pf", "repeat_lr", "repeat_recall"),
+                "final_lr_vs_personal_frequency_ndcg": ("personal_frequency", "final_lr", "ndcg")}
+
+
+def run_label(config: dict[str, Any]) -> str:
+    """Role and profile of a run, e.g. "development (medium)"."""
+    return f"{config.get('role')} ({config.get('profile')})"
 
 
 # ---------------------------------------------------------------------------
@@ -127,12 +139,18 @@ def tune(config: dict[str, Any], dataset: str) -> dict[str, Any]:
     r_star = select_r(stage3)
     timings["stage3_combine"] = time.perf_counter() - t0
 
+    t0 = time.perf_counter()
+    lr_bundle = tune_lr_repeat(history, target, config)
+    lr_document = save_lr_repeat(lr_bundle, config, dataset)
+    timings["lr_repeat"] = time.perf_counter() - t0
+
     return {
         "profile": config["profile"],
         "dataset": dataset,
         "split": "fit",
         "k": K,
         "level": level,
+        "label": run_label(config),
         "n_users": {
             "all": int(target["user_id"].nunique()),
             "repeat_target": int(data["repeat_target"]["user_id"].nunique()),
@@ -150,8 +168,78 @@ def tune(config: dict[str, Any], dataset: str) -> dict[str, Any]:
             "alpha": _at_edge(alpha_star, alphas),
             "r": r_star in (min(rs), max(rs)),
         },
+        "lr_repeat": lr_document,
         "timing_seconds": timings,
     }
+
+
+# ---------------------------------------------------------------------------
+# W6: logistic-regression repeat ranker (fit split only)
+# ---------------------------------------------------------------------------
+def tune_lr_repeat(history: pd.DataFrame, target: pd.DataFrame, config: dict[str, Any]) -> dict[str, Any]:
+    """Build the training rows from the fit split and select C / refit (nbr.lr_repeat.fit_select)."""
+    settings = config["lr_repeat"]
+    gammas = [float(g) for g in settings["decay_gammas"]]
+    t0 = time.perf_counter()
+    X, y, groups = build_training(history, target, gammas)
+    build_seconds = time.perf_counter() - t0
+    bundle = fit_select(X, y, groups, [float(c) for c in settings["C"]], float(settings["val_fraction"]),
+                        int(settings["seed"]), int(settings["max_iter"]), K)
+    bundle["decay_gammas"] = gammas
+    bundle["timing_seconds"]["build_training"] = build_seconds
+    return bundle
+
+
+def lr_artifact_path(config: dict[str, Any], dataset: str) -> Path:
+    return Path(config["repo_root"]) / "artifacts" / str(config["profile"]) / f"{dataset}_lr_repeat.joblib"
+
+
+def sha256_of(path: Path) -> str:
+    """Hex SHA-256 digest of a file (hashlib.sha256 over the bytes, read in 1 MiB blocks)."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def save_lr_repeat(bundle: dict[str, Any], config: dict[str, Any], dataset: str) -> dict[str, Any]:
+    """Persist the fitted bundle with joblib.dump (pickle-based) and return the JSON summary."""
+    path = lr_artifact_path(config, dataset)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    stored = {key: bundle[key] for key in ("scaler", "model", "C", "features", "decay_gammas", "coefficients",
+                                            "intercept")}
+    joblib.dump(stored, path)
+    return {
+        "C_grid": [row["C"] for row in bundle["validation"]],
+        "validation": bundle["validation"],
+        "C": bundle["C"],
+        "coefficients": [{"feature": name, "coef": value} for name, value in bundle["coefficients"].items()],
+        "intercept": bundle["intercept"],
+        "n_iter_refit": bundle["n_iter_refit"],
+        "n_rows": bundle["n_rows"],
+        "positive_rate": bundle["positive_rate"],
+        "n_train_users": bundle["n_train_users"],
+        "n_val_users": bundle["n_val_users"],
+        "val_fraction": bundle["val_fraction"],
+        "seed": bundle["seed"],
+        "max_iter": bundle["max_iter"],
+        "decay_gammas": bundle["decay_gammas"],
+        "artifact": str(path),
+        "sha256": sha256_of(path),
+        "timing_seconds": bundle["timing_seconds"],
+    }
+
+
+def load_lr_repeat(config: dict[str, Any], dataset: str) -> dict[str, Any]:
+    """Load the bundle written by save_lr_repeat (artifacts/<profile>/<dataset>_lr_repeat.joblib)."""
+    path = lr_artifact_path(config, dataset)
+    if not path.exists():
+        raise FileNotFoundError(f"missing lr_repeat artifact {path}; run tune first")
+    bundle = joblib.load(path)
+    bundle["artifact"] = str(path)
+    bundle["sha256"] = sha256_of(path)
+    return bundle
 
 
 def tuning_path(config: dict[str, Any], dataset: str) -> Path:
@@ -215,8 +303,12 @@ def build_lists(
     config: dict[str, Any],
     *,
     include_itemcf: bool = True,
+    lr_bundle: dict[str, Any] | None = None,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, float]]:
-    """All model lists (k = 10) from the eval history; returns (lists, timings)."""
+    """All model lists (k = 10) from the eval history; returns (lists, timings).
+
+    With ``lr_bundle`` (W6) the lists repeat_lr and final_lr = combine(repeat_lr, explore_star, r*) are added.
+    """
     level = config["explore"]["level"]
     gamma, gamma_c, alpha, r = (
         float(selections["gamma"]), float(selections["gamma_c"]), float(selections["alpha"]), int(selections["r"])
@@ -248,6 +340,9 @@ def build_lists(
         timed("itemcf_flat", lambda: cf_list(history, neighbors, K, pop))
         timed("explore_cf", lambda: explore_list_cf(history, cf, K, gamma_c, alpha, level))
         timed("final_cf", lambda: combine(lists["repeat_star"], lists["explore_cf"], r, K))
+    if lr_bundle is not None:
+        timed("repeat_lr", lambda: lr_repeat_list(history, lr_bundle, K, pop))
+        timed("final_lr", lambda: combine(lists["repeat_lr"], lists["explore_star"], r, K))
     return lists, timings
 
 
@@ -302,8 +397,13 @@ def evaluate(
     allow_holdout_eval: bool = False,
     transfer_from: str | None = None,
     include_itemcf: bool = True,
+    lr_bundle: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Evaluate all models on the eval split with the given (fixed) selections."""
+    """Evaluate all models on the eval split with the given (fixed) selections.
+
+    ``lr_bundle`` (W6) adds repeat_lr / final_lr and the H6, H7 comparisons under the
+    "lr_repeat" key; the H1-H5 entries do not depend on it.
+    """
     timings: dict[str, float] = {}
     t0 = time.perf_counter()
     data = prepare(config, dataset, "eval", allow_holdout_eval=allow_holdout_eval)
@@ -312,7 +412,8 @@ def evaluate(
     level = config["explore"]["level"]
     timings["prepare"] = time.perf_counter() - t0
 
-    lists, list_timings = build_lists(history, pop, selections, config, include_itemcf=include_itemcf)
+    lists, list_timings = build_lists(history, pop, selections, config, include_itemcf=include_itemcf,
+                                      lr_bundle=lr_bundle)
     timings.update({f"list_{name}": seconds for name, seconds in list_timings.items()})
 
     t0 = time.perf_counter()
@@ -406,12 +507,53 @@ def evaluate(
     )
     timings["by_history_length"] = time.perf_counter() - t0
 
+    # W6: logistic-regression repeat ranker (H6: repeat_lr vs repeat_star; H7: final_lr vs final).
+    lr_repeat = None
+    if lr_bundle is not None:
+        t0 = time.perf_counter()
+        lr_series = {
+            "H6_repeat_recall": (recall_on("repeat_star", repeat_target), recall_on("repeat_lr", repeat_target)),
+            "H7_ndcg": (ndcg_all("final"), ndcg_all("final_lr")),
+            "H7_recall": (recall_on("final", target), recall_on("final_lr", target)),
+        }
+        lr_labels = {
+            "H6_repeat_recall": ("repeat_star", "repeat_lr", "repeat Recall@10", "users with repeat target"),
+            "H7_ndcg": ("final", "final_lr", "NDCG@10", "all users"),
+            "H7_recall": ("final", "final_lr", "Recall@10", "all users"),
+        }
+        lr_primary = {}
+        for key, (a, b) in lr_series.items():
+            comparator, model, metric, users = lr_labels[key]
+            lr_primary[key] = {"comparator": comparator, "model": model, "metric": metric, "users": users,
+                               **_compare(a, b, config, primary=True)}
+        lr_secondary = {}
+        for key, (reference, variant, metric) in LR_SECONDARY.items():
+            if metric == "repeat_recall":
+                a, b = recall_on(reference, repeat_target), recall_on(variant, repeat_target)
+            else:
+                a, b = ndcg_all(reference), ndcg_all(variant)
+            lr_secondary[key] = {"comparator": reference, "model": variant, "metric": metric,
+                                 **_compare(a, b, config, primary=False)}
+        lr_breakdown = by_history_length(lr_series, lengths, dataset, config)
+        timings["lr_repeat_metrics"] = time.perf_counter() - t0
+        lr_repeat = {
+            "label": run_label(config),
+            "artifact": lr_bundle.get("artifact"),
+            "sha256": lr_bundle.get("sha256"),
+            "C": lr_bundle["C"],
+            "features": list(lr_bundle["features"]),
+            "primary": lr_primary,
+            "secondary": lr_secondary,
+            "by_history_length": lr_breakdown,
+        }
+
     return {
         "profile": config["profile"],
         "dataset": dataset,
         "split": "eval",
         "k": K,
         "level": level,
+        "label": run_label(config),
         "selections": selections,
         "transfer_from": transfer_from,
         "include_itemcf": include_itemcf,
@@ -425,6 +567,7 @@ def evaluate(
         "H5": h5,
         "secondary": secondary,
         "by_history_length": breakdown,
+        "lr_repeat": lr_repeat,
         "timing_seconds": timings,
     }
 
@@ -436,8 +579,11 @@ def run_evaluate(
     transfer_from: str | None = None,
     allow_holdout_eval: bool = False,
     include_itemcf: bool = True,
+    include_lr: bool = True,
 ) -> Path:
+    """Evaluate with the selections (and, if ``include_lr``, the lr_repeat artifact) of ``transfer_from or dataset``."""
     selections = load_selections(config, transfer_from or dataset)
+    lr_bundle = load_lr_repeat(config, transfer_from or dataset) if include_lr else None
     document = evaluate(config, dataset, selections, allow_holdout_eval=allow_holdout_eval,
-                        transfer_from=transfer_from, include_itemcf=include_itemcf)
+                        transfer_from=transfer_from, include_itemcf=include_itemcf, lr_bundle=lr_bundle)
     return write_json(eval_path(config, dataset, transfer_from), document, config)

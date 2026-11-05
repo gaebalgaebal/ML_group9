@@ -113,6 +113,7 @@ def _config(root, profile="sample", role="smoke"):
         "explore": {"level": "L2", "gamma_c": [0.8, 1.0], "alphas": [1, 10], "itemcf": {"neighbors": 5}},
         "combine": {"r": [5, 8, 10]},
         "bootstrap": {"n": 200, "seed": 42, "levels": [0.95, 0.99375]},
+        "lr_repeat": {"decay_gammas": [0.5, 0.8, 1.0], "C": [0.1, 1.0], "val_fraction": 0.2, "seed": 42, "max_iter": 300},
     }
 
 
@@ -191,8 +192,8 @@ def test_h5_direction_item_cf_better(workspace, monkeypatch):
     config = _config(workspace)
     original = pipeline.build_lists
 
-    def patched(history, pop, selections, config, *, include_itemcf=True):
-        lists, timings = original(history, pop, selections, config, include_itemcf=include_itemcf)
+    def patched(history, pop, selections, config, *, include_itemcf=True, lr_bundle=None):
+        lists, timings = original(history, pop, selections, config, include_itemcf=include_itemcf, lr_bundle=lr_bundle)
         data = pipeline.prepare(config, "instacart", "eval")
         perfect = data["new_target"][["user_id", "item_id"]].drop_duplicates().copy()
         perfect["rank"] = perfect.groupby("user_id").cumcount() + 1
@@ -242,3 +243,105 @@ def test_no_leakage_from_target(workspace):
     lists, _ = build_lists(data["history"], data["pop"], after["selections"], config)
     assert "zz_new" not in set(lists["final"]["user_id"])
     assert not lists["explore_star"]["item_id"].isin(["never1", "never2"]).any()
+
+
+# ---------------------------------------------------------------------------
+# W6: logistic-regression repeat ranker (H6, H7)
+# ---------------------------------------------------------------------------
+LR_PRIMARY = {"H6_repeat_recall", "H7_ndcg", "H7_recall"}
+LR_SECONDARY_KEYS = {"repeat_lr_vs_repeat_pf_repeat_recall", "final_lr_vs_personal_frequency_ndcg"}
+
+
+def test_tune_writes_lr_repeat_block_and_artifact(workspace):
+    from nbr.pipeline import lr_artifact_path, load_lr_repeat, sha256_of
+
+    config = _config(workspace)
+    document = json.loads(run_tune(config, "instacart").read_text(encoding="utf-8"))
+    assert document["label"] == "smoke (sample)"
+    block = document["lr_repeat"]
+    assert block["C_grid"] == [0.1, 1.0] and block["C"] in (0.1, 1.0)
+    assert [row["C"] for row in block["validation"]] == [0.1, 1.0]
+    assert {"val_recall", "n_iter", "fit_seconds"} <= set(block["validation"][0])
+    assert [row["feature"] for row in block["coefficients"]][:3] == ["dec_g0.5", "dec_g0.8", "dec_g1.0"]
+    assert block["n_rows"] > 0 and 0 < block["positive_rate"] < 1
+    assert block["n_train_users"] == 24 and block["n_val_users"] == 6
+    path = lr_artifact_path(config, "instacart")
+    assert path == workspace / "artifacts" / "sample" / "instacart_lr_repeat.joblib"
+    assert path.exists() and block["artifact"] == str(path) and block["sha256"] == sha256_of(path)
+    bundle = load_lr_repeat(config, "instacart")
+    assert bundle["C"] == block["C"] and bundle["sha256"] == block["sha256"]
+    assert {name: value for name, value in bundle["coefficients"].items()} == {
+        row["feature"]: row["coef"] for row in block["coefficients"]
+    }
+
+
+def test_evaluate_h6_h7_structure_and_h1_h5_unchanged(workspace):
+    from nbr.pipeline import load_lr_repeat
+
+    config = _config(workspace)
+    run_tune(config, "instacart")
+    selections = load_selections(config, "instacart")
+    with_lr = evaluate(config, "instacart", selections, lr_bundle=load_lr_repeat(config, "instacart"))
+    without = evaluate(config, "instacart", selections)
+    assert without["lr_repeat"] is None and "repeat_lr" not in without["list_metrics"]
+    # H1-H5, secondary comparisons and the history-length breakdown do not depend on the LR model.
+    for key in ("primary", "H5", "secondary", "by_history_length", "n_users", "selections"):
+        assert with_lr[key] == without[key]
+    assert {name: with_lr["list_metrics"][name] for name in without["list_metrics"]} == without["list_metrics"]
+
+    assert with_lr["label"] == "smoke (sample)"
+    block = with_lr["lr_repeat"]
+    assert block["label"] == "smoke (sample)" and block["sha256"] and block["C"] in (0.1, 1.0)
+    assert set(block["primary"]) == LR_PRIMARY
+    for key, entry in block["primary"].items():
+        assert set(entry["ci"]) == {"0.95", "0.99375"} and set(entry["decision"]) == {"0.95", "0.99375"}
+        assert entry["diff"] == pytest.approx(entry["model_mean"] - entry["comparator_mean"])
+        assert entry["ci"]["0.95"][0] <= entry["diff"] <= entry["ci"]["0.95"][1]
+    h6, h7 = block["primary"]["H6_repeat_recall"], block["primary"]["H7_ndcg"]
+    assert (h6["comparator"], h6["model"]) == ("repeat_star", "repeat_lr")
+    assert h6["n_users"] == with_lr["primary"]["H1_repeat_recall"]["n_users"]
+    assert (h7["comparator"], h7["model"]) == ("final", "final_lr") and h7["n_users"] == with_lr["n_users"]["all"]
+    assert set(block["secondary"]) == LR_SECONDARY_KEYS
+    assert "decision" not in block["secondary"]["final_lr_vs_personal_frequency_ndcg"]
+    assert [row["bin"] for row in block["by_history_length"]] == [row["bin"] for row in with_lr["by_history_length"]]
+    assert set(block["by_history_length"][1]) == {"bin", "n_users"} | LR_PRIMARY
+    assert {"repeat_lr", "final_lr"} <= set(with_lr["list_metrics"])
+    assert with_lr["list_metrics"]["final_lr"]["ndcg"] == pytest.approx(h7["model_mean"])
+
+    # CLI path: run_evaluate loads the artifact; --no-lr equivalent skips it.
+    document = json.loads(run_evaluate(config, "instacart").read_text(encoding="utf-8"))
+    assert set(document["lr_repeat"]["primary"]) == LR_PRIMARY
+    assert json.loads(run_evaluate(config, "instacart", include_lr=False).read_text(encoding="utf-8"))["lr_repeat"] is None
+
+
+def test_h6_h7_direction_with_perfect_lr_lists(workspace, monkeypatch):
+    """diff > 0 when the LR lists are better: replace repeat_lr / final_lr by the (dedup) targets."""
+    import nbr.pipeline as pipeline
+
+    config = _config(workspace)
+    run_tune(config, "instacart")
+    bundle = pipeline.load_lr_repeat(config, "instacart")
+    original = pipeline.build_lists
+
+    def perfect(frame, source):
+        out = frame[["user_id", "item_id"]].drop_duplicates().copy()
+        out["rank"] = out.groupby("user_id").cumcount() + 1
+        out["source"] = source
+        return out[["user_id", "rank", "item_id", "source"]]
+
+    def patched(history, pop, selections, config, *, include_itemcf=True, lr_bundle=None):
+        lists, timings = original(history, pop, selections, config, include_itemcf=include_itemcf, lr_bundle=lr_bundle)
+        data = pipeline.prepare(config, "instacart", "eval")
+        lists["repeat_lr"] = perfect(data["repeat_target"], "repeat_lr")
+        lists["final_lr"] = perfect(data["target"], "final_lr")
+        return lists, timings
+
+    monkeypatch.setattr(pipeline, "build_lists", patched)
+    result = pipeline.evaluate(config, "instacart", load_selections(config, "instacart"), lr_bundle=bundle)
+    primary = result["lr_repeat"]["primary"]
+    assert primary["H6_repeat_recall"]["model_mean"] == pytest.approx(1.0)
+    assert primary["H7_ndcg"]["model_mean"] == pytest.approx(1.0)
+    for key in LR_PRIMARY:
+        assert primary[key]["diff"] > 0
+        assert primary[key]["decision"]["0.95"] == "improvement observed"
+    assert result["lr_repeat"]["secondary"]["repeat_lr_vs_repeat_pf_repeat_recall"]["diff"] > 0
