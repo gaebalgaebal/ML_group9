@@ -1,0 +1,46 @@
+{
+  "medium_draw_reproduced": true,
+  "eligible_train_users": 131209,
+  "excluded_users": 21273,
+  "remaining_users": 109936,
+  "vendor_commit": "e11b3652c5fc92aa5d22d4309a2c6368ed8a464d",
+  "seed": 42,
+  "size": 20000,
+  "selected_users": 20000,
+  "overlap_with_used_profiles": 0,
+  "selected_users_sha256": "43a1578613b2e1bd7f04db87ed3e6b078fe9537e944d650bf7872bbce13f7a06",
+  "items_equal_medium": true,
+  "attribute_categories_equal_medium": true,
+  "mapping": {
+    "columns": {
+      "product_id": "int64",
+      "mapping_status": "object",
+      "matched_key": "object",
+      "ingredient_id": "object",
+      "match_rule": "object",
+      "review_reason": "object",
+      "dropped_tokens": "object",
+      "mapping_note": "object",
+      "is_auto": "bool",
+      "v1_mapping_status": "object",
+      "v1_matched_key": "object",
+      "mapping_version": "object"
+    },
+    "rows": 49688,
+    "mapping_version": [
+      "2026-11-02.v2.1"
+    ],
+    "version_matches": true
+  },
+  "prepare_summary": {
+    "users": 20000,
+    "fit_interactions": 2941910,
+    "eval_interactions": 3150105,
+    "items": 49688
+  },
+  "runtime_s": 26.7,
+  "peak_rss_mb": 1837.0,
+  "python": "3.10.12",
+  "pandas": "2.2.3",
+  "numpy": "1.26.4"
+}

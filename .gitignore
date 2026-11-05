@@ -1,0 +1,14 @@
+# Data (license: redistribute download scripts only), local environments, generated outputs
+data/processed/
+data/raw/
+artifacts/
+reports/metrics/
+reports/figures/
+reports/tables/
+reports/holdout_prep/run.log
+reports/holdout_prep/metrics/
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+*.pyc

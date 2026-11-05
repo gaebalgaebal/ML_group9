@@ -1,0 +1,3 @@
+profile: medium
+role: development           # eval split already used in earlier ML_group9 experiments
+datasets: [instacart, complete_journey]

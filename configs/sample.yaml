@@ -1,0 +1,3 @@
+profile: sample
+role: smoke                 # pipeline checks only; no reported results
+datasets: [instacart, complete_journey]

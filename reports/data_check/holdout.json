@@ -1,0 +1,44 @@
+{
+  "instacart": {
+    "items": 49688,
+    "level_sizes": {
+      "coarse_category": 21,
+      "fine_category": 134,
+      "ingredient_type": 3416
+    },
+    "l3_type_source_items": {
+      "fallback": 27992,
+      "mapped": 21696
+    },
+    "fit": {
+      "history_rows": 2941910,
+      "target_rows": 208195,
+      "users": 20000,
+      "history_baskets_per_user_median": 8.0,
+      "target_after_history_all": true,
+      "history_items_in_item_table": 1.0,
+      "history_rows_l3_mapped": 0.8096090634995632,
+      "target_repeat_row_share": 0.586330123201806,
+      "target_rows_unseen_globally": 0.0034438867407958883,
+      "users_with_new_item": 0.8151,
+      "new_item_rows_in_seen_coarse_category": 0.8600622358459895,
+      "new_item_rows_in_seen_fine_category": 0.5665551994798198,
+      "new_item_rows_in_seen_ingredient_type": 0.18409502577678696
+    },
+    "eval": {
+      "history_rows": 3150105,
+      "target_rows": 210822,
+      "users": 20000,
+      "history_baskets_per_user_median": 9.0,
+      "target_after_history_all": true,
+      "history_items_in_item_table": 1.0,
+      "history_rows_l3_mapped": 0.8091136644651528,
+      "target_repeat_row_share": 0.5987610401191527,
+      "target_rows_unseen_globally": 0.0029076661828461923,
+      "users_with_new_item": 0.8131,
+      "new_item_rows_in_seen_coarse_category": 0.8854947393308902,
+      "new_item_rows_in_seen_fine_category": 0.6006974819718642,
+      "new_item_rows_in_seen_ingredient_type": 0.19878236198132168
+    }
+  }
+}

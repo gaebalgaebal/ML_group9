@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nbr"
+version = "0.1.0"
+description = "Hierarchical next-basket recommendation separating repurchase and exploration (Instacart, Complete Journey)"
+requires-python = ">=3.10,<3.13"
+# Same pins as vendor/ml_group9_e11b365 (the preprocessing snapshot).
+dependencies = [
+  "numpy==1.26.4",
+  "pandas==2.2.3",
+  "scipy==1.13.1",
+  "scikit-learn==1.5.2",
+  "pyarrow==17.0.0",
+  "PyYAML==6.0.2",
+  "joblib==1.4.2",
+  "matplotlib==3.9.2",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.3.3"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-q"

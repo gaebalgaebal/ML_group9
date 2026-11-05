@@ -1,0 +1,80 @@
+{
+  "instacart": {
+    "items": 49688,
+    "level_sizes": {
+      "coarse_category": 21,
+      "fine_category": 134,
+      "ingredient_type": 3416
+    },
+    "l3_type_source_items": {
+      "fallback": 27992,
+      "mapped": 21696
+    },
+    "fit": {
+      "history_rows": 213777,
+      "target_rows": 15747,
+      "users": 1500,
+      "history_baskets_per_user_median": 8.0,
+      "target_after_history_all": true,
+      "history_items_in_item_table": 1.0,
+      "history_rows_l3_mapped": 0.8105596018280732,
+      "target_repeat_row_share": 0.5853813424779323,
+      "target_rows_unseen_globally": 0.041023687051501875,
+      "users_with_new_item": 0.8186666666666667,
+      "new_item_rows_in_seen_coarse_category": 0.8664420278756318,
+      "new_item_rows_in_seen_fine_category": 0.5737478940113341,
+      "new_item_rows_in_seen_ingredient_type": 0.180119466993414
+    },
+    "eval": {
+      "history_rows": 229524,
+      "target_rows": 15848,
+      "users": 1500,
+      "history_baskets_per_user_median": 9.0,
+      "target_after_history_all": true,
+      "history_items_in_item_table": 1.0,
+      "history_rows_l3_mapped": 0.8100155103605723,
+      "target_repeat_row_share": 0.5992554265522464,
+      "target_rows_unseen_globally": 0.03785966683493185,
+      "users_with_new_item": 0.8333333333333334,
+      "new_item_rows_in_seen_coarse_category": 0.8872618485277909,
+      "new_item_rows_in_seen_fine_category": 0.595969138718312,
+      "new_item_rows_in_seen_ingredient_type": 0.20862856243111322
+    }
+  },
+  "complete_journey": {
+    "items": 91691,
+    "level_sizes": {
+      "DEPARTMENT": 32,
+      "commodity": 303,
+      "fine_category": 2369
+    },
+    "fit": {
+      "history_rows": 437906,
+      "target_rows": 7715,
+      "users": 500,
+      "history_baskets_per_user_median": 63.5,
+      "target_after_history_all": true,
+      "history_items_in_item_table": 1.0,
+      "target_repeat_row_share": 0.47388204795852235,
+      "target_rows_unseen_globally": 0.05586519766688269,
+      "users_with_new_item": 0.95,
+      "new_item_rows_in_seen_DEPARTMENT": 0.991130820399113,
+      "new_item_rows_in_seen_commodity": 0.8255728011825573,
+      "new_item_rows_in_seen_fine_category": 0.5821630943582163
+    },
+    "eval": {
+      "history_rows": 504963,
+      "target_rows": 6784,
+      "users": 500,
+      "history_baskets_per_user_median": 74.0,
+      "target_after_history_all": true,
+      "history_items_in_item_table": 1.0,
+      "target_repeat_row_share": 0.4815742924528302,
+      "target_rows_unseen_globally": 0.044663915094339625,
+      "users_with_new_item": 0.956,
+      "new_item_rows_in_seen_DEPARTMENT": 0.9877736707421098,
+      "new_item_rows_in_seen_commodity": 0.8387830537389821,
+      "new_item_rows_in_seen_fine_category": 0.5953938015353994
+    }
+  }
+}

@@ -1,0 +1,23 @@
+# Shared settings. Fixed before any holdout evaluation (see docs/PREREG.md).
+seed: 42
+top_k: 10
+# Processed data root; override with the NBR_DATA_DIR environment variable (e.g. in git worktrees).
+data_dir: data/processed
+levels:
+  instacart: {L1: coarse_category, L2: fine_category, L3: ingredient_type}            # department, aisle, ingredient type (aisle fallback)
+  complete_journey: {L1: DEPARTMENT, L2: commodity, L3: fine_category}               # department, commodity, sub-commodity
+repeat:
+  gammas: [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]       # 1.0 = personal purchase frequency
+explore:
+  level: L2
+  gamma_c: [0.8, 0.9, 1.0]
+  alphas: [1, 10, 100]
+  phi: pop                                     # main; itemcf is a secondary variant
+  itemcf:
+    neighbors: 20
+combine:
+  r: [5, 6, 7, 8, 9, 10]                       # repeat slots; 10 = repeat only
+bootstrap:
+  n: 1000
+  seed: 42
+  levels: [0.95, 0.99375]                      # 95% and Bonferroni over 8 primary tests
