@@ -6,6 +6,7 @@ Instacart와 dunnhumby Complete Journey(CJ)의 구매 이력으로 사용자별 
 
 - **기준 모델(LR hybrid)**: Item-CF, content 점수, 구매 이력 feature를 Logistic Regression으로 결합합니다. Instacart fit split에서만 학습하고, CJ에는 재학습 없이 적용합니다(모델 파일 SHA-256을 평가 전후로 비교).
 - **재구매/탐색 분리(repeat-explore)**: 최근 가중 재구매 점수와 item-CF 탐색 점수를 따로 만들고, 파라미터(`gamma`, `kappa`, `beta`, `global_r`)를 fit split에서 순서대로 고릅니다(`repeat_explore`, `re_pipeline`).
+- **건강 선호 탐색 규칙(매핑 불필요)**: 재구매 순위는 유지하고, 상품명·aisle만으로 만든 저지방/글루텐프리/저염 선호를 신규상품 Item-CF 점수의 보조 feature로 더합니다. 가중치 `lambda`는 fit split에서 고르며 0이면 원래 순위와 같습니다. 지속성 조건은 최근 5개 장바구니 중 속성 구매 2회 이상(`recent_2`), 최근 적용 카테고리 내 속성 비율이 모집단보다 높음(`recent_rate`), 이력 전·후반 모두 모집단보다 높음(`both_halves`)을 각각 비교합니다. 저당은 유형 내 AUC 근거가 없어 제외합니다.
 - **계층형 추천(HIER)**: aisle(CJ는 commodity) → 재료 유형 → 속성 조합 → 상품 순서로 확률을 곱합니다. 각 단계는 사용자 이력, 사용자 KNN 이웃, 모집단 비율로 shrinkage합니다(`hierarchical`, `hier_pipeline`). 재료 유형은 외부 매핑 파일에서 가져옵니다(`ingredient_types`).
 - **건강 속성 분석(H\*, H\*′)**: 이력을 앞뒤 절반으로 나누어 사용자별 속성 구매 비율의 지속성(Spearman ρ, 첫 구매 상품만 쓴 버전 포함)과 구매자 지속성(odds ratio)을 봅니다(`hstar`, `hstar_followup`, `hstar_robust`). 같은 재료 유형 안에서 사용자의 속성 선호가 실제 속성 선택과 연관되는지를 유형 내 AUC로 확인합니다(`hier_followup`). 건강 속성 구매자 하위집단 분석은 `health_subgroup`, `hs_followup`에 있습니다.
 - **CJ 외부 데이터**: CJ에는 상품명 열이 없어 Instacart식 건강 속성을 만들 수 없으므로, CJ 속성은 PB(`BRAND == "Private"`, `private_label`) 하나만 씁니다. CJ 카테고리 텍스트의 건강·맛 키워드는 `cj_keyword_audit`로 기술 통계만 냅니다(모델에는 쓰지 않음).
@@ -21,11 +22,12 @@ data/raw/
 ├── instacart/<archive>.zip          # orders.csv, order_products__prior.csv, order_products__train.csv,
 │                                    # products.csv, aisles.csv, departments.csv
 ├── complete_journey/<archive>.zip   # transaction_data.csv, product.csv (최소)
-└── mapping/product_ingredient_mapping_v2.parquet
+└── mapping/product_ingredient_mapping_v2.parquet  # 계층형 추천을 실행할 때만 필요
 ```
 
 - 데이터 출처: [Kaggle Instacart Market Basket Analysis](https://www.kaggle.com/competitions/basket-analysis), [dunnhumby Source Files - The Complete Journey](https://www.dunnhumby.com/source-files/). 이용 조건은 각 배포 페이지를 따릅니다.
 - 재료 유형 매핑(`mapping/product_ingredient_mapping_v2.parquet`, 기대 버전 `2026-11-02.v2.1`)은 별도 프로젝트 `food_recipe_preprocessing_gu`가 만든 Instacart `product_id` → 재료 매핑입니다. `prepare-types`는 `configs/<profile>.yaml`의 `hierarchical.mapping.source` 경로에서 이 파일을 읽어 `data/raw/mapping/`에 복사하고 SHA-256을 확인합니다. source 경로가 없으면 이미 있는 복사본을 경고와 함께 사용합니다.
+- 기본 모델, repeat-explore, 건강 선호 탐색 규칙은 이 매핑 파일이나 별도 JSON 결과 없이 실행할 수 있습니다. 매핑이 없으면 실행 순서의 2·9·10·14번(계층형/유형 분석)만 건너뜁니다.
 
 ## 설치
 
@@ -54,7 +56,7 @@ python -m pip install -r requirements.txt
 | 2 | `python -m ml_group9 prepare-types --profile <p>` | 1 | 매핑 parquet, `data/processed/<p>/*/items.parquet` | `items.parquet`에 유형 열 추가(덮어씀), `reports/metrics/<p>_types.json` |
 | 3 | `python -m ml_group9 train --profile <p>` | 1 | Instacart fit split | `artifacts/<p>/models/hybrid_lr.joblib`, `hybrid_lr_pref.joblib`, `artifacts/<p>/training_candidates.parquet`, `reports/metrics/<p>_training.json` |
 | 4 | `python -m ml_group9 evaluate --dataset {instacart,complete_journey} --profile <p>` | 3 | eval split, 모델 | `reports/metrics/<p>_<dataset>.json`, `reports/figures/<p>_<dataset>.png`, `artifacts/<p>/predictions/<dataset>_top10.parquet` |
-| 5 | `python -m ml_group9 tune-re --profile <p>` | 1 | fit split | `reports/metrics/<p>_re_tuning.json` |
+| 5 | `python -m ml_group9 tune-re --profile <p>` | 1 | fit split(Item-CF·건강 가중치/탐색 칸 선택) | `reports/metrics/<p>_re_tuning.json` |
 | 6 | `python -m ml_group9 eval-re --dataset {instacart,complete_journey} --profile <p>` | 3, 5 | eval split, 모델, re 튜닝 | `reports/metrics/<p>_re_<dataset>.json` |
 | 7 | `python -m ml_group9 tune-hs --profile <p>` | 5 | Instacart fit split, re 튜닝 | `reports/metrics/<p>_hs_tuning.json` |
 | 8 | `python -m ml_group9 eval-hs --profile <p>` | 3, 7 | Instacart eval split, 모델, hs 튜닝 | `reports/metrics/<p>_hs_instacart.json` |
@@ -89,7 +91,14 @@ python scripts/make_hstarp_figures.py \
 # 보고서용 그림 3개(fig1_persistence.png, fig2_pooled_vs_within.png, fig3_within_type_auc.png)
 python scripts/make_report_figures.py reports/metrics/medium_hstar_robust.json \
   reports/metrics/medium_hier_followup.json reports/figures
+
+# 건강 후보 보강 sample/medium 비교표와 그림
+python scripts/make_health_candidate_report.py \
+  reports/metrics/sample_re_instacart.json \
+  reports/metrics/medium_re_instacart.json --out-dir reports
 ```
+
+건강 후보 실험의 수치와 해석은 [`reports/HEALTH_CANDIDATE_RESULTS.md`](reports/HEALTH_CANDIDATE_RESULTS.md)에 정리되어 있습니다. 핵심 결과는 medium food 범위에서 저지방·글루텐프리·저염 신상품 hit@10은 상승했지만, 전체 신규상품 Recall@10과 NDCG@10의 일관된 개선은 확인되지 않았다는 것입니다. 따라서 이 기능은 일반 정확도 개선이 아니라 건강 선호 사용자에게 관련 신상품 노출을 늘리는 보조 개인화 규칙으로 사용합니다.
 
 `make_hstarp_figures.py`의 `--hier-followup`은 생략할 수 있으며, 생략하면 유형 내 AUC 그림을 만들지 않습니다. `--prefix` 기본값은 `medium_hstarp`입니다.
 
@@ -99,6 +108,10 @@ python scripts/make_report_figures.py reports/metrics/medium_hstar_robust.json \
 - Instacart eval split: 모든 `prior` 주문을 이력, 공식 `train` 주문을 정답으로 사용합니다.
 - CJ: 1~90주를 이력, 91주 이후 사용자의 첫 장바구니를 정답으로 사용합니다.
 - 모든 확률·선호·이웃은 해당 split의 이력에서만 계산하고, 정답은 지표 계산에만 씁니다.
+- 건강 탐색 규칙은 `n_C >= 10`, 사용자 속성 비율이 모집단보다 0.05 이상 높은 경우에만 적용합니다. 건강 점수는 `(사용자 비율 - 모집단 비율) × n_C/(n_C+10)`이고, 소프트 결합은 `log(Item-CF + epsilon) + lambda × 건강 점수`로 계산합니다. `lambda`는 `[0, 0.05, 0.1, 0.25, 0.5]` 중 fit split에서 선택하며 eval 정답은 사용자 판정이나 순위 계산에 사용하지 않습니다.
+- 건강 후보 보강은 적격 사용자가 과거에 구매한 각 aisle에서 저지방·글루텐프리·저염 인기상품을 최대 10개씩 추가하고 사용자당 100개로 제한합니다. 이미 구매한 상품은 제외하며 `candidate_enabled`로 동일 데이터에서 보강 전후를 비교할 수 있습니다.
+- 보강 후보는 Item-CF 점수가 0일 수 있으므로 후보 보강 전용 `lambda` 범위 `[0, 1, 2, 5, 10, 20]`도 별도로 fit에서 선택하고 `re_health_candidate_soft`로 평가합니다.
+- `eval-re`는 기본 소프트 결합과 `re_health_recent_2`, `re_health_recent_rate`, `re_health_both_halves`를 함께 기록합니다. 각 변형의 가중치는 fit split에서 독립적으로 선택하며, 기존 강제 승격 방식도 비교용으로 유지합니다.
 
 ## 결과 파일
 

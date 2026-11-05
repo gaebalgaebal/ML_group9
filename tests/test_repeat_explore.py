@@ -10,6 +10,10 @@ from ml_group9.repeat_explore import (
     cf_scores,
     explore_candidates,
     explore_scores,
+    health_gated_explore_ranking,
+    health_preference_candidates,
+    health_preference_scores,
+    health_soft_explore_ranking,
     item_popularity,
     repeat_counts,
     repeat_ranking,
@@ -122,6 +126,186 @@ def test_explore_candidates_cover_cf_preference_and_popular_fill():
     assert candidates.loc[candidates["user"].eq(1), "from_popular"].all()
     scores = explore_scores(candidates, beta=0.0, epsilon=1e-4)
     assert scores[candidates["s_cf"].eq(0).to_numpy()] == pytest.approx(np.log(1e-4))
+
+
+def test_health_candidates_apply_per_aisle_quota_and_exclude_seen_items():
+    model = PreferenceModel(
+        attributes=["fat_reduced", "sugar_reduced"],
+        prior=np.array([0.2, 0.2]),
+        pi=np.array([[0.7, 0.9], [0.1, 0.9]]),
+        n_c=np.array([[20, 20], [20, 20]], dtype=float),
+        item_flag=np.array(
+            [[1, 0], [1, 0], [1, 0], [1, 0], [0, 1], [0, 0]], dtype=np.int8
+        ),
+        item_applicable=np.ones((6, 2), dtype=bool),
+    )
+    seen_sets = [{0, 2}, {5}]
+    fine = np.array(["milk", "milk", "bread", "bread", "milk", "milk"], dtype=object)
+    popularity = np.array([10, 9, 8, 7, 20, 1], dtype=float)
+    settings = {
+        "attributes": ["fat_reduced"],
+        "min_n_c": 10,
+        "min_lift": 0.05,
+        "candidate_enabled": True,
+        "candidate_items_per_aisle": 1,
+        "candidate_max_per_user": 10,
+    }
+    result = health_preference_candidates(
+        seen_sets, np.ones(6, dtype=bool), model, fine, popularity, settings
+    )
+    assert set(map(tuple, result.to_numpy())) == {(0, 1), (0, 3)}
+    assert 4 not in set(result["item"])  # sugar-only item is not an enabled health attribute
+    disabled = health_preference_candidates(
+        seen_sets, np.ones(6, dtype=bool), model, fine, popularity, {**settings, "candidate_enabled": False}
+    )
+    assert disabled.empty
+
+
+def test_health_gate_uses_only_configured_attributes_and_caps_promotions():
+    candidates = pd.DataFrame(
+        {
+            "user": [0, 0, 0, 0, 1, 1],
+            "item": [0, 1, 2, 3, 0, 1],
+            "s_cf": [0.9, 0.8, 0.7, 0.6, 0.9, 0.8],
+        }
+    )
+    model = PreferenceModel(
+        attributes=["fat_reduced", "sugar_reduced", "gluten_free", "low_sodium"],
+        prior=np.array([0.2, 0.2, 0.2, 0.2]),
+        pi=np.array([[0.5, 0.9, 0.6, 0.7], [0.5, 0.9, 0.6, 0.7]]),
+        n_c=np.array([[20, 20, 20, 20], [2, 2, 2, 2]], dtype=float),
+        # Item 0 is sugar-only and must not be promoted; items 1..3 are validated health attributes.
+        item_flag=np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.int8),
+        item_applicable=np.ones((4, 4), dtype=bool),
+    )
+    settings = {
+        "attributes": ["fat_reduced", "gluten_free", "low_sodium"],
+        "min_n_c": 10,
+        "min_lift": 0.05,
+    }
+    scores = np.log(candidates["s_cf"].to_numpy())
+    ranked_health = health_gated_explore_ranking(candidates, scores, model, settings, health_slots=2)
+    user0 = ranked_health[ranked_health["user"].eq(0)]
+    assert user0["health_promoted"].sum() == 2
+    assert 0 not in set(user0.loc[user0["health_promoted"], "item"])
+    assert user0.sort_values("rank").head(2)["health_promoted"].all()
+    assert not ranked_health.loc[ranked_health["user"].eq(1), "health_promoted"].any()
+
+
+def test_health_gate_zero_or_no_eligible_candidate_is_exact_fallback():
+    candidates = pd.DataFrame({"user": [0, 0], "item": [0, 1], "s_cf": [0.8, 0.7]})
+    model = preference_model(0.6)
+    scores = np.log(candidates["s_cf"].to_numpy())
+    settings = {"attributes": ["fat_reduced"], "min_n_c": 10, "min_lift": 0.05}
+    zero = health_gated_explore_ranking(candidates, scores, model, settings, health_slots=0)
+    unavailable = health_gated_explore_ranking(candidates, scores, model, settings, health_slots=2)
+    assert zero[["user", "item", "score", "rank"]].equals(unavailable[["user", "item", "score", "rank"]])
+    assert not unavailable["health_promoted"].any()
+
+
+def test_soft_health_score_excludes_sugar_and_low_evidence_users():
+    model = PreferenceModel(
+        attributes=["fat_reduced", "sugar_reduced", "gluten_free", "low_sodium"],
+        prior=np.array([0.2, 0.2, 0.2, 0.2]),
+        pi=np.array([[0.5, 0.9, 0.6, 0.7], [0.5, 0.9, 0.6, 0.7]]),
+        n_c=np.array([[20, 20, 20, 20], [2, 2, 2, 2]], dtype=float),
+        item_flag=np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0]], dtype=np.int8),
+        item_applicable=np.ones((3, 4), dtype=bool),
+    )
+    settings = {
+        "attributes": ["fat_reduced", "gluten_free", "low_sodium"],
+        "min_n_c": 10,
+        "min_lift": 0.05,
+    }
+    result = health_preference_scores(
+        np.array([0, 0, 0, 1]), np.array([0, 1, 2, 1]), model, settings
+    )
+    assert result[0] == 0.0  # sugar-only product
+    assert result[1] > 0 and result[2] > result[1]
+    assert result[3] == 0.0  # insufficient applicable-category history
+
+
+def test_soft_health_boost_is_additive_and_zero_lambda_is_exact_fallback():
+    candidates = pd.DataFrame({"user": [0, 0], "item": [0, 1], "s_cf": [0.80, 0.79]})
+    model = PreferenceModel(
+        attributes=["fat_reduced"],
+        prior=np.array([0.2]),
+        pi=np.array([[0.8]]),
+        n_c=np.array([[20.0]]),
+        item_flag=np.array([[0], [1]], dtype=np.int8),
+        item_applicable=np.ones((2, 1), dtype=bool),
+    )
+    settings = {"attributes": ["fat_reduced"], "min_n_c": 10, "min_lift": 0.05}
+    scores = np.log(candidates["s_cf"].to_numpy())
+    base = health_soft_explore_ranking(candidates, scores, model, settings, health_lambda=0.0)
+    soft = health_soft_explore_ranking(candidates, scores, model, settings, health_lambda=0.5)
+    assert base.sort_values("rank")["item"].tolist() == [0, 1]
+    assert soft.sort_values("rank")["item"].tolist() == [1, 0]
+    assert not base["health_boosted"].any()
+    assert soft.loc[soft["item"].eq(1), "score"].item() == pytest.approx(
+        np.log(0.79) + 0.5 * (0.8 - 0.2) * (20 / 30)
+    )
+
+
+def test_recent_gate_requires_recent_attribute_purchase():
+    model = PreferenceModel(
+        attributes=["fat_reduced"],
+        prior=np.array([0.2]),
+        pi=np.array([[0.8], [0.8]]),
+        n_c=np.array([[20.0], [20.0]]),
+        item_flag=np.array([[1]], dtype=np.int8),
+        item_applicable=np.ones((1, 1), dtype=bool),
+        recent_n_a=np.array([[1.0], [0.0]]),
+    )
+    settings = {
+        "attributes": ["fat_reduced"],
+        "min_n_c": 10,
+        "min_lift": 0.05,
+        "recent_min_purchases": 1,
+    }
+    without_gate = health_preference_scores(np.array([0, 1]), np.array([0, 0]), model, settings)
+    with_gate = health_preference_scores(
+        np.array([0, 1]), np.array([0, 0]), model, settings, require_recent=True
+    )
+    assert (without_gate > 0).all()
+    assert with_gate[0] > 0 and with_gate[1] == 0
+
+
+def test_strict_persistence_modes_select_different_users():
+    model = PreferenceModel(
+        attributes=["fat_reduced"],
+        prior=np.array([0.2]),
+        pi=np.full((4, 1), 0.7),
+        n_c=np.full((4, 1), 20.0),
+        item_flag=np.array([[1]], dtype=np.int8),
+        item_applicable=np.ones((1, 1), dtype=bool),
+        recent_n_a=np.array([[2], [1], [2], [2]], dtype=float),
+        recent_n_c=np.array([[4], [4], [10], [4]], dtype=float),
+        early_n_a=np.array([[2], [0], [1], [1]], dtype=float),
+        early_n_c=np.array([[4], [4], [5], [2]], dtype=float),
+        late_n_a=np.array([[2], [2], [1], [2]], dtype=float),
+        late_n_c=np.array([[4], [4], [5], [4]], dtype=float),
+    )
+    settings = {
+        "attributes": ["fat_reduced"],
+        "min_n_c": 10,
+        "min_lift": 0.05,
+        "recent_min_purchases": 1,
+        "recent_strict_min_purchases": 2,
+        "recent_rate_min_n_c": 3,
+        "half_min_n_c": 3,
+    }
+    users = np.arange(4)
+    items_ = np.zeros(4, dtype=int)
+    selected = {}
+    for mode in ["recent_2", "recent_rate", "both_halves"]:
+        score = health_preference_scores(users, items_, model, settings, persistence_mode=mode)
+        selected[mode] = set(np.flatnonzero(score > 0))
+    assert selected == {
+        "recent_2": {0, 2, 3},
+        "recent_rate": {0, 1, 3},
+        "both_halves": {0},
+    }
 
 
 def ranked(rows):

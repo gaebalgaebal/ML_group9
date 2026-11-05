@@ -133,6 +133,12 @@ class PreferenceModel:
     item_flag: np.ndarray  # items x attributes, attr_a(i)
     item_applicable: np.ndarray  # items x attributes, fine_category(i) in C_a
     n_a: np.ndarray | None = None  # users x attributes, attribute purchases inside C_a
+    recent_n_a: np.ndarray | None = None  # users x attributes, attribute purchases in recent baskets
+    recent_n_c: np.ndarray | None = None
+    early_n_a: np.ndarray | None = None
+    early_n_c: np.ndarray | None = None
+    late_n_a: np.ndarray | None = None
+    late_n_c: np.ndarray | None = None
 
     def log_ratio(
         self, user_index: np.ndarray, item_index: np.ndarray, user_mask: np.ndarray | None = None
@@ -163,6 +169,7 @@ def build_preferences(
     interactions: Interactions,
     categories: dict[str, set[str]],
     smoothing: float,
+    recent_baskets: int = 5,
 ) -> PreferenceModel:
     """Estimate pi(u, a) and pi_bar(a) from history purchases inside C_a."""
     names = list(categories)
@@ -193,7 +200,72 @@ def build_preferences(
     for column, name in enumerate(names):
         item_flag[:, column] = table[attribute_column(name)].fillna(0).to_numpy(np.int8)
         item_applicable[:, column] = fine.isin(categories[name]).to_numpy()
-    return PreferenceModel(names, prior, pi, n_c, item_flag, item_applicable, n_a)
+
+    recent_n_a = np.zeros_like(pi)
+    recent_n_c = np.zeros_like(pi)
+    early_n_a = np.zeros_like(pi)
+    early_n_c = np.zeros_like(pi)
+    late_n_a = np.zeros_like(pi)
+    late_n_c = np.zeros_like(pi)
+    if names:
+        annotated = history[["user_id", "basket_id", "basket_seq", "item_id"]].copy()
+        annotated[["user_id", "basket_id", "item_id"]] = annotated[["user_id", "basket_id", "item_id"]].astype(str)
+        annotated = annotated.drop_duplicates(["user_id", "basket_id", "item_id"])
+        baskets = annotated[["user_id", "basket_id", "basket_seq"]].drop_duplicates()
+        baskets = baskets.sort_values(
+            ["user_id", "basket_seq", "basket_id"], ascending=[True, False, False], kind="mergesort"
+        )
+        baskets["recent_rank"] = baskets.groupby("user_id").cumcount()
+        chronological = baskets.sort_values(
+            ["user_id", "basket_seq", "basket_id"], ascending=[True, True, True], kind="mergesort"
+        )
+        chronological["basket_index"] = chronological.groupby("user_id").cumcount()
+        chronological["basket_count"] = chronological.groupby("user_id")["basket_id"].transform("size")
+        annotated = annotated.merge(
+            baskets[["user_id", "basket_id", "recent_rank"]], on=["user_id", "basket_id"]
+        ).merge(
+            chronological[["user_id", "basket_id", "basket_index", "basket_count"]],
+            on=["user_id", "basket_id"],
+        )
+        catalogue = items.drop_duplicates("item_id").assign(item_id=lambda frame: frame["item_id"].astype(str))
+        annotated = annotated.merge(
+            catalogue[["item_id", "fine_category"] + [attribute_column(name) for name in names]],
+            on="item_id",
+            how="left",
+        )
+
+        def store_counts(matrix: np.ndarray, selected: pd.DataFrame, column: int) -> None:
+            counts_selected = selected.groupby("user_id").size()
+            user_rows = interactions.users.get_indexer(counts_selected.index.astype(str))
+            keep = user_rows >= 0
+            matrix[user_rows[keep], column] = counts_selected.to_numpy()[keep]
+
+        for column, name in enumerate(names):
+            applicable = annotated["fine_category"].astype("string").isin(categories[name])
+            attributed = annotated[attribute_column(name)].fillna(0).eq(1)
+            recent = annotated["recent_rank"] < int(recent_baskets)
+            early = 2 * annotated["basket_index"] < annotated["basket_count"]
+            store_counts(recent_n_c, annotated[applicable & recent], column)
+            store_counts(recent_n_a, annotated[applicable & attributed & recent], column)
+            store_counts(early_n_c, annotated[applicable & early], column)
+            store_counts(early_n_a, annotated[applicable & attributed & early], column)
+            store_counts(late_n_c, annotated[applicable & ~early], column)
+            store_counts(late_n_a, annotated[applicable & attributed & ~early], column)
+    return PreferenceModel(
+        names,
+        prior,
+        pi,
+        n_c,
+        item_flag,
+        item_applicable,
+        n_a=n_a,
+        recent_n_a=recent_n_a,
+        recent_n_c=recent_n_c,
+        early_n_a=early_n_a,
+        early_n_c=early_n_c,
+        late_n_a=late_n_a,
+        late_n_c=late_n_c,
+    )
 
 
 def seen_item_sets(seen: sparse.csr_matrix) -> list[set[int]]:
@@ -251,6 +323,61 @@ def preference_candidates(
     return pd.DataFrame(rows, columns=["user", "item"]).drop_duplicates().reset_index(drop=True)
 
 
+def health_preference_candidates(
+    seen_sets: list[set[int]],
+    in_scope: np.ndarray,
+    preferences: PreferenceModel,
+    item_fine: np.ndarray,
+    popularity: np.ndarray,
+    settings: dict[str, object],
+) -> pd.DataFrame:
+    """Popular unseen health items from each eligible user's previously purchased aisles.
+
+    Unlike ``preference_candidates``, the quota is applied per aisle before a per-user
+    cap.  This prevents one high-volume aisle from consuming every health candidate.
+    Eligibility and all popularity statistics come from history only.
+    """
+    if not bool(settings.get("candidate_enabled", True)):
+        return pd.DataFrame(columns=["user", "item"])
+    columns = [
+        preferences.attributes.index(str(name))
+        for name in settings.get("attributes", [])
+        if str(name) in preferences.attributes
+    ]
+    if not columns:
+        return pd.DataFrame(columns=["user", "item"])
+    per_aisle = int(settings["candidate_items_per_aisle"])
+    max_per_user = int(settings["candidate_max_per_user"])
+    order = popularity_order(popularity)
+    rows: list[tuple[int, int]] = []
+    user_fines = [{item_fine[item] for item in seen} for seen in seen_sets]
+    for column in columns:
+        preferring = (
+            (preferences.n_c[:, column] >= int(settings["min_n_c"]))
+            & ((preferences.pi[:, column] - preferences.prior[column]) >= float(settings["min_lift"]))
+        )
+        eligible_items = order[
+            (preferences.item_flag[order, column] == 1)
+            & preferences.item_applicable[order, column]
+            & in_scope[order]
+        ]
+        by_fine: dict[str, list[int]] = {}
+        for item in eligible_items:
+            by_fine.setdefault(str(item_fine[item]), []).append(int(item))
+        for user in np.flatnonzero(preferring):
+            for fine in sorted(user_fines[user].intersection(by_fine)):
+                unseen = [item for item in by_fine[fine] if item not in seen_sets[user]][:per_aisle]
+                rows.extend((int(user), item) for item in unseen)
+    if not rows:
+        return pd.DataFrame(columns=["user", "item"])
+    frame = pd.DataFrame(rows, columns=["user", "item"]).drop_duplicates()
+    frame["popularity"] = popularity[frame["item"].to_numpy(np.int64)]
+    frame = frame.sort_values(
+        ["user", "popularity", "item"], ascending=[True, False, True], kind="mergesort"
+    )
+    return frame[frame.groupby("user").cumcount() < max_per_user][["user", "item"]].reset_index(drop=True)
+
+
 def explore_candidates(
     cf: sparse.csr_matrix,
     seen: sparse.csr_matrix,
@@ -261,6 +388,7 @@ def explore_candidates(
     settings: dict[str, object],
     top_k: int,
     preferred: pd.DataFrame | None = None,
+    health_preferred: pd.DataFrame | None = None,
     seen_sets: list[set[int]] | None = None,
 ) -> pd.DataFrame:
     """E_u: CF neighbours (a), preferred-attribute items (b), popular fill-ins (c); all in F and not in I_u.
@@ -273,11 +401,18 @@ def explore_candidates(
         seen_sets = seen_item_sets(seen)
     if preferred is None:
         preferred = preference_candidates(seen_sets, in_scope, preferences, item_fine, popularity, settings)
+    if health_preferred is None:
+        health_preferred = pd.DataFrame(columns=["user", "item"])
     coo = cf.tocoo()
-    from_cf = pd.DataFrame({"user": coo.row, "item": coo.col, "s_cf": coo.data})
+    from_cf = pd.DataFrame({"user": coo.row, "item": coo.col, "s_cf": coo.data, "from_cf": True})
     candidates = from_cf.merge(preferred.assign(from_pref=True), on=["user", "item"], how="outer")
+    candidates = candidates.merge(
+        health_preferred.assign(from_health=True), on=["user", "item"], how="outer"
+    )
     candidates["s_cf"] = candidates["s_cf"].fillna(0.0)
+    candidates["from_cf"] = candidates["from_cf"].eq(True)
     candidates["from_pref"] = candidates["from_pref"].eq(True)
+    candidates["from_health"] = candidates["from_health"].eq(True)
     candidates["from_popular"] = False
 
     counts = np.bincount(candidates["user"].to_numpy(np.int64), minlength=n_users)
@@ -296,19 +431,25 @@ def explore_candidates(
                     continue
                 fill_rows.append((int(user), item))
                 need -= 1
-        fill = pd.DataFrame(fill_rows, columns=["user", "item"]).assign(s_cf=0.0, from_pref=False, from_popular=True)
+        fill = pd.DataFrame(fill_rows, columns=["user", "item"]).assign(
+            s_cf=0.0, from_cf=False, from_pref=False, from_health=False, from_popular=True
+        )
         candidates = pd.concat([candidates, fill], ignore_index=True)
 
     limit = int(settings["max_candidates"])
-    candidates["keep_always"] = candidates["from_pref"] | candidates["from_popular"]
+    candidates["keep_always"] = candidates["from_pref"] | candidates["from_health"] | candidates["from_popular"]
+    candidates["health_only"] = candidates["from_health"] & ~(
+        candidates["from_cf"] | candidates["from_pref"] | candidates["from_popular"]
+    )
+    extra = candidates.groupby("user")["health_only"].transform("sum").to_numpy(np.int64)
     candidates = candidates.sort_values(
         ["user", "keep_always", "s_cf", "item"], ascending=[True, False, False, True], kind="mergesort"
     )
-    candidates = candidates[candidates.groupby("user").cumcount() < limit]
+    candidates = candidates[candidates.groupby("user").cumcount().to_numpy() < limit + extra[candidates.index]]
     candidates["ell"] = preferences.log_ratio(
         candidates["user"].to_numpy(np.int64), candidates["item"].to_numpy(np.int64)
     )
-    return candidates.drop(columns="keep_always").reset_index(drop=True)
+    return candidates.drop(columns=["keep_always", "health_only"]).reset_index(drop=True)
 
 
 def explore_scores(candidates: pd.DataFrame, beta: float, epsilon: float) -> np.ndarray:
@@ -379,6 +520,170 @@ def explore_ranking(candidates: pd.DataFrame, scores: np.ndarray) -> pd.DataFram
     frame = frame.sort_values(["user", "score", "item"], ascending=[True, False, True], kind="mergesort")
     frame["rank"] = frame.groupby("user").cumcount()
     return frame.reset_index(drop=True)
+
+
+def health_preference_scores(
+    user_index: np.ndarray,
+    item_index: np.ndarray,
+    preferences: PreferenceModel,
+    settings: dict[str, object],
+    require_recent: bool = False,
+    persistence_mode: str = "none",
+) -> np.ndarray:
+    """Reliability-weighted positive preference lift for configured health attributes."""
+    configured = [str(name) for name in settings.get("attributes", [])]
+    columns = [preferences.attributes.index(name) for name in configured if name in preferences.attributes]
+    if not columns or len(user_index) == 0:
+        return np.zeros(len(user_index), dtype=np.float64)
+
+    prior = preferences.prior[columns]
+    lift = preferences.pi[:, columns] - prior
+    n_c = preferences.n_c[:, columns]
+    min_n_c = float(settings["min_n_c"])
+    eligible = (n_c >= min_n_c) & (lift >= float(settings["min_lift"]))
+    if require_recent and persistence_mode == "none":
+        persistence_mode = "recent_1"
+    if persistence_mode == "recent_1":
+        if preferences.recent_n_a is None:
+            return np.zeros(len(user_index), dtype=np.float64)
+        eligible &= preferences.recent_n_a[:, columns] >= int(settings["recent_min_purchases"])
+    elif persistence_mode == "recent_2":
+        if preferences.recent_n_a is None:
+            return np.zeros(len(user_index), dtype=np.float64)
+        eligible &= preferences.recent_n_a[:, columns] >= int(settings["recent_strict_min_purchases"])
+    elif persistence_mode == "recent_rate":
+        if preferences.recent_n_a is None or preferences.recent_n_c is None:
+            return np.zeros(len(user_index), dtype=np.float64)
+        recent_rate = np.divide(
+            preferences.recent_n_a[:, columns],
+            preferences.recent_n_c[:, columns],
+            out=np.zeros_like(preferences.recent_n_a[:, columns]),
+            where=preferences.recent_n_c[:, columns] > 0,
+        )
+        eligible &= preferences.recent_n_c[:, columns] >= int(settings["recent_rate_min_n_c"])
+        eligible &= recent_rate > prior
+    elif persistence_mode == "both_halves":
+        matrices = [preferences.early_n_a, preferences.early_n_c, preferences.late_n_a, preferences.late_n_c]
+        if any(matrix is None for matrix in matrices):
+            return np.zeros(len(user_index), dtype=np.float64)
+        early_rate = np.divide(
+            preferences.early_n_a[:, columns],
+            preferences.early_n_c[:, columns],
+            out=np.zeros_like(preferences.early_n_a[:, columns]),
+            where=preferences.early_n_c[:, columns] > 0,
+        )
+        late_rate = np.divide(
+            preferences.late_n_a[:, columns],
+            preferences.late_n_c[:, columns],
+            out=np.zeros_like(preferences.late_n_a[:, columns]),
+            where=preferences.late_n_c[:, columns] > 0,
+        )
+        minimum = int(settings["half_min_n_c"])
+        eligible &= (preferences.early_n_c[:, columns] >= minimum) & (preferences.late_n_c[:, columns] >= minimum)
+        eligible &= (early_rate > prior) & (late_rate > prior)
+    elif persistence_mode != "none":
+        raise ValueError(f"Unknown health persistence mode: {persistence_mode!r}")
+    # Reliability is 0.5 at the evidence threshold and approaches 1 with more history.
+    reliability = n_c / (n_c + min_n_c)
+    user_weight = np.where(eligible, np.maximum(lift, 0.0) * reliability, 0.0)
+    item_match = (
+        preferences.item_flag[:, columns].astype(bool)
+        & preferences.item_applicable[:, columns]
+    )
+    return (user_weight[user_index] * item_match[item_index]).sum(axis=1)
+
+
+def health_soft_explore_ranking(
+    candidates: pd.DataFrame,
+    scores: np.ndarray,
+    preferences: PreferenceModel,
+    settings: dict[str, object],
+    health_lambda: float,
+    require_recent: bool = False,
+    persistence_mode: str = "none",
+) -> pd.DataFrame:
+    """Add a soft health-affinity term to Item-CF scores without reserving slots.
+
+    ``adjusted_score = base_score + health_lambda * health_score``.  The health score
+    uses only configured attributes and history-derived preference statistics.  A zero
+    lambda, absent attributes, or ineligible users reproduces the base ranking exactly.
+    """
+    weight = max(0.0, float(health_lambda))
+    users = candidates["user"].to_numpy(np.int64)
+    items = candidates["item"].to_numpy(np.int64)
+    health = health_preference_scores(
+        users,
+        items,
+        preferences,
+        settings,
+        require_recent=require_recent,
+        persistence_mode=persistence_mode,
+    )
+    adjusted = np.asarray(scores, dtype=np.float64) + weight * health
+    ranked = explore_ranking(candidates, adjusted)
+    # Re-align from candidate rows after explore_ranking's sort/reset.
+    lookup = candidates[["user", "item"]].assign(
+        base_score=np.asarray(scores, dtype=np.float64), health_score=health
+    )
+    ranked = ranked.merge(lookup, on=["user", "item"], how="left")
+    ranked["health_boosted"] = ranked["health_score"].gt(0) & (weight > 0)
+    ranked["health_promoted"] = False
+    return ranked.sort_values(["user", "rank"], kind="mergesort").reset_index(drop=True)
+
+
+def health_gated_explore_ranking(
+    candidates: pd.DataFrame,
+    scores: np.ndarray,
+    preferences: PreferenceModel,
+    settings: dict[str, object],
+    health_slots: int,
+) -> pd.DataFrame:
+    """Promote at most ``health_slots`` validated-health candidates per user.
+
+    A candidate is eligible only when it has one of the configured attributes and the
+    user's history for that attribute has both enough applicable purchases and a
+    smoothed preference above the population rate by ``min_lift``.  Promoted products
+    are ordered by a reliability-weighted preference lift; all remaining products keep
+    their original Item-CF order.  With zero slots, unavailable attributes, or no
+    eligible candidates this is exactly :func:`explore_ranking`.
+
+    This function only changes the exploration ranking.  Repeat scores and repeat-slot
+    allocation are deliberately outside its scope.
+    """
+    base = explore_ranking(candidates, scores).assign(health_score=0.0, health_promoted=False)
+    slots = max(0, int(health_slots))
+    if slots == 0 or base.empty:
+        return base
+
+    users = base["user"].to_numpy(np.int64)
+    items = base["item"].to_numpy(np.int64)
+    base["health_score"] = health_preference_scores(users, items, preferences, settings)
+    eligible_rows = base[base["health_score"].gt(0)].sort_values(
+        ["user", "health_score", "score", "item"],
+        ascending=[True, False, False, True],
+        kind="mergesort",
+    )
+    promoted_keys = eligible_rows.groupby("user", sort=False).head(slots)[["user", "item"]]
+    if promoted_keys.empty:
+        return base
+
+    marked = base.merge(promoted_keys.assign(health_promoted=True), on=["user", "item"], how="left", suffixes=("", "_new"))
+    marked["health_promoted"] = marked["health_promoted_new"].eq(True)
+    marked = marked.drop(columns="health_promoted_new")
+    promoted = marked[marked["health_promoted"]].sort_values(
+        ["user", "health_score", "score", "item"], ascending=[True, False, False, True], kind="mergesort"
+    )
+    promoted["health_order"] = promoted.groupby("user").cumcount()
+    promoted["health_priority"] = 0
+    remainder = marked[~marked["health_promoted"]].copy()
+    remainder["health_order"] = remainder["rank"]
+    remainder["health_priority"] = 1
+    ranked = pd.concat([promoted, remainder], ignore_index=True)
+    ranked = ranked.sort_values(
+        ["user", "health_priority", "health_order", "item"], kind="mergesort"
+    ).drop(columns=["health_priority", "health_order"])
+    ranked["rank"] = ranked.groupby("user").cumcount()
+    return ranked.reset_index(drop=True)
 
 
 def slot_counts(rho: np.ndarray, top_k: int, available: np.ndarray) -> np.ndarray:

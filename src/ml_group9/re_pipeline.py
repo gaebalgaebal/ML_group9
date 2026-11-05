@@ -34,6 +34,9 @@ from .repeat_explore import (
     build_preferences,
     cf_scores,
     explore_candidates,
+    health_gated_explore_ranking,
+    health_preference_candidates,
+    health_soft_explore_ranking,
     explore_ranking,
     explore_scores,
     item_fine_categories,
@@ -84,6 +87,7 @@ class ScopeState:
     n: np.ndarray
     n_rep: np.ndarray
     preferred: pd.DataFrame
+    health_preferred: pd.DataFrame
 
 
 @dataclass
@@ -111,7 +115,12 @@ def build_state(
     )
     food_table = exclude_nonfood_categories(table, items, list(settings["exclude_departments"][dataset]))
     preferences = build_preferences(
-        history, items, interactions, category_sets(food_table), float(settings["smoothing"])
+        history,
+        items,
+        interactions,
+        category_sets(food_table),
+        float(settings["smoothing"]),
+        int(config.get("health_rerank", {}).get("recent_baskets", 5)),
     )
     seen = seen_matrix(interactions)
     seen_sets = seen_item_sets(seen)
@@ -151,7 +160,15 @@ def build_scope(state: SplitState, mode: str, config: dict[str, object]) -> Scop
     preferred = preference_candidates(
         state.seen_sets, in_scope, state.preferences, state.item_fine, state.popularity, config["explore"]
     )
-    return ScopeState(mode, in_scope, targets, excluded, n, n_rep, preferred)
+    health_preferred = health_preference_candidates(
+        state.seen_sets,
+        in_scope,
+        state.preferences,
+        state.item_fine,
+        state.popularity,
+        config.get("health_rerank", {"candidate_enabled": False}),
+    )
+    return ScopeState(mode, in_scope, targets, excluded, n, n_rep, preferred, health_preferred)
 
 
 def build_gamma(state: SplitState, scope: ScopeState, gamma: float, config: dict[str, object]) -> GammaState:
@@ -167,6 +184,7 @@ def build_gamma(state: SplitState, scope: ScopeState, gamma: float, config: dict
         config["explore"],
         int(config["evaluation"]["top_k"]),
         preferred=scope.preferred,
+        health_preferred=scope.health_preferred,
         seen_sets=state.seen_sets,
     )
     return GammaState(repeat_ranking(repeat, scope.in_scope), candidates)
@@ -180,6 +198,10 @@ def recommend(
     beta: float,
     config: dict[str, object],
     global_r: int | None = None,
+    health_slots: int = 0,
+    health_lambda: float = 0.0,
+    health_recent: bool = False,
+    health_persistence: str = "none",
 ) -> Recommendation:
     """Final lists (repeat slots first, then explore slots) plus the two component rankings."""
     top_k = int(config["evaluation"]["top_k"])
@@ -192,7 +214,29 @@ def recommend(
     else:
         slots = np.minimum(int(global_r), available)
     scores = explore_scores(gamma_state.candidates, beta, float(config["explore"]["epsilon"]))
-    ranked = explore_ranking(gamma_state.candidates, scores)
+    if health_slots:
+        ranked = health_gated_explore_ranking(
+            gamma_state.candidates,
+            scores,
+            state.preferences,
+            config["health_rerank"],
+            health_slots,
+        )
+        ranked["health_boosted"] = False
+    elif health_lambda:
+        ranked = health_soft_explore_ranking(
+            gamma_state.candidates,
+            scores,
+            state.preferences,
+            config["health_rerank"],
+            health_lambda,
+            require_recent=health_recent,
+            persistence_mode=health_persistence,
+        )
+    else:
+        ranked = explore_ranking(gamma_state.candidates, scores).assign(
+            health_score=0.0, health_promoted=False, health_boosted=False
+        )
     top_explore = ranked[ranked["rank"] < top_k]
     allocation = allocate_slots(top_repeat, top_explore, slots, top_k)
     users, items = state.interactions.users, state.interactions.items
@@ -259,6 +303,91 @@ def tune_split(config: dict[str, object], state: SplitState) -> dict[str, object
             summary, _ = _evaluate(state, scope, recommend(state, scope, gamma_state, kappa, float(beta), config), top_k)
             beta_rows.append({"beta": float(beta), **summary})
         beta_star = max(beta_rows, key=lambda row: row["new_item_recall_at_k"])["beta"]
+        health_rows: list[dict[str, object]] = []
+        for health_slots in config["health_rerank"]["slot_grid"]:
+            recommendation = recommend(
+                state, scope, gamma_state, kappa, 0.0, config, health_slots=int(health_slots)
+            )
+            summary, _ = _evaluate(state, scope, recommendation, top_k)
+            health_rows.append({"health_slots": int(health_slots), **summary})
+        health_star = max(
+            health_rows,
+            key=lambda row: (row["new_item_recall_at_k"], row["ndcg_at_k"], -row["health_slots"]),
+        )["health_slots"]
+        soft_rows: list[dict[str, object]] = []
+        for health_lambda in config["health_rerank"]["soft_lambdas"]:
+            recommendation = recommend(
+                state,
+                scope,
+                gamma_state,
+                kappa,
+                0.0,
+                config,
+                health_lambda=float(health_lambda),
+            )
+            summary, _ = _evaluate(state, scope, recommendation, top_k)
+            soft_rows.append({"health_lambda": float(health_lambda), **summary})
+        soft_star = max(
+            soft_rows,
+            key=lambda row: (row["new_item_recall_at_k"], row["ndcg_at_k"], -row["health_lambda"]),
+        )["health_lambda"]
+        recent_rows: list[dict[str, object]] = []
+        for health_lambda in config["health_rerank"]["soft_lambdas"]:
+            recommendation = recommend(
+                state,
+                scope,
+                gamma_state,
+                kappa,
+                0.0,
+                config,
+                health_lambda=float(health_lambda),
+                health_recent=True,
+            )
+            summary, _ = _evaluate(state, scope, recommendation, top_k)
+            recent_rows.append({"health_lambda": float(health_lambda), **summary})
+        recent_star = max(
+            recent_rows,
+            key=lambda row: (row["new_item_recall_at_k"], row["ndcg_at_k"], -row["health_lambda"]),
+        )["health_lambda"]
+        persistence_rows: dict[str, list[dict[str, object]]] = {}
+        persistence_stars: dict[str, float] = {}
+        for persistence_mode in config["health_rerank"]["persistence_modes"]:
+            mode_rows: list[dict[str, object]] = []
+            for health_lambda in config["health_rerank"]["soft_lambdas"]:
+                recommendation = recommend(
+                    state,
+                    scope,
+                    gamma_state,
+                    kappa,
+                    0.0,
+                    config,
+                    health_lambda=float(health_lambda),
+                    health_persistence=str(persistence_mode),
+                )
+                summary, _ = _evaluate(state, scope, recommendation, top_k)
+                mode_rows.append({"health_lambda": float(health_lambda), **summary})
+            persistence_rows[str(persistence_mode)] = mode_rows
+            persistence_stars[str(persistence_mode)] = max(
+                mode_rows,
+                key=lambda row: (row["new_item_recall_at_k"], row["ndcg_at_k"], -row["health_lambda"]),
+            )["health_lambda"]
+        candidate_soft_rows: list[dict[str, object]] = []
+        for health_lambda in config["health_rerank"]["candidate_soft_lambdas"]:
+            recommendation = recommend(
+                state,
+                scope,
+                gamma_state,
+                kappa,
+                0.0,
+                config,
+                health_lambda=float(health_lambda),
+            )
+            summary, _ = _evaluate(state, scope, recommendation, top_k)
+            candidate_soft_rows.append({"health_lambda": float(health_lambda), **summary})
+        candidate_soft_star = max(
+            candidate_soft_rows,
+            key=lambda row: (row["new_item_recall_at_k"], row["ndcg_at_k"], -row["health_lambda"]),
+        )["health_lambda"]
         r_rows: list[dict[str, object]] = []
         for r in grid["global_r"]:
             recommendation = recommend(state, scope, gamma_state, kappa, beta_star, config, global_r=int(r))
@@ -270,8 +399,23 @@ def tune_split(config: dict[str, object], state: SplitState) -> dict[str, object
             "excluded_users": scope.excluded_users,
             "grid_gamma_kappa": rows,
             "grid_beta": beta_rows,
+            "grid_health_slots": health_rows,
+            "grid_health_soft": soft_rows,
+            "grid_health_soft_recent": recent_rows,
+            "grid_health_persistence": persistence_rows,
+            "grid_health_candidate_soft": candidate_soft_rows,
             "grid_global_r": r_rows,
-            "selected": {"gamma": gamma, "kappa": kappa, "beta": beta_star, "global_r": global_r},
+            "selected": {
+                "gamma": gamma,
+                "kappa": kappa,
+                "beta": beta_star,
+                "health_slots": health_star,
+                "health_lambda": soft_star,
+                "health_recent_lambda": recent_star,
+                "health_persistence_lambdas": persistence_stars,
+                "health_candidate_lambda": candidate_soft_star,
+                "global_r": global_r,
+            },
         }
     return result
 
@@ -382,17 +526,40 @@ def re_diagnostics(
     allocation = recommendation.allocation
     target_rows = users.get_indexer(list(scope.targets))
     explore_rows = allocation[allocation["slot"].eq("explore")]
+    target_explore = explore_rows[explore_rows["user"].isin(target_rows)]
     explore_counts = np.bincount(explore_rows["user"].to_numpy(np.int64), minlength=len(users))
     return {
         "new_item_candidate_recall": float(np.mean(coverage)) if coverage else 0.0,
         "explore_slot_share": float((explore_counts[target_rows] / top_k).mean()) if len(target_rows) else 0.0,
         "explore_from_preference_share": float(explore_rows["from_pref"].mean()) if len(explore_rows) else 0.0,
+        "explore_from_health_candidate_share": (
+            float(explore_rows["from_health"].mean()) if len(explore_rows) else 0.0
+        ),
         "explore_zero_cf_share": float(explore_rows["s_cf"].eq(0).mean()) if len(explore_rows) else 0.0,
+        "health_promoted_share": (
+            float(explore_rows["health_promoted"].mean())
+            if len(explore_rows) and "health_promoted" in explore_rows
+            else 0.0
+        ),
+        "health_boosted_share": (
+            float(explore_rows["health_boosted"].mean())
+            if len(explore_rows) and "health_boosted" in explore_rows
+            else 0.0
+        ),
+        "health_boosted_user_share": (
+            float(target_explore.loc[target_explore["health_boosted"], "user"].nunique() / len(target_rows))
+            if len(target_rows) and "health_boosted" in target_explore
+            else 0.0
+        ),
     }
 
 
 def attribute_hit_rates(
-    state: SplitState, scope: ScopeState, recommendations: dict[str, Recommendation], config: dict[str, object]
+    state: SplitState,
+    scope: ScopeState,
+    gamma_state: GammaState,
+    recommendations: dict[str, Recommendation],
+    config: dict[str, object],
 ) -> dict[str, dict[str, object]]:
     """Per attribute: users with n_C >= distinct_min_n and a new attribute item in the target,
     and the explore-list recall of those items for each recommendation."""
@@ -401,6 +568,10 @@ def attribute_hit_rates(
     model = state.preferences
     item_ids = state.interactions.items.to_numpy()
     rows = state.interactions.users.get_indexer(list(scope.targets))
+    candidates = gamma_state.candidates
+    candidate_item_ids = item_ids[candidates["item"].to_numpy(np.int64)].astype(str)
+    candidate_user_ids = state.interactions.users.to_numpy()[candidates["user"].to_numpy(np.int64)]
+    candidate_sets = pd.Series(candidate_item_ids).groupby(candidate_user_ids, sort=False).apply(set)
     result: dict[str, dict[str, object]] = {}
     for column, name in enumerate(model.attributes):
         mask = (model.item_flag[:, column] == 1) & model.item_applicable[:, column] & scope.in_scope
@@ -411,7 +582,13 @@ def attribute_hit_rates(
                 new_items = (scope.targets[user] - state.history_items.get(user, set())) & attribute_items
                 if new_items:
                     relevant[user] = new_items
-        result[name] = {"users": len(relevant)}
+        candidate_recall = [
+            len(candidate_sets.get(user, set()) & truth) / len(truth) for user, truth in relevant.items()
+        ]
+        result[name] = {
+            "users": len(relevant),
+            "candidate_recall": float(np.mean(candidate_recall)) if candidate_recall else 0.0,
+        }
         for label, recommendation in recommendations.items():
             result[name][label] = subset_recall(recommendation.explore, relevant, top_k)[0]
     return result
@@ -478,17 +655,134 @@ def eval_re(config: dict[str, object], dataset: str) -> dict[str, object]:
                 label: recommend(state, scope, gamma_cache[gamma], float(selected["kappa"]), beta, config, global_r)
                 for label, beta in [("re_beta0", 0.0), ("re_beta_star", float(selected["beta"]))]
             }
+            recommendations["re_health_gate"] = recommend(
+                state,
+                scope,
+                gamma_cache[gamma],
+                float(selected["kappa"]),
+                0.0,
+                config,
+                global_r,
+                int(selected.get("health_slots", 0)),
+            )
+            recommendations["re_health_gate_max2"] = recommend(
+                state,
+                scope,
+                gamma_cache[gamma],
+                float(selected["kappa"]),
+                0.0,
+                config,
+                global_r,
+                max(int(value) for value in config["health_rerank"]["slot_grid"]),
+            )
+            recommendations["re_health_soft"] = recommend(
+                state,
+                scope,
+                gamma_cache[gamma],
+                float(selected["kappa"]),
+                0.0,
+                config,
+                global_r,
+                health_lambda=float(selected.get("health_lambda", 0.0)),
+            )
+            recommendations["re_health_soft_max"] = recommend(
+                state,
+                scope,
+                gamma_cache[gamma],
+                float(selected["kappa"]),
+                0.0,
+                config,
+                global_r,
+                health_lambda=max(float(value) for value in config["health_rerank"]["soft_lambdas"]),
+            )
+            recommendations["re_health_soft_recent"] = recommend(
+                state,
+                scope,
+                gamma_cache[gamma],
+                float(selected["kappa"]),
+                0.0,
+                config,
+                global_r,
+                health_lambda=float(selected.get("health_recent_lambda", 0.0)),
+                health_recent=True,
+            )
+            recommendations["re_health_soft_recent_max"] = recommend(
+                state,
+                scope,
+                gamma_cache[gamma],
+                float(selected["kappa"]),
+                0.0,
+                config,
+                global_r,
+                health_lambda=max(float(value) for value in config["health_rerank"]["soft_lambdas"]),
+                health_recent=True,
+            )
+            for persistence_mode in config["health_rerank"]["persistence_modes"]:
+                label = f"re_health_{persistence_mode}"
+                recommendations[label] = recommend(
+                    state,
+                    scope,
+                    gamma_cache[gamma],
+                    float(selected["kappa"]),
+                    0.0,
+                    config,
+                    global_r,
+                    health_lambda=float(
+                        selected.get("health_persistence_lambdas", {}).get(str(persistence_mode), 0.0)
+                    ),
+                    health_persistence=str(persistence_mode),
+                )
+            recommendations["re_health_candidate_soft"] = recommend(
+                state,
+                scope,
+                gamma_cache[gamma],
+                float(selected["kappa"]),
+                0.0,
+                config,
+                global_r,
+                health_lambda=float(selected.get("health_candidate_lambda", 0.0)),
+            )
             re_metrics = {}
             re_users = {}
             for label, recommendation in recommendations.items():
                 re_metrics[label], re_users[label] = _evaluate(state, scope, recommendation, top_k)
             star = re_users["re_beta_star"]
-            scope_report["repeat_explore"][source] = {
+            source_report = {
                 "selected": selected,
                 "metrics": re_metrics,
                 "bootstrap_ci": {
                     "new_item_recall_star_minus_beta0": _bootstrap(
                         star["new_item_recall_at_k"], re_users["re_beta0"]["new_item_recall_at_k"], config
+                    ),
+                    "new_item_recall_health_minus_beta0": _bootstrap(
+                        re_users["re_health_gate"]["new_item_recall_at_k"],
+                        re_users["re_beta0"]["new_item_recall_at_k"],
+                        config,
+                    ),
+                    "new_item_recall_health_max2_minus_beta0": _bootstrap(
+                        re_users["re_health_gate_max2"]["new_item_recall_at_k"],
+                        re_users["re_beta0"]["new_item_recall_at_k"],
+                        config,
+                    ),
+                    "new_item_recall_health_soft_minus_beta0": _bootstrap(
+                        re_users["re_health_soft"]["new_item_recall_at_k"],
+                        re_users["re_beta0"]["new_item_recall_at_k"],
+                        config,
+                    ),
+                    "new_item_recall_health_soft_max_minus_beta0": _bootstrap(
+                        re_users["re_health_soft_max"]["new_item_recall_at_k"],
+                        re_users["re_beta0"]["new_item_recall_at_k"],
+                        config,
+                    ),
+                    "new_item_recall_health_soft_recent_minus_beta0": _bootstrap(
+                        re_users["re_health_soft_recent"]["new_item_recall_at_k"],
+                        re_users["re_beta0"]["new_item_recall_at_k"],
+                        config,
+                    ),
+                    "new_item_recall_health_soft_recent_max_minus_beta0": _bootstrap(
+                        re_users["re_health_soft_recent_max"]["new_item_recall_at_k"],
+                        re_users["re_beta0"]["new_item_recall_at_k"],
+                        config,
                     ),
                     "recall_star_minus_personal_repeat": _bootstrap(
                         star["recall_at_k"], per_user["personal_repeat"]["recall_at_k"], config
@@ -504,8 +798,23 @@ def eval_re(config: dict[str, object], dataset: str) -> dict[str, object]:
                     label: re_diagnostics(state, scope, gamma_cache[gamma], recommendation, top_k)
                     for label, recommendation in recommendations.items()
                 },
-                "attribute_hit_rates": attribute_hit_rates(state, scope, recommendations, config),
+                "attribute_hit_rates": attribute_hit_rates(
+                    state, scope, gamma_cache[gamma], recommendations, config
+                ),
             }
+            for persistence_mode in config["health_rerank"]["persistence_modes"]:
+                label = f"re_health_{persistence_mode}"
+                source_report["bootstrap_ci"][f"new_item_recall_{persistence_mode}_minus_beta0"] = _bootstrap(
+                    re_users[label]["new_item_recall_at_k"],
+                    re_users["re_beta0"]["new_item_recall_at_k"],
+                    config,
+                )
+            source_report["bootstrap_ci"]["new_item_recall_health_candidate_soft_minus_beta0"] = _bootstrap(
+                re_users["re_health_candidate_soft"]["new_item_recall_at_k"],
+                re_users["re_beta0"]["new_item_recall_at_k"],
+                config,
+            )
+            scope_report["repeat_explore"][source] = source_report
         report["scopes"][mode] = scope_report
     _write_json(Path(config["report_dir"]) / "metrics" / f"{config['profile']}_re_{dataset}.json", report)
     return report

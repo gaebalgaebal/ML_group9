@@ -75,6 +75,24 @@ repeat_explore:
   kappas: [5, 20]
   betas: [0, 0.25, 0.5, 1, 2]
   global_r: [4, 5, 6, 7, 8]
+# Mapping-free health-aware exploration. Only attributes supported by the within-type AUC
+# analysis are allowed; sugar_reduced is intentionally excluded.
+health_rerank:
+  attributes: [fat_reduced, gluten_free, low_sodium]
+  min_n_c: 10
+  min_lift: 0.05
+  slot_grid: [0, 1, 2]
+  soft_lambdas: [0, 0.05, 0.1, 0.25, 0.5]
+  recent_baskets: 5
+  recent_min_purchases: 1
+  recent_strict_min_purchases: 2
+  recent_rate_min_n_c: 3
+  half_min_n_c: 3
+  persistence_modes: [recent_2, recent_rate, both_halves]
+  candidate_enabled: true
+  candidate_items_per_aisle: 10
+  candidate_max_per_user: 100
+  candidate_soft_lambdas: [0, 1, 2, 5, 10, 20]
 explore:
   epsilon: 1.0e-4
   max_candidates: 500
