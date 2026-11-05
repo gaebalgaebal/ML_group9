@@ -5,9 +5,8 @@ Required history columns: user_id, basket_seq, item_id and the category column
 (``level``, default "L2"). Functions only use the frames they receive; no file
 reads and no target frames. All results are deterministic.
 
-The small helpers ``_basket_ages``, ``_item_pop`` and ``_rank_lists`` repeat
-the definitions of nbr.repeat / nbr.baselines (W1/W2 branches) so that this
-module is self-contained; they can be de-duplicated after the merge.
+Basket ages, item popularity and the tie rule for lists come from
+nbr.repeat and nbr.baselines so that every component shares one definition.
 """
 
 from __future__ import annotations
@@ -18,6 +17,9 @@ from collections.abc import Iterable
 import numpy as np
 import pandas as pd
 
+from nbr.baselines import item_popularity
+from nbr.repeat import basket_ages, rank_scores
+
 BASKET_KEY = ["user_id", "basket_seq"]
 PAIR_KEY = ["user_id", "item_id"]
 LIST_COLUMNS = ["user_id", "rank", "item_id", "source"]
@@ -27,36 +29,6 @@ CATEGORY_RANK_COLUMNS = ["user_id", "category", "rank"]
 # ---------------------------------------------------------------------------
 # shared helpers
 # ---------------------------------------------------------------------------
-def _basket_ages(history: pd.DataFrame) -> pd.DataFrame:
-    """[user_id, basket_seq, age]: age 0 = most recent distinct basket_seq of the user."""
-    baskets = history[BASKET_KEY].drop_duplicates().sort_values(BASKET_KEY)
-    order = baskets.groupby("user_id", sort=False)["basket_seq"].rank(ascending=False, method="first")
-    return baskets.assign(age=(order - 1).astype("int64")).reset_index(drop=True)
-
-
-def _item_pop(history: pd.DataFrame) -> pd.Series:
-    """pop(i) = number of distinct (user_id, basket_seq) baskets containing i (Series by item_id)."""
-    events = history[BASKET_KEY + ["item_id"]].drop_duplicates()
-    pop = events.groupby("item_id", sort=True).size().astype("float64")
-    pop.name = "pop"
-    pop.index.name = "item_id"
-    return pop
-
-
-def _rank_lists(frame: pd.DataFrame, k: int, source: str) -> pd.DataFrame:
-    """Top-k per user of a frame with [user_id, item_id, score, pop].
-
-    Tie rule: score desc, then pop desc, then item_id asc.
-    """
-    ordered = frame.sort_values(
-        ["user_id", "score", "pop", "item_id"], ascending=[True, False, False, True], kind="mergesort"
-    )
-    ordered["rank"] = ordered.groupby("user_id", sort=False).cumcount() + 1
-    ordered = ordered[ordered["rank"] <= k]
-    ordered["source"] = source
-    return ordered[LIST_COLUMNS].reset_index(drop=True)
-
-
 def _check_params(k: int, gamma_c: float, alpha: float) -> None:
     if k < 1:
         raise ValueError(f"k must be >= 1, got {k}")
@@ -72,7 +44,7 @@ def _catalog(history: pd.DataFrame, level: str) -> pd.DataFrame:
     ``order`` ranks items inside their category by pop desc, item_id asc
     (0 = most popular). An item's category is its first category in history.
     """
-    pop = _item_pop(history)
+    pop = item_popularity(history)
     items = history[["item_id", level]].drop_duplicates("item_id").rename(columns={level: "category"})
     items["category"] = items["category"].astype(str)
     catalog = items.merge(pop.reset_index(), on="item_id")
@@ -111,7 +83,7 @@ def category_profile(
     events = history[BASKET_KEY + ["item_id", level]].drop_duplicates(BASKET_KEY + ["item_id"])
     events = events.rename(columns={level: "category"})
     events["category"] = events["category"].astype(str)
-    events = events.merge(_basket_ages(history), on=BASKET_KEY, how="left")
+    events = events.merge(basket_ages(history), on=BASKET_KEY, how="left")
     events["weight"] = np.power(float(gamma_c), events["age"].to_numpy(dtype="float64"))
     numerator = events.groupby(["user_id", "category"], sort=True)["weight"].sum().rename("num")
     denominator = events.groupby("user_id", sort=True)["weight"].sum().rename("den")
@@ -232,7 +204,8 @@ def explore_list(
 
     # Stage 2: k best unbought items of each selected category -> exact top k.
     candidates = _score(_unbought_top(bought, selected, k))
-    return _rank_lists(candidates[["user_id", "item_id", "score", "pop"]], k, "explore")
+    pop = catalog.set_index("item_id")["pop"]
+    return rank_scores(candidates[["user_id", "item_id", "score"]], pop, k, "explore")
 
 
 # ---------------------------------------------------------------------------
@@ -285,4 +258,5 @@ def explore_list_cf(
     positive["norm"] = positive.groupby(["user_id", "category"], sort=False)["cf"].transform("sum")
     positive = positive.merge(theta, on=["user_id", "category"], how="left")
     positive["score"] = positive["theta"] * positive["cf"] / positive["norm"]
-    return _rank_lists(positive[["user_id", "item_id", "score", "pop"]], k, "explore_cf")
+    pop = catalog.set_index("item_id")["pop"]
+    return rank_scores(positive[["user_id", "item_id", "score"]], pop, k, "explore_cf")

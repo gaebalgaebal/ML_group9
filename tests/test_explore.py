@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from nbr.baselines import item_popularity
 from nbr.explore import (
-    _item_pop,
     category_profile,
     category_ranking,
     explore_list,
@@ -65,7 +65,7 @@ def test_category_profile_alpha_inf_is_exactly_p():
 def _brute_force(history, k, gamma_c, alpha):
     """Full scoring of every unbought history item with the same lift formula and tie key."""
     theta, p_c = category_profile(history, gamma_c, alpha)
-    pop = _item_pop(history)
+    pop = item_popularity(history)
     total = float(pop.sum())
     items = history[["item_id", "L2"]].drop_duplicates("item_id").rename(columns={"L2": "category"})
     lift = theta.merge(p_c.reset_index(), on="category")
@@ -102,7 +102,7 @@ def test_explore_list_finite_alpha_hand_computed():
 
 def test_alpha_inf_equals_global_popularity_excluding_history():
     history = _random_history(np.random.default_rng(11), n_users=12, n_items=30, n_cats=4)
-    pop = _item_pop(history)
+    pop = item_popularity(history)
     bought = history[["user_id", "item_id"]].drop_duplicates()
     rows = []
     for user in sorted(history["user_id"].unique()):
@@ -120,7 +120,7 @@ def test_alpha_inf_prefers_popular_item_of_other_category():
         ("v1", 1, "a", "x"), ("v1", 2, "a", "x"), ("v1", 2, "c", "y"),
         ("v2", 1, "b", "x"), ("v2", 1, "c", "y"),
     ])
-    assert _item_pop(history).to_dict() == {"a": 3, "b": 1, "c": 2}
+    assert item_popularity(history).to_dict() == {"a": 3, "b": 1, "c": 2}
     lists = explore_list(history, 2, 1.0, float("inf"))
     assert list(lists[lists["user_id"] == "u"]["item_id"]) == ["c", "b"]
 
