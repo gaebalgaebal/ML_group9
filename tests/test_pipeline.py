@@ -146,6 +146,14 @@ def test_tune_and_evaluate_end_to_end(workspace):
         assert entry["diff"] == pytest.approx(entry["model_mean"] - entry["comparator_mean"])
         assert entry["ci"]["0.95"][0] <= entry["diff"] <= entry["ci"]["0.95"][1]
     assert result["primary"]["H1_repeat_recall"]["model"] == "repeat_star"
+    h5 = result["H5"]
+    assert h5["label"] == "secondary confirmatory; generated on development data"
+    assert h5["comparator"] == "flat_explore" and h5["model"] == "itemcf_flat"
+    assert set(h5["ci"]) == {"0.95"} and set(h5["decision"]) == {"0.95"}
+    assert h5["n_users"] == result["primary"]["H2_new_recall"]["n_users"]
+    assert h5["diff"] == pytest.approx(h5["model_mean"] - h5["comparator_mean"])  # item-CF better -> diff > 0
+    assert h5["ci"]["0.95"][0] <= h5["diff"] <= h5["ci"]["0.95"][1]
+    assert evaluate(config, "instacart", selections, include_itemcf=False)["H5"] is None
     assert result["primary"]["H4_category_hit"]["comparator"] == "population_category_ranking"
     assert "decision" not in next(iter(result["secondary"].values()))
     assert {"final_cf_vs_final_ndcg", "final_vs_popularity_recall", "explore_L3_vs_explore_star_new_recall"} <= set(result["secondary"])
@@ -174,6 +182,29 @@ def test_bootstrap_direction_with_strictly_better_model(workspace):
     assert entry["decision"]["0.95"] == "improvement observed"
     lower = _compare(model, comparator, config, primary=True)
     assert lower["decision"]["0.95"] == "lower"
+
+
+def test_h5_direction_item_cf_better(workspace, monkeypatch):
+    """H5 diff > 0 when item-CF beats flat popularity: force itemcf_flat to equal the new target."""
+    import nbr.pipeline as pipeline
+
+    config = _config(workspace)
+    original = pipeline.build_lists
+
+    def patched(history, pop, selections, config, *, include_itemcf=True):
+        lists, timings = original(history, pop, selections, config, include_itemcf=include_itemcf)
+        data = pipeline.prepare(config, "instacart", "eval")
+        perfect = data["new_target"][["user_id", "item_id"]].drop_duplicates().copy()
+        perfect["rank"] = perfect.groupby("user_id").cumcount() + 1
+        perfect["source"] = "itemcf"
+        lists["itemcf_flat"] = perfect[["user_id", "rank", "item_id", "source"]]
+        return lists, timings
+
+    monkeypatch.setattr(pipeline, "build_lists", patched)
+    result = pipeline.evaluate(config, "instacart", {"gamma": 0.8, "gamma_c": 1.0, "alpha": 10.0, "r": 8})
+    assert result["H5"]["model_mean"] == pytest.approx(1.0)
+    assert result["H5"]["diff"] > 0
+    assert result["H5"]["decision"]["0.95"] == "improvement observed"
 
 
 def test_holdout_guard_in_evaluate(workspace):

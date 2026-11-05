@@ -358,6 +358,25 @@ def evaluate(
         primary[key] = {"comparator": comparator, "model": model, "metric": metric, "users": users,
                         **_compare(a, b, config, primary=True)}
 
+    # H5 (PREREG v1.2, generated on development data): flat item-CF vs flat popularity
+    # excluding history, new-item Recall@10, users with >= 1 new target item, 95% CI only.
+    h5 = None
+    if "itemcf_flat" in lists:
+        boot = config["bootstrap"]
+        result = paired_bootstrap(recall_on("flat_explore", new_target), recall_on("itemcf_flat", new_target),
+                                  int(boot["n"]), int(boot["seed"]), [0.95])
+        h5 = {
+            "label": "secondary confirmatory; generated on development data",
+            "comparator": "flat_explore", "model": "itemcf_flat",
+            "metric": "new-item Recall@10", "users": "users with new target",
+            "n_users": result["n_users"],
+            "comparator_mean": result["mean_a"],
+            "model_mean": result["mean_b"],
+            "diff": result["diff"],
+            "ci": {"0.95": result["ci"][0.95]},
+            "decision": {"0.95": decision(result["ci"][0.95])},
+        }
+
     # Secondary comparisons (CI only): variant vs primary model, and final vs popularity.
     secondary = {}
     for variant, reference in PRIMARY_MODELS.items():
@@ -403,6 +422,7 @@ def evaluate(
         },
         "list_metrics": list_metrics,
         "primary": primary,
+        "H5": h5,
         "secondary": secondary,
         "by_history_length": breakdown,
         "timing_seconds": timings,
