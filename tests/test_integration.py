@@ -24,7 +24,8 @@ from tests.test_pipeline import _config, _frame, workspace  # noqa: F401  (fixtu
 
 PRIMARY = {"H8_new_recall", "H9_ndcg", "H9_recall"}
 SECONDARY = {"final_star_ucf_vs_final_ndcg", "final_lr_r_vs_final_lr_ndcg", "final_lr_ucf_vs_final_ndcg",
-             "final_lr_ucf_vs_personal_frequency_ndcg", "usercf_vs_itemcf_flat_new_recall"}
+             "final_lr_ucf_vs_final_recall", "final_lr_ucf_vs_personal_frequency_ndcg",
+             "usercf_vs_itemcf_flat_new_recall"}
 COMBOS = {"final_lr_ucf", "final_star_ucf", "final_lr_r"}
 
 
@@ -165,7 +166,10 @@ def test_evaluate_integration_structure_and_h1_h7_unchanged(workspace):
     assert h8["n_users"] == with_int["primary"]["H2_new_recall"]["n_users"]
     assert (h9["comparator"], h9["model"]) == ("final_lr", "final_lr_ucf") and h9["n_users"] == with_int["n_users"]["all"]
     assert h9["model_mean"] == pytest.approx(with_int["list_metrics"]["final_lr_ucf"]["ndcg"])
-    assert "decision" not in block["secondary"]["final_lr_ucf_vs_final_ndcg"]
+    assert "decision" not in block["secondary"]["final_star_ucf_vs_final_ndcg"]
+    # PREREG v1.3 H7' (C3 vs C0): the two final_lr_ucf-vs-final comparisons carry the decision wording.
+    for key in ("final_lr_ucf_vs_final_ndcg", "final_lr_ucf_vs_final_recall"):
+        assert set(block["secondary"][key]["decision"]) == {"0.95", "0.99375"}
     assert [row["bin"] for row in block["by_history_length"]] == [row["bin"] for row in with_int["by_history_length"]]
     assert set(block["by_history_length"][1]) == {"bin", "n_users"} | PRIMARY
     assert block["process_peak_working_set_mib"] is None or block["process_peak_working_set_mib"] > 0

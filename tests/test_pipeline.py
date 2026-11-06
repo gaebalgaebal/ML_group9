@@ -349,3 +349,27 @@ def test_h6_h7_direction_with_perfect_lr_lists(workspace, monkeypatch):
         assert primary[key]["diff"] > 0
         assert primary[key]["decision"]["0.95"] == "improvement observed"
     assert result["lr_repeat"]["secondary"]["repeat_lr_vs_repeat_pf_repeat_recall"]["diff"] > 0
+
+
+def test_evaluate_h7prime_c3_vs_c0_keys(workspace):
+    """PREREG v1.3 H7' = C3 (final_lr_ucf) vs C0 (final): NDCG@10 and Recall@10, both CI levels, decision wording."""
+    config = _config(workspace)
+    run_tune(config, "instacart")
+    document = json.loads(run_evaluate(config, "instacart").read_text(encoding="utf-8"))
+    secondary = document["integration"]["secondary"]
+    for key, metric in (("final_lr_ucf_vs_final_ndcg", "ndcg"), ("final_lr_ucf_vs_final_recall", "recall")):
+        entry = secondary[key]
+        assert (entry["comparator"], entry["model"], entry["metric"]) == ("final", "final_lr_ucf", metric)
+        assert entry["n_users"] == document["n_users"]["all"]
+        assert set(entry["ci"]) == {"0.95", "0.99375"} and set(entry["decision"]) == {"0.95", "0.99375"}
+        assert entry["diff"] == pytest.approx(entry["model_mean"] - entry["comparator_mean"])
+        assert entry["comparator_mean"] == pytest.approx(document["list_metrics"]["final"][metric])
+        assert entry["model_mean"] == pytest.approx(document["list_metrics"]["final_lr_ucf"][metric])
+        assert entry["decision"]["0.95"] == decision(entry["ci"]["0.95"])
+        assert entry["decision"]["0.99375"] == decision(entry["ci"]["0.99375"])
+    # The other integration comparisons stay CI-only; the primary entries carry both levels.
+    for key in ("final_star_ucf_vs_final_ndcg", "final_lr_r_vs_final_lr_ndcg",
+                "final_lr_ucf_vs_personal_frequency_ndcg", "usercf_vs_itemcf_flat_new_recall"):
+        assert key in secondary and "decision" not in secondary[key]
+    for key in ("H8_new_recall", "H9_ndcg", "H9_recall"):
+        assert set(document["integration"]["primary"][key]["ci"]) == {"0.95", "0.99375"}

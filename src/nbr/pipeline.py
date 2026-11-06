@@ -52,8 +52,12 @@ INTEGRATION_COMBOS = {"final_lr_ucf": ("repeat_lr", "usercf", True),
 INTEGRATION_SECONDARY = {"final_star_ucf_vs_final_ndcg": ("final", "final_star_ucf", "ndcg"),
                          "final_lr_r_vs_final_lr_ndcg": ("final_lr", "final_lr_r", "ndcg"),
                          "final_lr_ucf_vs_final_ndcg": ("final", "final_lr_ucf", "ndcg"),
+                         "final_lr_ucf_vs_final_recall": ("final", "final_lr_ucf", "recall"),
                          "final_lr_ucf_vs_personal_frequency_ndcg": ("personal_frequency", "final_lr_ucf", "ndcg"),
                          "usercf_vs_itemcf_flat_new_recall": ("itemcf_flat", "usercf", "new_recall")}
+# PREREG v1.3 primary H7' = C3 (final_lr_ucf) vs C0 (final), NDCG@10 with Recall@10 reported: these two
+# comparisons also carry the decision wording at both CI levels (reporting only; lists and selections unchanged).
+INTEGRATION_DECISION = ("final_lr_ucf_vs_final_ndcg", "final_lr_ucf_vs_final_recall")
 
 
 def run_label(config: dict[str, Any]) -> str:
@@ -712,7 +716,8 @@ def evaluate(
         }
 
     # W8: user-CF explore list and the re-selected combinations (H8: usercf vs flat_explore;
-    # H9: final_lr_ucf vs final_lr). Secondary comparisons are CI only.
+    # H9: final_lr_ucf vs final_lr). Secondary comparisons are CI only, except the PREREG v1.3
+    # H7' pair (INTEGRATION_DECISION), which adds the decision wording.
     integration_result = None
     if integration is not None:
         t0 = time.perf_counter()
@@ -737,10 +742,12 @@ def evaluate(
                 continue
             if metric == "new_recall":
                 a, b = recall_on(reference, new_target), recall_on(variant, new_target)
+            elif metric == "recall":
+                a, b = recall_on(reference, target), recall_on(variant, target)
             else:
                 a, b = ndcg_all(reference), ndcg_all(variant)
             int_secondary[key] = {"comparator": reference, "model": variant, "metric": metric,
-                                  **_compare(a, b, config, primary=False)}
+                                  **_compare(a, b, config, primary=key in INTEGRATION_DECISION)}
         int_breakdown = by_history_length(int_series, lengths, dataset, config)
         timings["integration_metrics"] = time.perf_counter() - t0
         integration_result = {
