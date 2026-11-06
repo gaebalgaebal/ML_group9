@@ -1,0 +1,1865 @@
+{
+  "meta": {
+    "git_commit": "8706f7920a1822317280a83646b90825831e874c",
+    "utc_time": "2026-11-06T10:01:51.572139+00:00",
+    "profile": "medium",
+    "python_version": "3.12.16",
+    "numpy_version": "1.26.4",
+    "pandas_version": "2.2.3"
+  },
+  "label": "post-hoc, development data, not confirmatory",
+  "task": "W14 post-hoc day-based recency decay",
+  "profile": "medium",
+  "k": 10,
+  "metric": "repeat Recall@10 on users with >= 1 repeat target item (nbr.metrics.per_user_recall, mean over users)",
+  "grids": {
+    "half_life_days": [
+      7.0,
+      14.0,
+      30.0,
+      60.0,
+      90.0,
+      180.0,
+      365.0,
+      "inf"
+    ],
+    "gamma": [
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      0.95,
+      0.97,
+      0.98,
+      0.99,
+      0.995,
+      1.0
+    ]
+  },
+  "history_bins": [
+    "(0,4]",
+    "(4,10]",
+    "(10,20]",
+    "(20,50]",
+    "(50,100]",
+    "(100,inf)"
+  ],
+  "bootstrap": {
+    "n": 1000,
+    "seed": 42,
+    "level": 0.95
+  },
+  "inputs_sha256": {
+    "instacart": {
+      "fit_history": "16a35e9a10f834ec7a10ae3853e7c7dde2c05cf952f9d6197728e8122a8649bc",
+      "fit_target": "7e6b2d865505e189c78b1c418343ebf813481f5836e1c49148f7b24fa585e6e9",
+      "eval_history": "3cf449ce7c9ab48cc973d5b09b87684a795e498e0e905a1249dc91e23ac9fa99",
+      "eval_target": "c3ff7dbae850da324b33da154f6b429f624f5d8edf53dd8c7238e9c1d412da45",
+      "basket_days": "982e8d025bfc92786d0ba59bc9a2b38edb3766a1b28509d3f7f8a1908fe2dfdd"
+    },
+    "complete_journey": {
+      "fit_history": "b923f41bc39292003446a6a30cd529025878d0bd8f08be2c1f9b0241e1725e57",
+      "fit_target": "6166c6321d15d7b796b868731d9ec11575768a4685a4721d482b92073d0208a4",
+      "eval_history": "ac6c7bf0e1b5d6941d3fd6b8223229cce457b24efbd9de2eea46c80f3f6fae74",
+      "eval_target": "9d9bb8d5b9b5522733354835e00bb2a6121e590df6c443a2de67b038d97eb10a",
+      "basket_days": "6804ce2ebcf4514ef041c12fb8ad4928611568a504c1aadffad8efd3a45af773"
+    }
+  },
+  "data_dir": "C:\\dev_ML\\data\\processed",
+  "datasets": {
+    "instacart": {
+      "label": "post-hoc, development data, not confirmatory",
+      "n_users": {
+        "fit_all": 20000,
+        "fit_repeat_target": 18510,
+        "eval_all": 20000,
+        "eval_repeat_target": 18643
+      },
+      "n_history_baskets": {
+        "fit": 293281,
+        "eval": 313281
+      },
+      "basket_days": {
+        "fit_day_min": 0,
+        "fit_day_max": 365,
+        "eval_day_min": 0,
+        "eval_day_max": 365
+      },
+      "fit": {
+        "day": [
+          {
+            "h": 7.0,
+            "recall": 0.5593591864489736
+          },
+          {
+            "h": 14.0,
+            "recall": 0.5705019845441258
+          },
+          {
+            "h": 30.0,
+            "recall": 0.5819873089729134
+          },
+          {
+            "h": 60.0,
+            "recall": 0.5844289388494038
+          },
+          {
+            "h": 90.0,
+            "recall": 0.5810517426890677
+          },
+          {
+            "h": 180.0,
+            "recall": 0.5728616813650301
+          },
+          {
+            "h": 365.0,
+            "recall": 0.5679996113961885
+          },
+          {
+            "h": "inf",
+            "recall": 0.5594274354623848
+          }
+        ],
+        "basket": [
+          {
+            "gamma": 0.5,
+            "basket_half_life": 1.0,
+            "recall": 0.553535015517311
+          },
+          {
+            "gamma": 0.6,
+            "basket_half_life": 1.3569154488567239,
+            "recall": 0.5638850612214623
+          },
+          {
+            "gamma": 0.7,
+            "basket_half_life": 1.9433582098747315,
+            "recall": 0.5769254745542067
+          },
+          {
+            "gamma": 0.8,
+            "basket_half_life": 3.1062837195053903,
+            "recall": 0.5834364727272866
+          },
+          {
+            "gamma": 0.9,
+            "basket_half_life": 6.578813478960585,
+            "recall": 0.5823342669902247
+          },
+          {
+            "gamma": 0.95,
+            "basket_half_life": 13.513407333964874,
+            "recall": 0.5755815096022516
+          },
+          {
+            "gamma": 0.97,
+            "basket_half_life": 22.75657306277341,
+            "recall": 0.5713964300083636
+          },
+          {
+            "gamma": 0.98,
+            "basket_half_life": 34.309618491520645,
+            "recall": 0.5690419833158131
+          },
+          {
+            "gamma": 0.99,
+            "basket_half_life": 68.96756393652842,
+            "recall": 0.5667742828293612
+          },
+          {
+            "gamma": 0.995,
+            "basket_half_life": 138.28257298606084,
+            "recall": 0.5658831185490117
+          },
+          {
+            "gamma": 1.0,
+            "basket_half_life": "inf",
+            "recall": 0.5594274354623848
+          }
+        ],
+        "h_star": 60.0,
+        "gamma_star": 0.8,
+        "at_grid_edge": {
+          "h": false,
+          "gamma": false
+        },
+        "selection_rule": "max fit repeat Recall@10; ties -> larger h / larger gamma"
+      },
+      "eval": {
+        "day": [
+          {
+            "h": 7.0,
+            "recall": 0.535614679541182
+          },
+          {
+            "h": 14.0,
+            "recall": 0.5463364479920649
+          },
+          {
+            "h": 30.0,
+            "recall": 0.5621095899798061
+          },
+          {
+            "h": 60.0,
+            "recall": 0.5647474877652786
+          },
+          {
+            "h": 90.0,
+            "recall": 0.5598763369889358
+          },
+          {
+            "h": 180.0,
+            "recall": 0.5513414599848692
+          },
+          {
+            "h": 365.0,
+            "recall": 0.545755029784131
+          },
+          {
+            "h": "inf",
+            "recall": 0.5345409677503056
+          }
+        ],
+        "basket": [
+          {
+            "gamma": 0.5,
+            "recall": 0.5309953181300578
+          },
+          {
+            "gamma": 0.6,
+            "recall": 0.5425997723048768
+          },
+          {
+            "gamma": 0.7,
+            "recall": 0.5554868642031245
+          },
+          {
+            "gamma": 0.8,
+            "recall": 0.5630485349790323
+          },
+          {
+            "gamma": 0.9,
+            "recall": 0.5610726117013243
+          },
+          {
+            "gamma": 0.95,
+            "recall": 0.5533272610946018
+          },
+          {
+            "gamma": 0.97,
+            "recall": 0.5493552930789422
+          },
+          {
+            "gamma": 0.98,
+            "recall": 0.5468746200199422
+          },
+          {
+            "gamma": 0.99,
+            "recall": 0.5445643894631623
+          },
+          {
+            "gamma": 0.995,
+            "recall": 0.5434270599938824
+          },
+          {
+            "gamma": 1.0,
+            "recall": 0.5345409677503056
+          }
+        ],
+        "comparisons": {
+          "day_hstar_vs_frequency": {
+            "comparator": "basket decay gamma = 1 (personal frequency)",
+            "model": "day decay h* = 60 days",
+            "n_users": 18643,
+            "mean_a": 0.5345409677503056,
+            "mean_b": 0.5647474877652786,
+            "diff": 0.030206520014973173,
+            "ci_0.95": [
+              0.027558972215995996,
+              0.03330073810014541
+            ]
+          },
+          "day_hstar_vs_basket_gstar": {
+            "comparator": "basket decay gamma* = 0.8",
+            "model": "day decay h* = 60 days",
+            "n_users": 18643,
+            "mean_a": 0.5630485349790323,
+            "mean_b": 0.5647474877652786,
+            "diff": 0.0016989527862464925,
+            "ci_0.95": [
+              0.00020144427444074978,
+              0.003206458593568729
+            ]
+          },
+          "basket_gstar_vs_frequency": {
+            "comparator": "basket decay gamma = 1 (personal frequency)",
+            "model": "basket decay gamma* = 0.8",
+            "n_users": 18643,
+            "mean_a": 0.5345409677503056,
+            "mean_b": 0.5630485349790323,
+            "diff": 0.02850756722872668,
+            "ci_0.95": [
+              0.025519793598291294,
+              0.031775072183802676
+            ]
+          },
+          "basket_0.97_vs_frequency": {
+            "comparator": "basket decay gamma = 1 (personal frequency)",
+            "model": "basket decay gamma = 0.97 (reproduction check)",
+            "n_users": 18643,
+            "mean_a": 0.5345409677503056,
+            "mean_b": 0.5493552930789422,
+            "diff": 0.014814325328636585,
+            "ci_0.95": [
+              0.012542484669126988,
+              0.017495260726596944
+            ]
+          }
+        }
+      },
+      "gaps": {
+        "definition": "day difference between consecutive baskets of a user (fit history, baskets ordered by day); same-day baskets give 0",
+        "n_gaps": 273281,
+        "users_with_one_basket": 0,
+        "mean_days": 10.243507598406037,
+        "median_days": 7.0,
+        "share_zero": 0.021962741646876293,
+        "mean_days_excluding_zero": 10.473535144923469,
+        "median_days_excluding_zero": 7.0,
+        "p90_days": 28.0
+      },
+      "unified_scale": [
+        {
+          "gamma": 0.5,
+          "basket_half_life": 1.0,
+          "day_equivalent_mean_gap": 10.243507598406037,
+          "day_equivalent_median_gap": 7.0
+        },
+        {
+          "gamma": 0.6,
+          "basket_half_life": 1.3569154488567239,
+          "day_equivalent_mean_gap": 13.89957371075839,
+          "day_equivalent_median_gap": 9.498408141997068
+        },
+        {
+          "gamma": 0.7,
+          "basket_half_life": 1.9433582098747315,
+          "day_equivalent_mean_gap": 19.906804589276565,
+          "day_equivalent_median_gap": 13.603507469123121
+        },
+        {
+          "gamma": 0.8,
+          "basket_half_life": 3.1062837195053903,
+          "day_equivalent_mean_gap": 31.819240883558432,
+          "day_equivalent_median_gap": 21.74398603653773
+        },
+        {
+          "gamma": 0.9,
+          "basket_half_life": 6.578813478960585,
+          "day_equivalent_mean_gap": 67.3901258602288,
+          "day_equivalent_median_gap": 46.0516943527241
+        },
+        {
+          "gamma": 0.95,
+          "basket_half_life": 13.513407333964874,
+          "day_equivalent_mean_gap": 138.42469070582504,
+          "day_equivalent_median_gap": 94.59385133775412
+        },
+        {
+          "gamma": 0.97,
+          "basket_half_life": 22.75657306277341,
+          "day_equivalent_mean_gap": 233.10712908220157,
+          "day_equivalent_median_gap": 159.29601143941386
+        },
+        {
+          "gamma": 0.98,
+          "basket_half_life": 34.309618491520645,
+          "day_equivalent_mean_gap": 351.450837716304,
+          "day_equivalent_median_gap": 240.16732944064452
+        },
+        {
+          "gamma": 0.99,
+          "basket_half_life": 68.96756393652842,
+          "day_equivalent_mean_gap": 706.469765227383,
+          "day_equivalent_median_gap": 482.7729475556989
+        },
+        {
+          "gamma": 0.995,
+          "basket_half_life": 138.28257298606084,
+          "day_equivalent_mean_gap": 1416.4985871098515,
+          "day_equivalent_median_gap": 967.9780109024259
+        },
+        {
+          "gamma": 1.0,
+          "basket_half_life": "inf",
+          "day_equivalent_mean_gap": "inf",
+          "day_equivalent_median_gap": "inf"
+        }
+      ],
+      "h_star_days": 60.0,
+      "h_star_in_baskets": {
+        "via_mean_gap": 5.8573686233548,
+        "via_median_gap": 8.571428571428571
+      },
+      "by_history_length": [
+        {
+          "bin": "(0,4]",
+          "n_users": 4920,
+          "day": [
+            {
+              "h": 7.0,
+              "recall": 0.7125175696506113
+            },
+            {
+              "h": 14.0,
+              "recall": 0.7142066156994133
+            },
+            {
+              "h": 30.0,
+              "recall": 0.7171594694452175
+            },
+            {
+              "h": 60.0,
+              "recall": 0.721330410705662
+            },
+            {
+              "h": 90.0,
+              "recall": 0.7212849768035207
+            },
+            {
+              "h": 180.0,
+              "recall": 0.7213103833075857
+            },
+            {
+              "h": 365.0,
+              "recall": 0.7213103833075857
+            },
+            {
+              "h": "inf",
+              "recall": 0.721482874738662
+            }
+          ],
+          "basket": [
+            {
+              "gamma": 0.5,
+              "recall": 0.7116535853764763
+            },
+            {
+              "gamma": 0.6,
+              "recall": 0.7133267436883541
+            },
+            {
+              "gamma": 0.7,
+              "recall": 0.7209233230529067
+            },
+            {
+              "gamma": 0.8,
+              "recall": 0.7212691338236354
+            },
+            {
+              "gamma": 0.9,
+              "recall": 0.7212691338236354
+            },
+            {
+              "gamma": 0.95,
+              "recall": 0.7212691338236354
+            },
+            {
+              "gamma": 0.97,
+              "recall": 0.7212691338236354
+            },
+            {
+              "gamma": 0.98,
+              "recall": 0.7212691338236354
+            },
+            {
+              "gamma": 0.99,
+              "recall": 0.7212691338236354
+            },
+            {
+              "gamma": 0.995,
+              "recall": 0.7212691338236354
+            },
+            {
+              "gamma": 1.0,
+              "recall": 0.721482874738662
+            }
+          ]
+        },
+        {
+          "bin": "(4,10]",
+          "n_users": 5435,
+          "day": [
+            {
+              "h": 7.0,
+              "recall": 0.5717996730102199
+            },
+            {
+              "h": 14.0,
+              "recall": 0.5805221184539459
+            },
+            {
+              "h": 30.0,
+              "recall": 0.5898705616058345
+            },
+            {
+              "h": 60.0,
+              "recall": 0.5946536651379656
+            },
+            {
+              "h": 90.0,
+              "recall": 0.5922243028586254
+            },
+            {
+              "h": 180.0,
+              "recall": 0.5881601772393367
+            },
+            {
+              "h": 365.0,
+              "recall": 0.5871503073177832
+            },
+            {
+              "h": "inf",
+              "recall": 0.5778619772779622
+            }
+          ],
+          "basket": [
+            {
+              "gamma": 0.5,
+              "recall": 0.5690018795805281
+            },
+            {
+              "gamma": 0.6,
+              "recall": 0.5789091023259432
+            },
+            {
+              "gamma": 0.7,
+              "recall": 0.5890881436161284
+            },
+            {
+              "gamma": 0.8,
+              "recall": 0.593782789612675
+            },
+            {
+              "gamma": 0.9,
+              "recall": 0.5889434487146384
+            },
+            {
+              "gamma": 0.95,
+              "recall": 0.5871257028888549
+            },
+            {
+              "gamma": 0.97,
+              "recall": 0.5870912042687997
+            },
+            {
+              "gamma": 0.98,
+              "recall": 0.5870912042687997
+            },
+            {
+              "gamma": 0.99,
+              "recall": 0.5870912042687997
+            },
+            {
+              "gamma": 0.995,
+              "recall": 0.5870912042687997
+            },
+            {
+              "gamma": 1.0,
+              "recall": 0.5778619772779622
+            }
+          ]
+        },
+        {
+          "bin": "(10,20]",
+          "n_users": 3905,
+          "day": [
+            {
+              "h": 7.0,
+              "recall": 0.4832299500831936
+            },
+            {
+              "h": 14.0,
+              "recall": 0.49604906176387414
+            },
+            {
+              "h": 30.0,
+              "recall": 0.5149725026987731
+            },
+            {
+              "h": 60.0,
+              "recall": 0.5200829922317212
+            },
+            {
+              "h": 90.0,
+              "recall": 0.5159094919672945
+            },
+            {
+              "h": 180.0,
+              "recall": 0.5043646859784864
+            },
+            {
+              "h": 365.0,
+              "recall": 0.4976157816083592
+            },
+            {
+              "h": "inf",
+              "recall": 0.4851988510427202
+            }
+          ],
+          "basket": [
+            {
+              "gamma": 0.5,
+              "recall": 0.47799187330712867
+            },
+            {
+              "gamma": 0.6,
+              "recall": 0.49211078357123195
+            },
+            {
+              "gamma": 0.7,
+              "recall": 0.5100635510273528
+            },
+            {
+              "gamma": 0.8,
+              "recall": 0.5189057265479646
+            },
+            {
+              "gamma": 0.9,
+              "recall": 0.5147880150697756
+            },
+            {
+              "gamma": 0.95,
+              "recall": 0.5032551649724932
+            },
+            {
+              "gamma": 0.97,
+              "recall": 0.49911599926113764
+            },
+            {
+              "gamma": 0.98,
+              "recall": 0.49727469008993863
+            },
+            {
+              "gamma": 0.99,
+              "recall": 0.49707314103435635
+            },
+            {
+              "gamma": 0.995,
+              "recall": 0.49707314103435635
+            },
+            {
+              "gamma": 1.0,
+              "recall": 0.4851988510427202
+            }
+          ]
+        },
+        {
+          "bin": "(20,50]",
+          "n_users": 3276,
+          "day": [
+            {
+              "h": 7.0,
+              "recall": 0.44101729988567623
+            },
+            {
+              "h": 14.0,
+              "recall": 0.4619282400338664
+            },
+            {
+              "h": 30.0,
+              "recall": 0.47766020401076237
+            },
+            {
+              "h": 60.0,
+              "recall": 0.4742607984448611
+            },
+            {
+              "h": 90.0,
+              "recall": 0.4669315747535697
+            },
+            {
+              "h": 180.0,
+              "recall": 0.4474367345921631
+            },
+            {
+              "h": 365.0,
+              "recall": 0.4345658487652542
+            },
+            {
+              "h": "inf",
+              "recall": 0.42054187891032524
+            }
+          ],
+          "basket": [
+            {
+              "gamma": 0.5,
+              "recall": 0.4315315555328825
+            },
+            {
+              "gamma": 0.6,
+              "recall": 0.44918946655970593
+            },
+            {
+              "gamma": 0.7,
+              "recall": 0.4654246956681913
+            },
+            {
+              "gamma": 0.8,
+              "recall": 0.47610630283083993
+            },
+            {
+              "gamma": 0.9,
+              "recall": 0.47504544475671073
+            },
+            {
+              "gamma": 0.95,
+              "recall": 0.4572419340180953
+            },
+            {
+              "gamma": 0.97,
+              "recall": 0.4432142850563102
+            },
+            {
+              "gamma": 0.98,
+              "recall": 0.4358175690512872
+            },
+            {
+              "gamma": 0.99,
+              "recall": 0.42849702941347007
+            },
+            {
+              "gamma": 0.995,
+              "recall": 0.4260916400040356
+            },
+            {
+              "gamma": 1.0,
+              "recall": 0.42054187891032524
+            }
+          ]
+        },
+        {
+          "bin": "(50,100]",
+          "n_users": 974,
+          "day": [
+            {
+              "h": 7.0,
+              "recall": 0.4195433739000014
+            },
+            {
+              "h": 14.0,
+              "recall": 0.4523706060930017
+            },
+            {
+              "h": 30.0,
+              "recall": 0.4747757142838591
+            },
+            {
+              "h": 60.0,
+              "recall": 0.46436232755187695
+            },
+            {
+              "h": 90.0,
+              "recall": 0.45535131441448834
+            },
+            {
+              "h": 180.0,
+              "recall": 0.43411214746167975
+            },
+            {
+              "h": 365.0,
+              "recall": 0.41769656371905334
+            },
+            {
+              "h": "inf",
+              "recall": 0.40269972439091745
+            }
+          ],
+          "basket": [
+            {
+              "gamma": 0.5,
+              "recall": 0.3817419306600944
+            },
+            {
+              "gamma": 0.6,
+              "recall": 0.398702906391998
+            },
+            {
+              "gamma": 0.7,
+              "recall": 0.4247682281864482
+            },
+            {
+              "gamma": 0.8,
+              "recall": 0.4491831621984239
+            },
+            {
+              "gamma": 0.9,
+              "recall": 0.47531768371894895
+            },
+            {
+              "gamma": 0.95,
+              "recall": 0.4632499117696082
+            },
+            {
+              "gamma": 0.97,
+              "recall": 0.44768491877041255
+            },
+            {
+              "gamma": 0.98,
+              "recall": 0.4352014954304519
+            },
+            {
+              "gamma": 0.99,
+              "recall": 0.41753619862481944
+            },
+            {
+              "gamma": 0.995,
+              "recall": 0.40869082375422094
+            },
+            {
+              "gamma": 1.0,
+              "recall": 0.40269972439091745
+            }
+          ]
+        },
+        {
+          "bin": "(100,inf)",
+          "n_users": 0,
+          "day": [
+            {
+              "h": 7.0,
+              "recall": null
+            },
+            {
+              "h": 14.0,
+              "recall": null
+            },
+            {
+              "h": 30.0,
+              "recall": null
+            },
+            {
+              "h": 60.0,
+              "recall": null
+            },
+            {
+              "h": 90.0,
+              "recall": null
+            },
+            {
+              "h": 180.0,
+              "recall": null
+            },
+            {
+              "h": 365.0,
+              "recall": null
+            },
+            {
+              "h": "inf",
+              "recall": null
+            }
+          ],
+          "basket": [
+            {
+              "gamma": 0.5,
+              "recall": null
+            },
+            {
+              "gamma": 0.6,
+              "recall": null
+            },
+            {
+              "gamma": 0.7,
+              "recall": null
+            },
+            {
+              "gamma": 0.8,
+              "recall": null
+            },
+            {
+              "gamma": 0.9,
+              "recall": null
+            },
+            {
+              "gamma": 0.95,
+              "recall": null
+            },
+            {
+              "gamma": 0.97,
+              "recall": null
+            },
+            {
+              "gamma": 0.98,
+              "recall": null
+            },
+            {
+              "gamma": 0.99,
+              "recall": null
+            },
+            {
+              "gamma": 0.995,
+              "recall": null
+            },
+            {
+              "gamma": 1.0,
+              "recall": null
+            }
+          ]
+        }
+      ],
+      "timing_seconds": {
+        "load_and_check": 8.610315799989621,
+        "fit_grids": 87.3677325000026,
+        "eval_grids": 91.91703870000492,
+        "bootstrap": 0.35419420000107493,
+        "gaps_and_bins": 2.261072900000727
+      },
+      "peak_memory_mib": 2438.4609375
+    },
+    "complete_journey": {
+      "label": "post-hoc, development data, not confirmatory",
+      "n_users": {
+        "fit_all": 2069,
+        "fit_repeat_target": 1828,
+        "eval_all": 2069,
+        "eval_repeat_target": 1867
+      },
+      "n_history_baskets": {
+        "fit": 180368,
+        "eval": 206682
+      },
+      "basket_days": {
+        "fit_day_min": 1,
+        "fit_day_max": 558,
+        "eval_day_min": 1,
+        "eval_day_max": 628
+      },
+      "fit": {
+        "day": [
+          {
+            "h": 7.0,
+            "recall": 0.19962294891168159
+          },
+          {
+            "h": 14.0,
+            "recall": 0.22303119380757222
+          },
+          {
+            "h": 30.0,
+            "recall": 0.25261057718395763
+          },
+          {
+            "h": 60.0,
+            "recall": 0.2721913023200269
+          },
+          {
+            "h": 90.0,
+            "recall": 0.2796970070479523
+          },
+          {
+            "h": 180.0,
+            "recall": 0.28104357433616595
+          },
+          {
+            "h": 365.0,
+            "recall": 0.2795409679067035
+          },
+          {
+            "h": "inf",
+            "recall": 0.2765862776045085
+          }
+        ],
+        "basket": [
+          {
+            "gamma": 0.5,
+            "basket_half_life": 1.0,
+            "recall": 0.18529348710918436
+          },
+          {
+            "gamma": 0.6,
+            "basket_half_life": 1.3569154488567239,
+            "recall": 0.19231650611316883
+          },
+          {
+            "gamma": 0.7,
+            "basket_half_life": 1.9433582098747315,
+            "recall": 0.20545067654954044
+          },
+          {
+            "gamma": 0.8,
+            "basket_half_life": 3.1062837195053903,
+            "recall": 0.23212100149076373
+          },
+          {
+            "gamma": 0.9,
+            "basket_half_life": 6.578813478960585,
+            "recall": 0.274028125830349
+          },
+          {
+            "gamma": 0.95,
+            "basket_half_life": 13.513407333964874,
+            "recall": 0.2861877746574489
+          },
+          {
+            "gamma": 0.97,
+            "basket_half_life": 22.75657306277341,
+            "recall": 0.288960452707918
+          },
+          {
+            "gamma": 0.98,
+            "basket_half_life": 34.309618491520645,
+            "recall": 0.28481037643078666
+          },
+          {
+            "gamma": 0.99,
+            "basket_half_life": 68.96756393652842,
+            "recall": 0.28055358335403713
+          },
+          {
+            "gamma": 0.995,
+            "basket_half_life": 138.28257298606084,
+            "recall": 0.27718189310477714
+          },
+          {
+            "gamma": 1.0,
+            "basket_half_life": "inf",
+            "recall": 0.2765862776045085
+          }
+        ],
+        "h_star": 180.0,
+        "gamma_star": 0.97,
+        "at_grid_edge": {
+          "h": false,
+          "gamma": false
+        },
+        "selection_rule": "max fit repeat Recall@10; ties -> larger h / larger gamma"
+      },
+      "eval": {
+        "day": [
+          {
+            "h": 7.0,
+            "recall": 0.19418046292787564
+          },
+          {
+            "h": 14.0,
+            "recall": 0.21314430227030084
+          },
+          {
+            "h": 30.0,
+            "recall": 0.24191468023817161
+          },
+          {
+            "h": 60.0,
+            "recall": 0.2624059821933966
+          },
+          {
+            "h": 90.0,
+            "recall": 0.26746240067321764
+          },
+          {
+            "h": 180.0,
+            "recall": 0.26445135022186994
+          },
+          {
+            "h": 365.0,
+            "recall": 0.2577357085294759
+          },
+          {
+            "h": "inf",
+            "recall": 0.24966147762409166
+          }
+        ],
+        "basket": [
+          {
+            "gamma": 0.5,
+            "recall": 0.17846310378506747
+          },
+          {
+            "gamma": 0.6,
+            "recall": 0.18448630575050073
+          },
+          {
+            "gamma": 0.7,
+            "recall": 0.1992743608989386
+          },
+          {
+            "gamma": 0.8,
+            "recall": 0.2193432647595506
+          },
+          {
+            "gamma": 0.9,
+            "recall": 0.2579298281944533
+          },
+          {
+            "gamma": 0.95,
+            "recall": 0.2747999888769475
+          },
+          {
+            "gamma": 0.97,
+            "recall": 0.2716599979871195
+          },
+          {
+            "gamma": 0.98,
+            "recall": 0.2633968898667754
+          },
+          {
+            "gamma": 0.99,
+            "recall": 0.25665336134965855
+          },
+          {
+            "gamma": 0.995,
+            "recall": 0.2522893299445322
+          },
+          {
+            "gamma": 1.0,
+            "recall": 0.24966147762409166
+          }
+        ],
+        "comparisons": {
+          "day_hstar_vs_frequency": {
+            "comparator": "basket decay gamma = 1 (personal frequency)",
+            "model": "day decay h* = 180 days",
+            "n_users": 1867,
+            "mean_a": 0.24966147762409166,
+            "mean_b": 0.26445135022186994,
+            "diff": 0.014789872597778283,
+            "ci_0.95": [
+              0.006832183574531321,
+              0.022642478563553742
+            ]
+          },
+          "day_hstar_vs_basket_gstar": {
+            "comparator": "basket decay gamma* = 0.97",
+            "model": "day decay h* = 180 days",
+            "n_users": 1867,
+            "mean_a": 0.2716599979871195,
+            "mean_b": 0.26445135022186994,
+            "diff": -0.007208647765249523,
+            "ci_0.95": [
+              -0.01365046617936227,
+              -0.0010928868281547212
+            ]
+          },
+          "basket_gstar_vs_frequency": {
+            "comparator": "basket decay gamma = 1 (personal frequency)",
+            "model": "basket decay gamma* = 0.97",
+            "n_users": 1867,
+            "mean_a": 0.24966147762409166,
+            "mean_b": 0.2716599979871195,
+            "diff": 0.021998520363027806,
+            "ci_0.95": [
+              0.014197658493637669,
+              0.02985026878173475
+            ]
+          },
+          "basket_0.97_vs_frequency": {
+            "comparator": "basket decay gamma = 1 (personal frequency)",
+            "model": "basket decay gamma = 0.97 (reproduction check)",
+            "n_users": 1867,
+            "mean_a": 0.24966147762409166,
+            "mean_b": 0.2716599979871195,
+            "diff": 0.021998520363027806,
+            "ci_0.95": [
+              0.014197658493637669,
+              0.02985026878173475
+            ]
+          }
+        }
+      },
+      "gaps": {
+        "definition": "day difference between consecutive baskets of a user (fit history, baskets ordered by day); same-day baskets give 0",
+        "n_gaps": 178299,
+        "users_with_one_basket": 0,
+        "mean_days": 5.547877441825249,
+        "median_days": 3.0,
+        "share_zero": 0.16002333159468085,
+        "mean_days_excluding_zero": 6.604799455153672,
+        "median_days_excluding_zero": 3.0,
+        "p90_days": 12.0
+      },
+      "unified_scale": [
+        {
+          "gamma": 0.5,
+          "basket_half_life": 1.0,
+          "day_equivalent_mean_gap": 5.547877441825249,
+          "day_equivalent_median_gap": 3.0
+        },
+        {
+          "gamma": 0.6,
+          "basket_half_life": 1.3569154488567239,
+          "day_equivalent_mean_gap": 7.5280006091764005,
+          "day_equivalent_median_gap": 4.070746346570171
+        },
+        {
+          "gamma": 0.7,
+          "basket_half_life": 1.9433582098747315,
+          "day_equivalent_mean_gap": 10.781513173949921,
+          "day_equivalent_median_gap": 5.830074629624194
+        },
+        {
+          "gamma": 0.8,
+          "basket_half_life": 3.1062837195053903,
+          "day_equivalent_mean_gap": 17.233281375352984,
+          "day_equivalent_median_gap": 9.318851158516171
+        },
+        {
+          "gamma": 0.9,
+          "basket_half_life": 6.578813478960585,
+          "day_equivalent_mean_gap": 36.49845089390132,
+          "day_equivalent_median_gap": 19.736440436881757
+        },
+        {
+          "gamma": 0.95,
+          "basket_half_life": 13.513407333964874,
+          "day_equivalent_mean_gap": 74.9707277102996,
+          "day_equivalent_median_gap": 40.54022200189462
+        },
+        {
+          "gamma": 0.97,
+          "basket_half_life": 22.75657306277341,
+          "day_equivalent_mean_gap": 126.25067834820871,
+          "day_equivalent_median_gap": 68.26971918832022
+        },
+        {
+          "gamma": 0.98,
+          "basket_half_life": 34.309618491520645,
+          "day_equivalent_mean_gap": 190.34555846673783,
+          "day_equivalent_median_gap": 102.92885547456194
+        },
+        {
+          "gamma": 0.99,
+          "basket_half_life": 68.96756393652842,
+          "day_equivalent_mean_gap": 382.6235921811066,
+          "day_equivalent_median_gap": 206.90269180958526
+        },
+        {
+          "gamma": 0.995,
+          "basket_half_life": 138.28257298606084,
+          "day_equivalent_mean_gap": 767.1747672669205,
+          "day_equivalent_median_gap": 414.84771895818255
+        },
+        {
+          "gamma": 1.0,
+          "basket_half_life": "inf",
+          "day_equivalent_mean_gap": "inf",
+          "day_equivalent_median_gap": "inf"
+        }
+      ],
+      "h_star_days": 180.0,
+      "h_star_in_baskets": {
+        "via_mean_gap": 32.44484073187819,
+        "via_median_gap": 60.0
+      },
+      "by_history_length": [
+        {
+          "bin": "(0,4]",
+          "n_users": 3,
+          "day": [
+            {
+              "h": 7.0,
+              "recall": 0.8333333333333334
+            },
+            {
+              "h": 14.0,
+              "recall": 0.8333333333333334
+            },
+            {
+              "h": 30.0,
+              "recall": 0.8333333333333334
+            },
+            {
+              "h": 60.0,
+              "recall": 0.8333333333333334
+            },
+            {
+              "h": 90.0,
+              "recall": 0.8333333333333334
+            },
+            {
+              "h": 180.0,
+              "recall": 0.8333333333333334
+            },
+            {
+              "h": 365.0,
+              "recall": 0.8333333333333334
+            },
+            {
+              "h": "inf",
+              "recall": 0.8333333333333334
+            }
+          ],
+          "basket": [
+            {
+              "gamma": 0.5,
+              "recall": 0.8333333333333334
+            },
+            {
+              "gamma": 0.6,
+              "recall": 0.8333333333333334
+            },
+            {
+              "gamma": 0.7,
+              "recall": 0.8333333333333334
+            },
+            {
+              "gamma": 0.8,
+              "recall": 0.8333333333333334
+            },
+            {
+              "gamma": 0.9,
+              "recall": 0.8333333333333334
+            },
+            {
+              "gamma": 0.95,
+              "recall": 0.8333333333333334
+            },
+            {
+              "gamma": 0.97,
+              "recall": 0.8333333333333334
+            },
+            {
+              "gamma": 0.98,
+              "recall": 0.8333333333333334
+            },
+            {
+              "gamma": 0.99,
+              "recall": 0.8333333333333334
+            },
+            {
+              "gamma": 0.995,
+              "recall": 0.8333333333333334
+            },
+            {
+              "gamma": 1.0,
+              "recall": 0.8333333333333334
+            }
+          ]
+        },
+        {
+          "bin": "(4,10]",
+          "n_users": 35,
+          "day": [
+            {
+              "h": 7.0,
+              "recall": 0.32362811791383217
+            },
+            {
+              "h": 14.0,
+              "recall": 0.35219954648526075
+            },
+            {
+              "h": 30.0,
+              "recall": 0.36648526077097504
+            },
+            {
+              "h": 60.0,
+              "recall": 0.36053287981859405
+            },
+            {
+              "h": 90.0,
+              "recall": 0.38910430839002264
+            },
+            {
+              "h": 180.0,
+              "recall": 0.4180725623582766
+            },
+            {
+              "h": 365.0,
+              "recall": 0.4228344671201814
+            },
+            {
+              "h": "inf",
+              "recall": 0.5801360544217686
+            }
+          ],
+          "basket": [
+            {
+              "gamma": 0.5,
+              "recall": 0.32362811791383217
+            },
+            {
+              "gamma": 0.6,
+              "recall": 0.35219954648526075
+            },
+            {
+              "gamma": 0.7,
+              "recall": 0.35100907029478456
+            },
+            {
+              "gamma": 0.8,
+              "recall": 0.42442176870748305
+            },
+            {
+              "gamma": 0.9,
+              "recall": 0.45140589569161
+            },
+            {
+              "gamma": 0.95,
+              "recall": 0.4371201814058957
+            },
+            {
+              "gamma": 0.97,
+              "recall": 0.4371201814058957
+            },
+            {
+              "gamma": 0.98,
+              "recall": 0.4371201814058957
+            },
+            {
+              "gamma": 0.99,
+              "recall": 0.4371201814058957
+            },
+            {
+              "gamma": 0.995,
+              "recall": 0.4371201814058957
+            },
+            {
+              "gamma": 1.0,
+              "recall": 0.5801360544217686
+            }
+          ]
+        },
+        {
+          "bin": "(10,20]",
+          "n_users": 104,
+          "day": [
+            {
+              "h": 7.0,
+              "recall": 0.2379365461349267
+            },
+            {
+              "h": 14.0,
+              "recall": 0.24322500767338825
+            },
+            {
+              "h": 30.0,
+              "recall": 0.26102335515923575
+            },
+            {
+              "h": 60.0,
+              "recall": 0.2811358815217621
+            },
+            {
+              "h": 90.0,
+              "recall": 0.31441198042286095
+            },
+            {
+              "h": 180.0,
+              "recall": 0.33816839579111846
+            },
+            {
+              "h": 365.0,
+              "recall": 0.3437014044491271
+            },
+            {
+              "h": "inf",
+              "recall": 0.37085151128673394
+            }
+          ],
+          "basket": [
+            {
+              "gamma": 0.5,
+              "recall": 0.24175739633735588
+            },
+            {
+              "gamma": 0.6,
+              "recall": 0.2504365461349267
+            },
+            {
+              "gamma": 0.7,
+              "recall": 0.2517357677466483
+            },
+            {
+              "gamma": 0.8,
+              "recall": 0.2992261246120052
+            },
+            {
+              "gamma": 0.9,
+              "recall": 0.34953343791273955
+            },
+            {
+              "gamma": 0.95,
+              "recall": 0.332323199320922
+            },
+            {
+              "gamma": 0.97,
+              "recall": 0.34073666085938353
+            },
+            {
+              "gamma": 0.98,
+              "recall": 0.341698199320922
+            },
+            {
+              "gamma": 0.99,
+              "recall": 0.341698199320922
+            },
+            {
+              "gamma": 0.995,
+              "recall": 0.341698199320922
+            },
+            {
+              "gamma": 1.0,
+              "recall": 0.37085151128673394
+            }
+          ]
+        },
+        {
+          "bin": "(20,50]",
+          "n_users": 490,
+          "day": [
+            {
+              "h": 7.0,
+              "recall": 0.2170914476447909
+            },
+            {
+              "h": 14.0,
+              "recall": 0.22733743077611238
+            },
+            {
+              "h": 30.0,
+              "recall": 0.24937647003104776
+            },
+            {
+              "h": 60.0,
+              "recall": 0.2791457358714204
+            },
+            {
+              "h": 90.0,
+              "recall": 0.2995081369930873
+            },
+            {
+              "h": 180.0,
+              "recall": 0.3098021675321422
+            },
+            {
+              "h": 365.0,
+              "recall": 0.3200911698153301
+            },
+            {
+              "h": "inf",
+              "recall": 0.31013918992286227
+            }
+          ],
+          "basket": [
+            {
+              "gamma": 0.5,
+              "recall": 0.21351306174497645
+            },
+            {
+              "gamma": 0.6,
+              "recall": 0.21858137637911582
+            },
+            {
+              "gamma": 0.7,
+              "recall": 0.23477987696669284
+            },
+            {
+              "gamma": 0.8,
+              "recall": 0.2554314717582822
+            },
+            {
+              "gamma": 0.9,
+              "recall": 0.29869024126971017
+            },
+            {
+              "gamma": 0.95,
+              "recall": 0.3184495416557672
+            },
+            {
+              "gamma": 0.97,
+              "recall": 0.3242318831163365
+            },
+            {
+              "gamma": 0.98,
+              "recall": 0.31586693838135615
+            },
+            {
+              "gamma": 0.99,
+              "recall": 0.3146049605575122
+            },
+            {
+              "gamma": 0.995,
+              "recall": 0.3136378955705979
+            },
+            {
+              "gamma": 1.0,
+              "recall": 0.31013918992286227
+            }
+          ]
+        },
+        {
+          "bin": "(50,100]",
+          "n_users": 658,
+          "day": [
+            {
+              "h": 7.0,
+              "recall": 0.20179471397857707
+            },
+            {
+              "h": 14.0,
+              "recall": 0.2238626485586198
+            },
+            {
+              "h": 30.0,
+              "recall": 0.26340948259865077
+            },
+            {
+              "h": 60.0,
+              "recall": 0.2836726549407417
+            },
+            {
+              "h": 90.0,
+              "recall": 0.2816754342436379
+            },
+            {
+              "h": 180.0,
+              "recall": 0.2772983475343891
+            },
+            {
+              "h": 365.0,
+              "recall": 0.27284630427654827
+            },
+            {
+              "h": "inf",
+              "recall": 0.2661264201724966
+            }
+          ],
+          "basket": [
+            {
+              "gamma": 0.5,
+              "recall": 0.19323744826052813
+            },
+            {
+              "gamma": 0.6,
+              "recall": 0.20075860401517168
+            },
+            {
+              "gamma": 0.7,
+              "recall": 0.2140214159046852
+            },
+            {
+              "gamma": 0.8,
+              "recall": 0.24065653649556215
+            },
+            {
+              "gamma": 0.9,
+              "recall": 0.276529037450432
+            },
+            {
+              "gamma": 0.95,
+              "recall": 0.2832704798302493
+            },
+            {
+              "gamma": 0.97,
+              "recall": 0.2815047204761766
+            },
+            {
+              "gamma": 0.98,
+              "recall": 0.275449559041628
+            },
+            {
+              "gamma": 0.99,
+              "recall": 0.2725753667817218
+            },
+            {
+              "gamma": 0.995,
+              "recall": 0.2679685193221906
+            },
+            {
+              "gamma": 1.0,
+              "recall": 0.2661264201724966
+            }
+          ]
+        },
+        {
+          "bin": "(100,inf)",
+          "n_users": 538,
+          "day": [
+            {
+              "h": 7.0,
+              "recall": 0.1620495065830598
+            },
+            {
+              "h": 14.0,
+              "recall": 0.20238229279434686
+            },
+            {
+              "h": 30.0,
+              "recall": 0.23007585904015682
+            },
+            {
+              "h": 60.0,
+              "recall": 0.24120985249273452
+            },
+            {
+              "h": 90.0,
+              "recall": 0.24231823283847945
+            },
+            {
+              "h": 180.0,
+              "recall": 0.23639447262698454
+            },
+            {
+              "h": 365.0,
+              "recall": 0.22598363475475458
+            },
+            {
+              "h": "inf",
+              "recall": 0.217745369603632
+            }
+          ],
+          "basket": [
+            {
+              "gamma": 0.5,
+              "recall": 0.12634776929192174
+            },
+            {
+              "gamma": 0.6,
+              "recall": 0.13285901929759555
+            },
+            {
+              "gamma": 0.7,
+              "recall": 0.1463378588245887
+            },
+            {
+              "gamma": 0.8,
+              "recall": 0.17161615183098047
+            },
+            {
+              "gamma": 0.9,
+              "recall": 0.21925354137770342
+            },
+            {
+              "gamma": 0.95,
+              "recall": 0.23858398114424598
+            },
+            {
+              "gamma": 0.97,
+              "recall": 0.24327167225123186
+            },
+            {
+              "gamma": 0.98,
+              "recall": 0.24400918100490715
+            },
+            {
+              "gamma": 0.99,
+              "recall": 0.23421024029190288
+            },
+            {
+              "gamma": 0.995,
+              "recall": 0.22926919511776217
+            },
+            {
+              "gamma": 1.0,
+              "recall": 0.217745369603632
+            }
+          ]
+        }
+      ],
+      "timing_seconds": {
+        "load_and_check": 5.456406299999799,
+        "fit_grids": 49.41152779999538,
+        "eval_grids": 55.039054799999576,
+        "bootstrap": 0.03457290001097135,
+        "gaps_and_bins": 1.276709199999459
+      },
+      "peak_memory_mib": 2438.4609375
+    }
+  },
+  "transfer": {
+    "instacart_day": {
+      "dataset": "instacart",
+      "scorer": "day",
+      "selected_on": "complete_journey",
+      "own_param": 60.0,
+      "transferred_param": 180.0,
+      "own_recall": 0.5647474877652786,
+      "transferred_recall": 0.5513414599848692,
+      "transfer_loss": 0.01340602778040965,
+      "ci_0.95": [
+        0.01180363791124133,
+        0.015064159839067025
+      ],
+      "n_users": 18643
+    },
+    "instacart_basket": {
+      "dataset": "instacart",
+      "scorer": "basket",
+      "selected_on": "complete_journey",
+      "own_param": 0.8,
+      "transferred_param": 0.97,
+      "own_recall": 0.5630485349790323,
+      "transferred_recall": 0.5493552930789422,
+      "transfer_loss": 0.013693241900090095,
+      "ci_0.95": [
+        0.01146556484792458,
+        0.01586207103877798
+      ],
+      "n_users": 18643
+    },
+    "complete_journey_day": {
+      "dataset": "complete_journey",
+      "scorer": "day",
+      "selected_on": "instacart",
+      "own_param": 180.0,
+      "transferred_param": 60.0,
+      "own_recall": 0.26445135022186994,
+      "transferred_recall": 0.2624059821933966,
+      "transfer_loss": 0.0020453680284733735,
+      "ci_0.95": [
+        -0.005944426683245231,
+        0.009520951716949482
+      ],
+      "n_users": 1867
+    },
+    "complete_journey_basket": {
+      "dataset": "complete_journey",
+      "scorer": "basket",
+      "selected_on": "instacart",
+      "own_param": 0.97,
+      "transferred_param": 0.8,
+      "own_recall": 0.2716599979871195,
+      "transferred_recall": 0.2193432647595506,
+      "transfer_loss": 0.052316733227568836,
+      "ci_0.95": [
+        0.04171625630089478,
+        0.06353242633200631
+      ],
+      "n_users": 1867
+    }
+  },
+  "reproduction_check": {
+    "complete_journey": {
+      "fit_basket_0.97": {
+        "expected": 0.289,
+        "observed": 0.288960452707918,
+        "matched": true
+      },
+      "fit_basket_1.0": {
+        "expected": 0.2766,
+        "observed": 0.2765862776045085,
+        "matched": true
+      },
+      "eval_basket_0.97_minus_1.0": {
+        "expected": 0.022,
+        "observed": 0.021998520363027806,
+        "matched": true
+      },
+      "all_matched": true
+    }
+  },
+  "figure": {
+    "png": "fig_recall_vs_halflife.png",
+    "csv": "fig_recall_vs_halflife.csv",
+    "points": 38
+  },
+  "environment": {
+    "python": "Python 3.12.16 (Windows)",
+    "pandas": "2.2.3",
+    "numpy": "1.26.4",
+    "matplotlib": "3.9.2"
+  },
+  "runtime_seconds": 302.77158719999716,
+  "peak_memory_mib": 2438.4609375
+}
