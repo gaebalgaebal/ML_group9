@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from nbr.config import REPO_ROOT, load_config
+from nbr.config import REPO_ROOT, load_config, resolve_data_dir
 from nbr.io import write_json
 
 
@@ -75,3 +75,12 @@ def test_write_json_git_failure(monkeypatch, tmp_path):
     monkeypatch.setattr("nbr.io.subprocess.run", fail)
     path = write_json(tmp_path / "r.json", {}, {"repo_root": tmp_path, "profile": "sample"})
     assert json.loads(Path(path).read_text(encoding="utf-8"))["meta"]["git_commit"] is None
+
+
+def test_resolve_data_dir(monkeypatch, tmp_path):
+    monkeypatch.delenv("NBR_DATA_DIR", raising=False)
+    assert resolve_data_dir() == REPO_ROOT / "data" / "processed"
+    assert resolve_data_dir({"data_dir": "elsewhere"}) == REPO_ROOT / "elsewhere"
+    monkeypatch.setenv("NBR_DATA_DIR", str(tmp_path))
+    assert resolve_data_dir() == Path(tmp_path)
+    assert resolve_data_dir({"data_dir": "elsewhere"}) == Path(tmp_path)

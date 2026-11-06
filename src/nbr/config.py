@@ -25,8 +25,8 @@ def load_config(profile: str) -> dict[str, Any]:
     Keys in configs/<profile>.yaml override the same top-level keys in
     configs/common.yaml (shallow merge); the ``usercf`` block of
     configs/usercf.yaml is added when neither file defines one. The result also carries
-    ``repo_root`` (Path) and ``data_dir`` (Path): the NBR_DATA_DIR environment
-    variable wins over ``common.data_dir`` (resolved relative to repo_root).
+    ``repo_root`` (Path) and ``data_dir`` (Path, see resolve_data_dir: the NBR_DATA_DIR
+    environment variable wins over ``common.data_dir``, resolved relative to repo_root).
     """
     if not profile or not profile.replace("_", "").replace("-", "").isalnum():
         raise ValueError(f"invalid profile name {profile!r}")
@@ -40,14 +40,23 @@ def load_config(profile: str) -> dict[str, Any]:
     if usercf_path.exists():  # W7/W8: user-CF grid lives in its own file; only its "usercf" block is merged
         config.setdefault("usercf", _read_yaml(usercf_path).get("usercf"))
 
+    config["repo_root"] = REPO_ROOT
+    config["data_dir"] = resolve_data_dir(config)
+    return config
+
+
+def resolve_data_dir(settings: dict[str, Any] | None = None) -> Path:
+    """Processed-data root shared by every profile (the parent of <profile>/<dataset>/*.parquet).
+
+    The NBR_DATA_DIR environment variable wins; otherwise ``settings["data_dir"]`` (default: the
+    ``data_dir`` of configs/common.yaml) is resolved relative to the repository root.
+    """
     env_dir = os.environ.get("NBR_DATA_DIR")
     if env_dir:
-        data_dir = Path(env_dir)
-    else:
-        data_dir = REPO_ROOT / config["data_dir"]
-    config["repo_root"] = REPO_ROOT
-    config["data_dir"] = data_dir
-    return config
+        return Path(env_dir)
+    if settings is None:
+        settings = _read_yaml(CONFIG_DIR / "common.yaml")
+    return REPO_ROOT / settings["data_dir"]
 
 
 def resolve_tuning_dir(config: dict[str, Any], override: str | Path | None = None) -> Path:
