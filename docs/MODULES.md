@@ -1,7 +1,6 @@
 # Module catalogue
 
-Codes used in the report, the slides and `reports/results/` (branch `feat/w11-results`,
-`scripts/results_sources.yaml`). Statuses: **adopted** = part of the pre-registered model
+Codes used in the report, the slides and `reports/results/` (`scripts/results_sources.yaml`). Statuses: **adopted** = part of the pre-registered model
 evaluated on the holdout (PREREG v1.2); **evaluated-not-adopted** = evaluated on development
 data (`medium`) only, adoption decision TBD unless stated; **not-examined** = no implementation
 or evaluation in this project; **not run** = planned, not implemented. Hypothesis ids follow
@@ -13,7 +12,7 @@ or evaluation in this project; **not run** = planned, not implemented. Hypothesi
 | Code | Definition | Implementation | Selection | Status | Basis |
 |---|---|---|---|---|---|
 | E1 | hierarchical explore: `s(u,i) = theta_u(c) * pop(i) / pop(c)` with the decayed, smoothed L2-category profile `theta_u(c)`; equals popularity excluding history when `alpha = inf` | `src/nbr/explore.py`: `category_profile`, `explore_list` (list `explore_star`); `category_ranking` for H4 | `(gamma_c, alpha)` by new-item Recall@10 (fit split) | adopted | H2, H4 (holdout) |
-| E2 | user-based CF: cosine similarity between user x item vectors (binary or log1p basket counts), `score(u,i) = sum over the k nearest users v of sim(u,v) x_{v,i}` over unseen items, padded with popularity | `src/nbr/usercf.py`: `user_vectors`, `user_neighbors`, `ucf_list` (list `usercf`); stand-alone runner `src/nbr/usercf_eval.py` | `(k, weighting)` by new-item Recall@10 (fit split) | evaluated-not-adopted (proposed as the explore list of the v1.3 draft; decision TBD) | H8, H9 (medium) |
+| E2 | user-based CF: cosine similarity between user x item vectors (binary or log1p basket counts), `score(u,i) = sum over the k nearest users v of sim(u,v) x_{v,i}` over unseen items, padded with popularity | `src/nbr/usercf.py`: `user_vectors`, `user_neighbors`, `ucf_list` (list `usercf`); stand-alone runner `src/nbr/usercf_eval.py` | `(k, weighting)` by new-item Recall@10 (fit split) | evaluated-not-adopted (selected on development data; confirmation planned) | H8, H9 (medium) |
 | E3 | flat item-CF: item cosine neighbours (20) from the binary user x item matrix, `score(u,i) = sum over bought j of sim(j,i)` over unseen items | `src/nbr/itemcf.py`: `item_neighbors`, `cf_scores`, `cf_list` (list `itemcf_flat`) | none (20 neighbours fixed, PREREG v1.2) | evaluated-not-adopted | H5 (holdout, secondary confirmatory, generated on development data) |
 | E4 | theta x item-CF within category: `theta_u(c) * cf(u,i) / sum_{j in c} cf(u,j)` | `src/nbr/explore.py`: `explore_list_cf` (list `explore_cf`) | shares E1's `(gamma_c, alpha)` | evaluated-not-adopted | secondary `explore_cf_vs_explore_star` (holdout, medium) |
 | E5 | matrix factorisation | - | - | not-examined | - |
@@ -28,8 +27,8 @@ or evaluation in this project; **not run** = planned, not implemented. Hypothesi
 | Code | Definition | Implementation | Selection | Status | Basis |
 |---|---|---|---|---|---|
 | R1 | decayed purchase frequency `s_rep(u,i) = sum over baskets b containing i of gamma^age(b)` | `src/nbr/repeat.py`: `repeat_scores`, `repeat_list` (list `repeat_star`) | `gamma` by repeat Recall@10 (fit split) | adopted | H1 (holdout) |
-| R2 | L2-regularised logistic regression over 12 per-pair history features (decayed counts for gamma 0.5/0.8/1.0, recency, mean gap, once, overdue, item repeat rate, log pop, user repeat rate, log history length, share); label = pair occurs in the next basket of the fit split | `src/nbr/features.py:repeat_features`; `src/nbr/lr_repeat.py`: `build_training`, `fit_select`, `lr_repeat_list` (list `repeat_lr`); `pipeline.tune_lr_repeat` | `C` on validation users (20 %) | evaluated-not-adopted (proposed as the repeat ranker of the v1.3 draft; decision TBD) | H6, H7 (medium) |
-| R3 | R2 features + binned cycle features (item cadence, cadence ratio, one-hot bins of overdue / recency / cadence ratio; 30 features) | branch `feat/w9-r3-cycle`: `src/nbr/features_cycle.py:cycle_features`, `src/nbr/r3_eval.py` (list `repeat_r3`) | `C` as R2, same user split | evaluated-not-adopted (not carried forward in the v1.3 draft) | H10 (medium) |
+| R2 | L2-regularised logistic regression over 12 per-pair history features (decayed counts for gamma 0.5/0.8/1.0, recency, mean gap, once, overdue, item repeat rate, log pop, user repeat rate, log history length, share); label = pair occurs in the next basket of the fit split | `src/nbr/features.py:repeat_features`; `src/nbr/lr_repeat.py`: `build_training`, `fit_select`, `lr_repeat_list` (list `repeat_lr`); `pipeline.tune_lr_repeat` | `C` on validation users (20 %) | evaluated-not-adopted (selected on development data; confirmation planned) | H6, H7 (medium) |
+| R3 | R2 features + binned cycle features (item cadence, cadence ratio, one-hot bins of overdue / recency / cadence ratio; 30 features) | `src/nbr/features_cycle.py:cycle_features`, `src/nbr/r3_eval.py` (list `repeat_r3`; stand-alone runner) | `C` as R2, same user split | evaluated-not-adopted (module screening only) | H10 (medium) |
 | R4 | decision-tree repeat ranker | - | - | not-examined | - |
 | R5 | personal purchase frequency (`gamma = 1`); as a full list, padded with popularity outside the history | `src/nbr/repeat.py:repeat_list(gamma=1.0)` (list `repeat_pf`); `src/nbr/baselines.py:personal_frequency_list` (list `personal_frequency`) | - | comparator | H1 (repeat component), H3 (full list) |
 | R6 | recent-N-basket candidate set | - | - | not-examined | - |
@@ -41,7 +40,7 @@ or evaluation in this project; **not run** = planned, not implemented. Hypothesi
 | C0 | R1 | E1 | `r*` of stage 3 (grid 5-10; 10 in the recorded W4 medium and holdout tuning runs, see PREREG v1.2 and `reports/final/RUN.md`) | `final` | `pipeline.build_lists` | adopted | H3 (holdout) |
 | C1 | R2 | E1 | same `r*` as C0 (not re-selected) | `final_lr` | `pipeline.build_lists` (`lr_bundle`) | evaluated-not-adopted | H7 (medium) |
 | C2 | R2 | E1 | re-selected on the fit split (LR validation users, grid 0-10) | `final_lr_r` | `pipeline.INTEGRATION_COMBOS`, `tune_integration` | evaluated-not-adopted | secondary `final_lr_r_vs_final_lr` (medium) |
-| C3 | R2 | E2 | re-selected (LR validation users) | `final_lr_ucf` | same | evaluated-not-adopted (proposed final system of the v1.3 draft; decision TBD) | H9 = C3 vs C1 (medium) |
+| C3 | R2 | E2 | re-selected (LR validation users) | `final_lr_ucf` | same | evaluated-not-adopted (selected on development data; confirmation planned) | H9 = C3 vs C1 (medium) |
 | C3b | R1 | E2 | re-selected (all fit users) | `final_star_ucf` (W7 stand-alone: `final_ucf` with the C0 `r*`) | same; `usercf_eval.evaluate` | evaluated-not-adopted | secondary `final_star_ucf_vs_final` (medium) |
 | C4 | R2 | E3 | - | - | not implemented | not run | - |
 | E4+R1 | R1 | E4 | `r*` of stage 3 | `final_cf` | `pipeline.build_lists` (`include_itemcf`) | evaluated-not-adopted | secondary `final_cf_vs_final` (holdout v1.2 auxiliary) |
@@ -90,7 +89,7 @@ Where the label depends on interpretation it is stated.
 
 ## 5. Where the codes are used
 
-- `reports/results/tables/T6_module_catalog.csv` (branch `feat/w11-results`) carries the same codes,
+- `reports/results/tables/T6_module_catalog.csv` carries the same codes,
   statuses and basis hypotheses; `T4_final_lists` and figure F4 use the C labels.
-- PREREG v1.3 (draft, uncommitted in the `main` working tree as of 2026-11-06) proposes R2 + E2 = C3
-  as the system for the planned `holdout2` run; the adoption decision and the final wording are TBD.
+- A planned confirmatory run (holdout2) is intended for the combination selected on development data,
+  C3 = R2 + E2; the pre-registration amendment is not committed yet and nothing has been run.

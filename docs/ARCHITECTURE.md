@@ -4,8 +4,7 @@ System structure, profiles, commands, selection procedure and leakage rules of t
 package (hierarchical next-basket recommendation, ML Team 9). Source of truth for the
 hypotheses and the selection rules is `docs/PREREG.md`; this document describes how the
 code implements them. Module and combination codes (E1-E8, R1-R6, C0-C4, C3b) are defined
-in `docs/MODULES.md`; result numbers live in `reports/results/RESULTS.md` (branch
-`feat/w11-results`) and are not repeated here.
+in `docs/MODULES.md`; result numbers live in `reports/results/RESULTS.md` and are not repeated here.
 
 ## 1. System structure
 
@@ -40,7 +39,7 @@ Components and where they live:
 | Popularity | `pop(i)` = number of history baskets containing `i` (per split, all users) | `src/nbr/baselines.py:item_popularity` |
 | Repeat branch R1 | `s_rep(u,i) = sum_b gamma^age(b)`, age 0 = most recent basket; `gamma = 1` is personal purchase frequency (R5) | `src/nbr/repeat.py` (`basket_ages`, `repeat_scores`, `repeat_list`) |
 | Repeat branch R2 | 12 features per (user, item) pair of the history; StandardScaler + L2 logistic regression; score = decision function | `src/nbr/features.py`, `src/nbr/lr_repeat.py` |
-| Repeat branch R3 (screening only) | R2 features + binned purchase-cycle features (30 features) | `src/nbr/features_cycle.py`, `src/nbr/r3_eval.py` on branch `feat/w9-r3-cycle` |
+| Repeat branch R3 (screening only) | R2 features + binned purchase-cycle features (30 features) | `src/nbr/features_cycle.py`, `src/nbr/r3_eval.py` (stand-alone screening runner) |
 | Explore branch E1 | category profile `theta_u(c) = (sum_b gamma_c^age(b) n_b(c) + alpha p(c)) / (sum_b gamma_c^age(b) n_b + alpha)`; item score `theta_u(c) * pop(i) / pop(c)` over unbought items; exact top-k by category pruning | `src/nbr/explore.py` (`category_profile`, `explore_list`, `category_ranking`) |
 | Explore branch E2 | user x item vectors (binary or log1p basket counts), cosine neighbours, `score(u,i) = sum_v sim(u,v) x_{v,i}` over unseen items, padded with popularity | `src/nbr/usercf.py` (`user_vectors`, `user_neighbors`, `ucf_list`) |
 | Explore branch E3 / E4 | item cosine neighbours from the binary user x item matrix; flat item-CF list (E3) and the within-category variant `theta_u(c) * cf(u,i) / sum cf` (E4) | `src/nbr/itemcf.py`, `src/nbr/explore.py:explore_list_cf` |
@@ -60,9 +59,9 @@ branch produced the item (`repeat`, `repeat_lr`, `explore`, `usercf`, `itemcf`, 
 | `sample` | `configs/sample.yaml` (`role: smoke`) | smoke test | Instacart 1,500 users; Complete Journey sample | pipeline checks only; no reported results |
 | `medium` | `configs/medium.yaml` (`role: development`) | development | Instacart 20,000 users; Complete Journey 2,069 households (eval split already used in earlier ML_group9 experiments) | all development runs (W4a, W6-W9); not confirmatory |
 | `holdout` | `configs/holdout.yaml` (`role: final`, `complete_journey_profile: medium`) | confirmatory, PREREG v1.2 | Instacart 20,000 users disjoint from `sample` and `medium` (`data/SOURCE.md`); Complete Journey reuses the `medium` data (refit; limitation recorded in PREREG v1.2) | read exactly once for H1-H5 (`reports/final/RUN.md`) |
-| `holdout2` | no config on this branch | confirmatory, PREREG v1.3 (planned) | per the uncommitted PREREG v1.3 draft in the `main` working tree: 20,000 Instacart users drawn from the users not in `sample`, `medium` or `holdout`; eval split read once after the amendment is committed | not created and not read in any worktree of this project so far; the data folder `data/processed/holdout2` is not to be opened before the amendment is committed (team rule) |
+| `holdout2` | no config yet | planned confirmatory run (holdout2) | Instacart users not in `sample`, `medium` or `holdout`; to be fixed by a pre-registration amendment before the run; eval split read once after the amendment is committed | not created and not read in any worktree of this project so far; the data folder `data/processed/holdout2` is not to be opened before the amendment is committed (team rule) |
 
-Dates, the final v1.3 wording and the holdout2 run plan are TBD until the amendment is committed.
+Dates, the amendment wording and the holdout2 run plan are TBD until the amendment is committed.
 
 Category levels (`configs/common.yaml`): Instacart department (L1) -> aisle (L2) -> ingredient
 type (L3, aisle fallback); Complete Journey DEPARTMENT (L1) -> commodity (L2) -> sub-commodity (L3).
@@ -72,8 +71,8 @@ The explore branch uses L2 (`explore.level`); `explore_L3` is an ablation list.
 
 All commands run from the repository root with `PYTHONPATH=src` (or after `pip install -e .`).
 The processed-data root is `configs/common.yaml:data_dir` (`data/processed`) or the environment
-variable `NBR_DATA_DIR`, which wins when set (used by the git worktrees, which share
-`C:\dev_ML\data\processed`).
+variable `NBR_DATA_DIR`, which wins when set (used by the git worktrees, which share one
+processed-data folder).
 
 | Command | Reads | Writes |
 |---|---|---|
@@ -82,10 +81,10 @@ variable `NBR_DATA_DIR`, which wins when set (used by the git worktrees, which s
 | `python -m nbr check --profile P` | fit and eval splits of every dataset of the profile (holdout eval skipped by the guard) | stdout only |
 | `python -m nbr tune --profile P --dataset D` | `fit_history`, `fit_target`, `items` | `reports/metrics/P_D_tuning.json` (stage 1-3 grids and selections, LR C selection, user-CF and slot selections), `artifacts/P/D_lr_repeat.joblib` |
 | `python -m nbr evaluate --profile P --dataset D [--transfer-from instacart] [--final] [--no-itemcf] [--no-lr] [--no-integration] [--skip-l3]` | `eval_history`, `eval_target`, `items`, the tuning JSON and the joblib bundle of `D` (or of `--transfer-from`) | `reports/metrics/P_D_eval.json` (or `P_D_eval_transfer.json`): list metrics, H1-H5 primary comparisons, secondary comparisons, history-length breakdown, `lr_repeat` block (H6, H7), `integration` block (H8, H9) |
-| `python -m nbr.usercf_eval --profile {sample,medium} --dataset D --stage {tune,evaluate,all}` | fit/eval splits; base selections from the read-only W4a tuning JSON (`configs/usercf.yaml:selection_source`) | `reports/metrics/P_D_usercf_tuning.json`, `P_D_usercf_eval.json` (W7 stand-alone H8 run; refuses holdout paths) |
-| `python -m nbr.r3_eval --profile {sample,medium} --dataset D [--gamma-dir DIR] [--r3-config FILE]` (branch `feat/w9-r3-cycle`) | fit/eval splits; gamma* from the W4 tuning JSON; `configs/r3.yaml` | `reports/metrics/P_D_r3.json`, `reports/tables/P_D_r3_{coefficients,overdue_coef}.csv`, `reports/figures/P_D_r3_overdue_coef.png`, `artifacts/P/D_r3.joblib` (refuses `role: final`) |
-| `python scripts/make_results.py` (branch `feat/w11-results`) | final and development JSONs listed in `scripts/results_sources.yaml` | `reports/results/{tables,figures}/T1-T7, F1-F6`, `reports/results/RESULTS.md` |
-| `python scripts/audit_code.py` | `src/nbr/*.py`, `scripts/*.py`, two files of `feat/w9-r3-cycle` via `git show` | `docs/CODE_AUDIT.md` |
+| `python -m nbr.usercf_eval --profile {sample,medium} --dataset D --stage {tune,evaluate,all}` | fit/eval splits; base selections (gamma, gamma_c, alpha, r) from `reports/metrics/P_D_tuning.json` of this repository (override: `NBR_TUNING_DIR` or `--tuning-dir`) | `reports/metrics/P_D_usercf_tuning.json`, `P_D_usercf_eval.json` (W7 stand-alone H8 run; refuses holdout paths) |
+| `python -m nbr.r3_eval --profile {sample,medium} --dataset D [--gamma-dir DIR] [--r3-config FILE]` | fit/eval splits; gamma* from `reports/metrics/P_D_tuning.json` (override: `NBR_TUNING_DIR` or `--gamma-dir`); `configs/r3.yaml` | `reports/metrics/P_D_r3.json`, `reports/tables/P_D_r3_{coefficients,overdue_coef}.csv`, `reports/figures/P_D_r3_overdue_coef.png`, `artifacts/P/D_r3.joblib` (refuses `role: final`) |
+| `python scripts/make_results.py [--verify]` | final JSONs (`reports/final/`) and the development JSONs of the sibling worktrees listed in `scripts/results_sources.yaml` (`NBR_WORKTREES`) | `reports/results/{tables,figures}/T1-T7, F1-F6`, `reports/results/RESULTS.md` |
+| `python scripts/audit_code.py [--extra BRANCH:PATH]` | `src/nbr/*.py`, `scripts/*.py` (static ast audit) | `docs/CODE_AUDIT.md` |
 | `python -m pytest` | `tests/` (synthetic data; no processed data needed) | - |
 
 Every JSON written by `nbr.io.write_json` carries a `meta` block (`git_commit`, UTC time, profile,
@@ -147,8 +146,9 @@ upper bound < 0 -> "lower". Secondary comparisons carry CIs without a decision.
   `confirmatory holdout` / `development medium` separate.
 - **Provenance.** `meta.git_commit` in every JSON; `sha256` of each joblib artifact in the tuning
   and eval JSONs; `data/MANIFEST.sha256` for the processed Parquet files.
-- **Team rules outside the code.** The `holdout2` data folder is not opened before PREREG v1.3 is
-  committed; development runs use `sample`/`medium` only.
+- **Team rules outside the code.** The `holdout2` data folder is not opened before the
+  pre-registration amendment for the planned confirmatory run (holdout2) is committed; development
+  runs use `sample`/`medium` only.
 
 ## 6. Repository layout
 
@@ -157,7 +157,7 @@ configs/        common.yaml (grids, bootstrap, levels), sample/medium/holdout.ya
 data/           SOURCE.md, MANIFEST.sha256 (processed Parquet is not tracked)
 docs/           PREREG.md (pre-registration), ARCHITECTURE.md, MODULES.md, LIBRARIES.md, CITATIONS.md, CODE_AUDIT.md
 reports/        final/ (holdout JSONs + RUN.md + SHA256SUMS), data_check/, holdout_prep/; metrics/, figures/, tables/ are untracked
-scripts/        make_holdout.py, check_data.py, audit_code.py (make_results.py on feat/w11-results)
+scripts/        make_holdout.py, check_data.py, make_eda.py, make_results.py (+ results_sources.yaml), audit_code.py
 src/nbr/        package (see section 1)
 tests/          pytest suite on synthetic data
 vendor/         ml_group9_e11b365: unmodified preprocessing snapshot (release/term-project e11b365)

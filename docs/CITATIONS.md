@@ -4,8 +4,8 @@
 
 | Dataset | What we use | Public source | Terms of use |
 |---|---|---|---|
-| Instacart Online Grocery Shopping Dataset 2017 | `orders.csv`, `order_products__prior.csv`, `order_products__train.csv`, `products.csv`, `aisles.csv`, `departments.csv` (archive `instacart.zip`, read by the vendored preprocessing code) | Kaggle competition "Instacart Market Basket Analysis", https://www.kaggle.com/competitions/instacart-market-basket-analysis (the vendored README records the URL as https://www.kaggle.com/competitions/basket-analysis; the original Instacart release page is no longer online) | to be confirmed (Kaggle competition rules / Instacart dataset terms) |
-| dunnhumby "The Complete Journey" (source files) | `transaction_data.csv`, `product.csv` and the other CSVs of the dunnhumby source-files archive (`archive.zip`); not the 84.51° "Complete Journey 2.0" R package | https://www.dunnhumby.com/source-files/ | to be confirmed (dunnhumby source-files licence) |
+| Instacart Online Grocery Shopping Dataset 2017 | `orders.csv`, `order_products__prior.csv`, `order_products__train.csv`, `products.csv`, `aisles.csv`, `departments.csv` (archive `instacart.zip`, read by the vendored preprocessing code) | Instacart release announcement: https://tech.instacart.com/3-million-instacart-orders-open-sourced-d40d29ead6f2 ; Kaggle mirror: https://www.kaggle.com/datasets/psparks/instacart-market-basket-analysis (the vendored README records the URL as https://www.kaggle.com/competitions/basket-analysis) | to be confirmed (Instacart dataset terms / Kaggle terms) |
+| dunnhumby "The Complete Journey" (source files) | `transaction_data.csv`, `product.csv` and the other CSVs of the dunnhumby source-files archive (`archive.zip`); not the 84.51° "Complete Journey 2.0" R package | https://www.dunnhumby.com/source-files/ ; Kaggle mirror: https://www.kaggle.com/datasets/frtgnn/dunnhumby-the-complete-journey | to be confirmed (dunnhumby source-files licence) |
 
 Processed copies, checksums and the holdout draw are documented in `data/SOURCE.md` and
 `data/MANIFEST.sha256`; the ingredient-type mapping used for L3 comes from the separate project

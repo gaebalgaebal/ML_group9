@@ -101,8 +101,8 @@ medium eval history/target 행 수·사용자 수 및 전체 target 재구매 �
 ## 재현과 출처
 
 ```powershell
-$env:NBR_DATA_DIR = "C:\dev_ML\data\processed"
-C:\dev_ML\.venv\Scripts\python.exe scripts/make_eda.py
+$env:NBR_DATA_DIR = "<processed-data folder>"   # default: data/processed
+python scripts/make_eda.py
 ```
 
 pandas 2.2.3; matplotlib 3.9.2. 제3자 라이브러리를 직접 불러오는 것은 이 두 패키지뿐이며 nbr에 의존하지 않는다.
