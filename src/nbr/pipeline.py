@@ -26,9 +26,12 @@ from nbr.data import attach_levels, load_items, load_split, split_target
 from nbr.explore import category_profile, category_ranking, explore_list, explore_list_cf, population_category_ranking
 from nbr.io import write_json
 from nbr.itemcf import cf_list, cf_scores, item_neighbors
-from nbr.lr_repeat import build_training, fit_select, lr_repeat_list
+from nbr.lr_repeat import build_training, fit_select, lr_repeat_list, train_only_bundle
 from nbr.metrics import paired_bootstrap, per_user_category_hit, per_user_ndcg, per_user_recall
 from nbr.repeat import repeat_list
+from nbr.usercf import ucf_list
+from nbr.usercf_eval import peak_memory_mib
+from nbr.usercf_eval import tune_history as tune_usercf
 
 K = 10
 # History-length bins (number of distinct eval-history baskets); upper edges, last bin open.
@@ -38,6 +41,19 @@ PRIMARY_MODELS = {"final_cf": "final", "final_r10": "final", "explore_L3": "expl
 # W6: logistic-regression repeat ranker. Secondary comparisons name -> (comparator, model, metric).
 LR_SECONDARY = {"repeat_lr_vs_repeat_pf_repeat_recall": ("repeat_pf", "repeat_lr", "repeat_recall"),
                 "final_lr_vs_personal_frequency_ndcg": ("personal_frequency", "final_lr", "ndcg")}
+
+
+# W8: combinations of a repeat list and an explore list whose slot count r is re-selected on the fit
+# split: name -> (repeat list, explore list, uses the LR ranker). LR combinations are selected on the
+# LR validation users with the model fitted on the LR training users only (no label leakage).
+INTEGRATION_COMBOS = {"final_lr_ucf": ("repeat_lr", "usercf", True),
+                      "final_star_ucf": ("repeat_star", "usercf", False),
+                      "final_lr_r": ("repeat_lr", "explore_star", True)}
+INTEGRATION_SECONDARY = {"final_star_ucf_vs_final_ndcg": ("final", "final_star_ucf", "ndcg"),
+                         "final_lr_r_vs_final_lr_ndcg": ("final_lr", "final_lr_r", "ndcg"),
+                         "final_lr_ucf_vs_final_ndcg": ("final", "final_lr_ucf", "ndcg"),
+                         "final_lr_ucf_vs_personal_frequency_ndcg": ("personal_frequency", "final_lr_ucf", "ndcg"),
+                         "usercf_vs_itemcf_flat_new_recall": ("itemcf_flat", "usercf", "new_recall")}
 
 
 def run_label(config: dict[str, Any]) -> str:
@@ -144,6 +160,11 @@ def tune(config: dict[str, Any], dataset: str) -> dict[str, Any]:
     lr_document = save_lr_repeat(lr_bundle, config, dataset)
     timings["lr_repeat"] = time.perf_counter() - t0
 
+    t0 = time.perf_counter()
+    integration = tune_integration(history, target, pop, lr_bundle,
+                                   {"repeat_star": repeat_star, "explore_star": explore_star}, config)
+    timings["integration"] = time.perf_counter() - t0
+
     return {
         "profile": config["profile"],
         "dataset": dataset,
@@ -169,8 +190,93 @@ def tune(config: dict[str, Any], dataset: str) -> dict[str, Any]:
             "r": r_star in (min(rs), max(rs)),
         },
         "lr_repeat": lr_document,
+        "integration": integration,
         "timing_seconds": timings,
     }
+
+
+# ---------------------------------------------------------------------------
+# W8: user-CF selection and slot re-selection of the new combinations (fit split only)
+# ---------------------------------------------------------------------------
+def tune_integration(
+    history: pd.DataFrame,
+    target: pd.DataFrame,
+    pop: pd.Series,
+    lr_bundle: dict[str, Any],
+    lists: dict[str, pd.DataFrame],
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Select (k, weighting) of user-CF by fit new-item Recall@10 and r of each combination by NDCG@10.
+
+    ``lists`` holds the fit-split repeat_star and explore_star lists. For the
+    combinations that use the LR ranker, repeat_lr is scored with the C* model
+    fitted on the LR training users only and r is chosen on the LR validation
+    users (same split and seed as fit_select); the other combination uses all
+    fit users. Ties -> larger r (select_r).
+    """
+    timings: dict[str, float] = {}
+    t0 = time.perf_counter()
+    usercf = tune_usercf(history, target, config)
+    k_star, weighting_star = int(usercf["selections"]["k"]), str(usercf["selections"]["weighting"])
+    timings["usercf_grid"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    block_size = int(config["usercf"]["block_size"])
+    usercf_fit = ucf_list(history, k_star, weighting_star, K, pop, block_size=block_size)
+    timings["usercf_list"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    val_users = pd.Index(lr_bundle["val_users"])
+    repeat_lr_val = lr_repeat_list(history, train_only_bundle(lr_bundle), K, pop, users=val_users)
+    timings["repeat_lr_validation"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    inputs = {"repeat_lr": repeat_lr_val, "repeat_star": lists["repeat_star"],
+              "explore_star": lists["explore_star"], "usercf": usercf_fit}
+    val_target = target[target["user_id"].isin(val_users)]
+    r_grid = [int(r) for r in config["integration"]["r"]]
+    r_scores, r_selections, r_users = {}, {}, {}
+    for name, (repeat_name, explore_name, uses_lr) in INTEGRATION_COMBOS.items():
+        repeat, explore = inputs[repeat_name], inputs[explore_name]
+        if uses_lr:
+            explore = explore[explore["user_id"].isin(val_users)]
+            scored_target, note = val_target, "LR validation users (train-only model)"
+        else:
+            scored_target, note = target, "all fit users"
+        scores = {r: float(per_user_ndcg(combine(repeat, explore, r, K), scored_target, K).mean()) for r in r_grid}
+        r_selections[name] = select_r(scores)
+        r_scores[name] = [{"r": r, "ndcg": value} for r, value in scores.items()]
+        r_users[name] = {"users": note, "n_users": int(scored_target["user_id"].nunique())}
+    timings["slot_grid"] = time.perf_counter() - t0
+
+    c_grid = [float(c) for c in config["lr_repeat"]["C"]]
+    return {
+        "label": run_label(config),
+        "usercf": usercf,
+        "lr": {"C": lr_bundle["C"], "C_grid": c_grid, "at_grid_edge": lr_bundle["C"] in (min(c_grid), max(c_grid)),
+               "n_train_users": lr_bundle["n_train_users"], "n_val_users": lr_bundle["n_val_users"]},
+        "r_grid": r_grid,
+        "r_scores": r_scores,
+        "r_selection_users": r_users,
+        "selections": {"k": k_star, "weighting": weighting_star, "C": lr_bundle["C"], "r": r_selections},
+        "at_grid_edge": {"k": bool(usercf["at_grid_edge"]["k"]),
+                         "C": lr_bundle["C"] in (min(c_grid), max(c_grid)),
+                         "r": {name: r in (min(r_grid), max(r_grid)) for name, r in r_selections.items()}},
+        "timing_seconds": timings,
+        "process_peak_working_set_mib": peak_memory_mib(),
+    }
+
+
+def load_integration_selections(config: dict[str, Any], dataset: str) -> dict[str, Any]:
+    """Read the W8 selections (k, weighting, C, r per combination) from the tuning JSON."""
+    path = tuning_path(config, dataset)
+    with open(path, encoding="utf-8") as handle:
+        document = json.load(handle)
+    if not document.get("integration"):
+        raise ValueError(f"{path} has no integration block; rerun tune")
+    selections = dict(document["integration"]["selections"])
+    selections["source"] = str(path)
+    return selections
 
 
 # ---------------------------------------------------------------------------
@@ -304,10 +410,13 @@ def build_lists(
     *,
     include_itemcf: bool = True,
     lr_bundle: dict[str, Any] | None = None,
+    integration: dict[str, Any] | None = None,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, float]]:
     """All model lists (k = 10) from the eval history; returns (lists, timings).
 
     With ``lr_bundle`` (W6) the lists repeat_lr and final_lr = combine(repeat_lr, explore_star, r*) are added.
+    With ``integration`` selections (W8, requires ``lr_bundle``) the user-CF list and the combinations
+    final_lr_ucf, final_star_ucf and final_lr_r with their re-selected r are added.
     """
     level = config["explore"]["level"]
     gamma, gamma_c, alpha, r = (
@@ -343,6 +452,15 @@ def build_lists(
     if lr_bundle is not None:
         timed("repeat_lr", lambda: lr_repeat_list(history, lr_bundle, K, pop))
         timed("final_lr", lambda: combine(lists["repeat_lr"], lists["explore_star"], r, K))
+    if integration is not None:
+        if lr_bundle is None:
+            raise ValueError("integration lists need the lr_repeat bundle")
+        block_size = int(config["usercf"]["block_size"])
+        timed("usercf", lambda: ucf_list(history, int(integration["k"]), str(integration["weighting"]), K, pop,
+                                         block_size=block_size))
+        for name, (repeat_name, explore_name, _) in INTEGRATION_COMBOS.items():
+            slots = int(integration["r"][name])
+            timed(name, lambda rn=repeat_name, en=explore_name, rr=slots: combine(lists[rn], lists[en], rr, K))
     return lists, timings
 
 
@@ -398,11 +516,14 @@ def evaluate(
     transfer_from: str | None = None,
     include_itemcf: bool = True,
     lr_bundle: dict[str, Any] | None = None,
+    integration: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate all models on the eval split with the given (fixed) selections.
 
     ``lr_bundle`` (W6) adds repeat_lr / final_lr and the H6, H7 comparisons under the
-    "lr_repeat" key; the H1-H5 entries do not depend on it.
+    "lr_repeat" key; the H1-H5 entries do not depend on it. ``integration`` (W8, the
+    selections of tune_integration) adds usercf and the combinations with H8, H9 under
+    the "integration" key; H1-H7 do not depend on it.
     """
     timings: dict[str, float] = {}
     t0 = time.perf_counter()
@@ -413,7 +534,7 @@ def evaluate(
     timings["prepare"] = time.perf_counter() - t0
 
     lists, list_timings = build_lists(history, pop, selections, config, include_itemcf=include_itemcf,
-                                      lr_bundle=lr_bundle)
+                                      lr_bundle=lr_bundle, integration=integration)
     timings.update({f"list_{name}": seconds for name, seconds in list_timings.items()})
 
     t0 = time.perf_counter()
@@ -547,6 +668,47 @@ def evaluate(
             "by_history_length": lr_breakdown,
         }
 
+    # W8: user-CF explore list and the re-selected combinations (H8: usercf vs flat_explore;
+    # H9: final_lr_ucf vs final_lr). Secondary comparisons are CI only.
+    integration_result = None
+    if integration is not None:
+        t0 = time.perf_counter()
+        int_series = {
+            "H8_new_recall": (recall_on("flat_explore", new_target), recall_on("usercf", new_target)),
+            "H9_ndcg": (ndcg_all("final_lr"), ndcg_all("final_lr_ucf")),
+            "H9_recall": (recall_on("final_lr", target), recall_on("final_lr_ucf", target)),
+        }
+        int_labels = {
+            "H8_new_recall": ("flat_explore", "usercf", "new-item Recall@10", "users with new target"),
+            "H9_ndcg": ("final_lr", "final_lr_ucf", "NDCG@10", "all users"),
+            "H9_recall": ("final_lr", "final_lr_ucf", "Recall@10", "all users"),
+        }
+        int_primary = {}
+        for key, (a, b) in int_series.items():
+            comparator, model, metric, users = int_labels[key]
+            int_primary[key] = {"comparator": comparator, "model": model, "metric": metric, "users": users,
+                                **_compare(a, b, config, primary=True)}
+        int_secondary = {}
+        for key, (reference, variant, metric) in INTEGRATION_SECONDARY.items():
+            if reference not in lists or variant not in lists:
+                continue
+            if metric == "new_recall":
+                a, b = recall_on(reference, new_target), recall_on(variant, new_target)
+            else:
+                a, b = ndcg_all(reference), ndcg_all(variant)
+            int_secondary[key] = {"comparator": reference, "model": variant, "metric": metric,
+                                  **_compare(a, b, config, primary=False)}
+        int_breakdown = by_history_length(int_series, lengths, dataset, config)
+        timings["integration_metrics"] = time.perf_counter() - t0
+        integration_result = {
+            "label": run_label(config),
+            "selections": integration,
+            "primary": int_primary,
+            "secondary": int_secondary,
+            "by_history_length": int_breakdown,
+            "process_peak_working_set_mib": peak_memory_mib(),
+        }
+
     return {
         "profile": config["profile"],
         "dataset": dataset,
@@ -568,6 +730,7 @@ def evaluate(
         "secondary": secondary,
         "by_history_length": breakdown,
         "lr_repeat": lr_repeat,
+        "integration": integration_result,
         "timing_seconds": timings,
     }
 
@@ -580,10 +743,15 @@ def run_evaluate(
     allow_holdout_eval: bool = False,
     include_itemcf: bool = True,
     include_lr: bool = True,
+    include_integration: bool = True,
 ) -> Path:
-    """Evaluate with the selections (and, if ``include_lr``, the lr_repeat artifact) of ``transfer_from or dataset``."""
-    selections = load_selections(config, transfer_from or dataset)
-    lr_bundle = load_lr_repeat(config, transfer_from or dataset) if include_lr else None
+    """Evaluate with the selections (and, if ``include_lr``, the lr_repeat artifact, and if also
+    ``include_integration``, the W8 selections) of ``transfer_from or dataset``."""
+    source = transfer_from or dataset
+    selections = load_selections(config, source)
+    lr_bundle = load_lr_repeat(config, source) if include_lr else None
+    integration = load_integration_selections(config, source) if include_lr and include_integration else None
     document = evaluate(config, dataset, selections, allow_holdout_eval=allow_holdout_eval,
-                        transfer_from=transfer_from, include_itemcf=include_itemcf, lr_bundle=lr_bundle)
+                        transfer_from=transfer_from, include_itemcf=include_itemcf, lr_bundle=lr_bundle,
+                        integration=integration)
     return write_json(eval_path(config, dataset, transfer_from), document, config)

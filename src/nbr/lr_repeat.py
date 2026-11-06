@@ -117,10 +117,12 @@ def fit_select(
 ) -> dict[str, Any]:
     """Select C on a user-level split, refit on all rows, and return the model bundle.
 
-    Returns a dict with keys: scaler, model, C, validation (list of rows with C,
-    val_recall, n_iter, fit_seconds), coefficients (feature -> standardized
-    coefficient), intercept, features, n_rows, positive_rate, n_train_users,
-    n_val_users, decay_gammas, timing_seconds.
+    Returns a dict with keys: scaler, model (refit on all rows at C*), C,
+    validation (list of rows with C, val_recall, n_iter, fit_seconds),
+    coefficients (feature -> standardized coefficient), intercept, features,
+    n_rows, positive_rate, n_train_users, n_val_users, timing_seconds, and
+    (W8) train_scaler / train_model (the C* fit on the training users only),
+    train_users, val_users (sorted arrays of the user split).
     """
     users = np.asarray(users)
     y = np.asarray(y, dtype="int64")
@@ -137,6 +139,7 @@ def fit_select(
     timings: dict[str, float] = {}
     validation = []
     table = {}
+    train_fits = {}
     t_sel = time.perf_counter()
     for C in C_grid:
         t0 = time.perf_counter()
@@ -144,10 +147,12 @@ def fit_select(
         seconds = time.perf_counter() - t0
         recall = validation_recall(X_val, y_val, scaler, model, k)
         table[float(C)] = recall
+        train_fits[float(C)] = (scaler, model)
         validation.append({"C": float(C), "val_recall": recall, "n_iter": int(model.n_iter_[0]),
                            "fit_seconds": seconds})
     C_star = select_c(table)
     timings["select_C"] = time.perf_counter() - t_sel
+    train_scaler, train_model = train_fits[C_star]
 
     t0 = time.perf_counter()
     scaler, model = _fit(X, y, C_star, max_iter, seed)
@@ -156,6 +161,10 @@ def fit_select(
     return {
         "scaler": scaler,
         "model": model,
+        "train_scaler": train_scaler,
+        "train_model": train_model,
+        "train_users": train_users,
+        "val_users": val_users,
         "C": C_star,
         "validation": validation,
         "coefficients": {name: float(value) for name, value in zip(features, model.coef_[0])},
@@ -183,6 +192,20 @@ def lr_repeat_scores(history: pd.DataFrame, bundle: dict[str, Any]) -> pd.DataFr
     return score_frame(X, bundle["scaler"], bundle["model"])
 
 
-def lr_repeat_list(history: pd.DataFrame, bundle: dict[str, Any], k: int, pop: pd.Series) -> pd.DataFrame:
-    """Top-k repurchase candidates per user ranked by the logistic model (source = "repeat_lr")."""
-    return rank_scores(lr_repeat_scores(history, bundle), pop, k, SOURCE)
+def lr_repeat_list(
+    history: pd.DataFrame, bundle: dict[str, Any], k: int, pop: pd.Series, users: Any = None
+) -> pd.DataFrame:
+    """Top-k repurchase candidates per user ranked by the logistic model (source = "repeat_lr").
+
+    Features are always computed on the whole ``history`` (item- and population-level
+    statistics); with ``users`` the returned lists are restricted to those users.
+    """
+    scores = lr_repeat_scores(history, bundle)
+    if users is not None:
+        scores = scores[scores["user_id"].isin(pd.Index(users))]
+    return rank_scores(scores, pop, k, SOURCE)
+
+
+def train_only_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
+    """Bundle view that scores with the C* model fitted on the training users only (W8 slot selection)."""
+    return {**bundle, "scaler": bundle["train_scaler"], "model": bundle["train_model"]}

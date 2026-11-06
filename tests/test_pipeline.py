@@ -114,6 +114,8 @@ def _config(root, profile="sample", role="smoke"):
         "combine": {"r": [5, 8, 10]},
         "bootstrap": {"n": 200, "seed": 42, "levels": [0.95, 0.99375]},
         "lr_repeat": {"decay_gammas": [0.5, 0.8, 1.0], "C": [0.1, 1.0], "val_fraction": 0.2, "seed": 42, "max_iter": 300},
+        "usercf": {"k": [2, 5], "weighting": ["binary", "log1p"], "block_size": 7},
+        "integration": {"r": list(range(0, 11))},
     }
 
 
@@ -192,8 +194,9 @@ def test_h5_direction_item_cf_better(workspace, monkeypatch):
     config = _config(workspace)
     original = pipeline.build_lists
 
-    def patched(history, pop, selections, config, *, include_itemcf=True, lr_bundle=None):
-        lists, timings = original(history, pop, selections, config, include_itemcf=include_itemcf, lr_bundle=lr_bundle)
+    def patched(history, pop, selections, config, *, include_itemcf=True, lr_bundle=None, integration=None):
+        lists, timings = original(history, pop, selections, config, include_itemcf=include_itemcf,
+                                  lr_bundle=lr_bundle, integration=integration)
         data = pipeline.prepare(config, "instacart", "eval")
         perfect = data["new_target"][["user_id", "item_id"]].drop_duplicates().copy()
         perfect["rank"] = perfect.groupby("user_id").cumcount() + 1
@@ -329,8 +332,9 @@ def test_h6_h7_direction_with_perfect_lr_lists(workspace, monkeypatch):
         out["source"] = source
         return out[["user_id", "rank", "item_id", "source"]]
 
-    def patched(history, pop, selections, config, *, include_itemcf=True, lr_bundle=None):
-        lists, timings = original(history, pop, selections, config, include_itemcf=include_itemcf, lr_bundle=lr_bundle)
+    def patched(history, pop, selections, config, *, include_itemcf=True, lr_bundle=None, integration=None):
+        lists, timings = original(history, pop, selections, config, include_itemcf=include_itemcf,
+                                  lr_bundle=lr_bundle, integration=integration)
         data = pipeline.prepare(config, "instacart", "eval")
         lists["repeat_lr"] = perfect(data["repeat_target"], "repeat_lr")
         lists["final_lr"] = perfect(data["target"], "final_lr")
