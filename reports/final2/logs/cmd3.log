@@ -1,0 +1,15 @@
+# 2026-11-06T08:29:16.378Z cwd=C:/dev_ML-wt-w10b commit=e7ad59d3c220609cbfc1d101177c02ee9abecd79 dirty=False
+# C:/dev_ML/.venv/Scripts/python.exe -m nbr tune --profile holdout2 --dataset complete_journey
+fit k=10 weighting=binary recall=0.011892623 seconds=7.72
+fit k=20 weighting=binary recall=0.014327192 seconds=13.18
+fit k=50 weighting=binary recall=0.014081191 seconds=27.25
+fit k=100 weighting=binary recall=0.013294363 seconds=46.25
+fit k=200 weighting=binary recall=0.012789764 seconds=73.84
+fit k=400 weighting=binary recall=0.011587620 seconds=105.38
+fit k=10 weighting=log1p recall=0.013973176 seconds=7.54
+fit k=20 weighting=log1p recall=0.012337819 seconds=13.52
+fit k=50 weighting=log1p recall=0.012630282 seconds=28.21
+fit k=100 weighting=log1p recall=0.011886646 seconds=47.77
+fit k=200 weighting=log1p recall=0.012205072 seconds=74.76
+fit k=400 weighting=log1p recall=0.011777355 seconds=120.68
+tune holdout2/complete_journey: wrote C:\dev_ML-wt-w10b\reports\metrics\holdout2_complete_journey_tuning.json in 695.1s

@@ -1,0 +1,22 @@
+# 2026-11-06T08:24:27.834Z cwd=C:/dev_ML-wt-w10b commit=e7ad59d3c220609cbfc1d101177c02ee9abecd79 dirty=False
+# C:/dev_ML/.venv/Scripts/python.exe -m nbr evaluate --profile holdout2 --dataset instacart
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\dev_ML-wt-w10b\src\nbr\__main__.py", line 93, in <module>
+    main()
+  File "C:\dev_ML-wt-w10b\src\nbr\__main__.py", line 84, in main
+    path = run_evaluate(
+           ^^^^^^^^^^^^^
+  File "C:\dev_ML-wt-w10b\src\nbr\pipeline.py", line 812, in run_evaluate
+    document = evaluate(config, dataset, selections, allow_holdout_eval=allow_holdout_eval,
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev_ML-wt-w10b\src\nbr\pipeline.py", line 575, in evaluate
+    data = prepare(config, dataset, "eval", allow_holdout_eval=allow_holdout_eval)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev_ML-wt-w10b\src\nbr\pipeline.py", line 77, in prepare
+    history, target = load_split(config, dataset, split, allow_holdout_eval=allow_holdout_eval)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev_ML-wt-w10b\src\nbr\data.py", line 49, in load_split
+    raise PermissionError(
+PermissionError: profile role is 'final': the Instacart eval split is read once, after all selections are fixed; pass allow_holdout_eval=True explicitly
