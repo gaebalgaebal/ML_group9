@@ -12,3 +12,5 @@ __pycache__/
 *.egg-info/
 .pytest_cache/
 *.pyc
+# Session notes (not part of the project)
+Claude outputs/
