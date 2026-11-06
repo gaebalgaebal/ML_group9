@@ -1,0 +1,202 @@
+"""Render the README result tables from T1 and check README.md against T1 (W11b).
+
+    python scripts/check_readme_results.py            # check: every cell of the README result tables vs T1; exit 1 on a mismatch
+    python scripts/check_readme_results.py --render   # print the tables (Markdown) that belong in README.md
+
+Every number in the README result tables comes from reports/results/tables/T1_master_hypotheses.csv, written by
+scripts/make_results.py; nothing is typed in by hand. The tables, their rows and the rounding are defined here
+(TABLES). In README.md each table follows a marker line ``<!-- results-table: NAME -->``; the check reads the
+Markdown table after each marker and compares it cell by cell with the rendered table (missing or extra rows
+count as mismatches). Only rows with ``current = true`` are used.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+import pandas as pd
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+T1_PATH = REPO_ROOT / "reports" / "results" / "tables" / "T1_master_hypotheses.csv"
+README_PATH = REPO_ROOT / "README.md"
+MARKER = "<!-- results-table: {name} -->"
+
+H2 = "confirmatory holdout2"
+H1 = "confirmatory holdout"
+INSTACART2 = "Instacart holdout2"
+CJ_REFIT = "Complete Journey refit"
+CJ_TRANSFER = "Complete Journey, Instacart selections transferred"
+
+
+def row(label: str, dataset_text: str, stage: str, id_: str, dataset: str = "instacart", transfer: str = "") -> dict:
+    return {"label": label, "dataset_text": dataset_text, "stage": stage, "id": id_, "dataset": dataset, "transfer_from": transfer}
+
+
+# Table name -> (format, rows). Format "v13": 95 % and 99.375 % CIs with both decisions; "v12": 95 % CI and its decision.
+TABLES: dict[str, tuple[str, list[dict]]] = {
+    "holdout2_primary": ("v13", [
+        row("H6 (repeat Recall@10)", INSTACART2, H2, "H6_repeat_recall"),
+        row("H7' (NDCG@10)", INSTACART2, H2, "H7prime_ndcg"),
+        row("H7' (Recall@10, reported)", INSTACART2, H2, "H7prime_recall"),
+        row("H8 (new-item Recall@10)", INSTACART2, H2, "H8_new_recall"),
+    ]),
+    "holdout2_decomposition": ("v13", [
+        row("H7 (NDCG@10): C1 vs C0", INSTACART2, H2, "H7_ndcg"),
+        row("H7 (Recall@10): C1 vs C0", INSTACART2, H2, "H7_recall"),
+        row("H9 (NDCG@10): C3 vs C1", INSTACART2, H2, "H9_ndcg"),
+        row("H9 (Recall@10): C3 vs C1", INSTACART2, H2, "H9_recall"),
+        row("C3 vs personal frequency (NDCG@10)", INSTACART2, H2, "integration:final_lr_ucf_vs_personal_frequency_ndcg"),
+        row("E2 vs flat item-CF (new-item Recall@10)", INSTACART2, H2, "integration:usercf_vs_itemcf_flat_new_recall"),
+    ]),
+    "holdout2_complete_journey": ("v13", [
+        row("H6 (repeat Recall@10)", CJ_REFIT, H2, "H6_repeat_recall", "complete_journey"),
+        row("H7' (NDCG@10)", CJ_REFIT, H2, "H7prime_ndcg", "complete_journey"),
+        row("H7' (Recall@10, reported)", CJ_REFIT, H2, "H7prime_recall", "complete_journey"),
+        row("H8 (new-item Recall@10)", CJ_REFIT, H2, "H8_new_recall", "complete_journey"),
+        row("H6 (repeat Recall@10)", CJ_TRANSFER, H2, "H6_repeat_recall", "complete_journey", "instacart"),
+        row("H7' (NDCG@10)", CJ_TRANSFER, H2, "H7prime_ndcg", "complete_journey", "instacart"),
+        row("H7' (Recall@10, reported)", CJ_TRANSFER, H2, "H7prime_recall", "complete_journey", "instacart"),
+        row("H8 (new-item Recall@10)", CJ_TRANSFER, H2, "H8_new_recall", "complete_journey", "instacart"),
+    ]),
+    "holdout_v12": ("v12", [
+        row("H1 (repeat Recall@10)", "Instacart holdout", H1, "H1_repeat_recall"),
+        row("H2 (new-item Recall@10)", "Instacart holdout", H1, "H2_new_recall"),
+        row("H3 (NDCG@10)", "Instacart holdout", H1, "H3_ndcg"),
+        row("H3 (Recall@10)", "Instacart holdout", H1, "H3_recall"),
+        row("H4 (category hit@10)", "Instacart holdout", H1, "H4_category_hit"),
+        row("H5 (new-item Recall@10, secondary)", "Instacart holdout", H1, "H5"),
+        row("H1 (repeat Recall@10)", CJ_REFIT, H1, "H1_repeat_recall", "complete_journey"),
+        row("H2 (new-item Recall@10)", CJ_REFIT, H1, "H2_new_recall", "complete_journey"),
+        row("H3 (NDCG@10)", CJ_REFIT, H1, "H3_ndcg", "complete_journey"),
+        row("H3 (Recall@10)", CJ_REFIT, H1, "H3_recall", "complete_journey"),
+        row("H4 (category hit@10)", CJ_REFIT, H1, "H4_category_hit", "complete_journey"),
+        row("H5 (new-item Recall@10, secondary)", CJ_REFIT, H1, "H5", "complete_journey"),
+        row("H1 (repeat Recall@10)", CJ_TRANSFER, H1, "H1_repeat_recall", "complete_journey", "instacart"),
+        row("H2 (new-item Recall@10)", CJ_TRANSFER, H1, "H2_new_recall", "complete_journey", "instacart"),
+        row("H3 (NDCG@10)", CJ_TRANSFER, H1, "H3_ndcg", "complete_journey", "instacart"),
+        row("H3 (Recall@10)", CJ_TRANSFER, H1, "H3_recall", "complete_journey", "instacart"),
+        row("H4 (category hit@10)", CJ_TRANSFER, H1, "H4_category_hit", "complete_journey", "instacart"),
+    ]),
+}
+HEADERS = {
+    "v13": ["Hypothesis (metric)", "Dataset", "Users (n)", "Comparator -> model", "diff", "95 % CI", "99.375 % CI",
+            "Decision (95 % / 99.375 %)"],
+    "v12": ["Hypothesis (metric)", "Dataset", "Users (n)", "Comparator -> model", "diff", "95 % CI", "Decision"],
+}
+
+
+def fmt_diff(value: float) -> str:
+    return "0.0000" if round(float(value), 4) == 0 else f"{float(value):+.4f}"
+
+
+def fmt_ci(lo: float, hi: float) -> str:
+    return f"[{float(lo):.4f}, {float(hi):.4f}]"
+
+
+def t1_row(t1: pd.DataFrame, spec: dict) -> pd.Series:
+    """The single current T1 row selected by ``spec`` (stage, id, dataset, transfer_from)."""
+    hit = t1[(t1["stage"] == spec["stage"]) & (t1["id"] == spec["id"]) & (t1["dataset"] == spec["dataset"])
+             & (t1["transfer_from"].fillna("") == spec["transfer_from"]) & t1["current"].astype(bool)]
+    if len(hit) != 1:
+        raise LookupError(f"{len(hit)} current T1 rows for {spec}")
+    return hit.iloc[0]
+
+
+def render_cells(spec: dict, entry: pd.Series, fmt: str) -> list[str]:
+    """README cells of one row: label, dataset, n, means, diff, CI(s), decision(s)."""
+    cells = [spec["label"], spec["dataset_text"], f"{int(entry['users_n']):,}",
+             f"{float(entry['mean_comparator']):.4f} -> {float(entry['mean_model']):.4f}", fmt_diff(entry["diff"]),
+             fmt_ci(entry["ci95_lo"], entry["ci95_hi"])]
+    decision95 = str(entry["decision"]) if isinstance(entry["decision"], str) and entry["decision"] else ""
+    if fmt == "v12":
+        cells.append(decision95 or "(CI only)")
+    else:
+        decision99 = str(entry["decision_99375"]) if isinstance(entry["decision_99375"], str) and entry["decision_99375"] else ""
+        cells.append(fmt_ci(entry["ci99375_lo"], entry["ci99375_hi"]))
+        cells.append(f"{decision95} / {decision99}" if decision95 else "(CI only)")
+    return cells
+
+
+def render_table(name: str, t1: pd.DataFrame) -> list[str]:
+    """Markdown lines of table ``name`` (marker, header, separator, rows)."""
+    fmt, rows = TABLES[name]
+    header = HEADERS[fmt]
+    lines = [MARKER.format(name=name), "| " + " | ".join(header) + " |", "|" + "|".join("---" for _ in header) + "|"]
+    for spec in rows:
+        lines.append("| " + " | ".join(render_cells(spec, t1_row(t1, spec), fmt)) + " |")
+    return lines
+
+
+def split_row(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def readme_table(text: str, name: str) -> list[str] | None:
+    """The Markdown table lines (header, separator, rows) that follow the marker of ``name`` in the README ``text``."""
+    marker = MARKER.format(name=name)
+    lines = text.splitlines()
+    try:
+        start = next(i for i, line in enumerate(lines) if line.strip() == marker)
+    except StopIteration:
+        return None
+    table = []
+    for line in lines[start + 1:]:
+        if not line.strip().startswith("|"):
+            if table:
+                break
+            continue
+        table.append(line)
+    return table
+
+
+def check(t1: pd.DataFrame, readme: str) -> int:
+    """Compare every table; print each mismatch; return the mismatch count."""
+    mismatches = 0
+    for name in TABLES:
+        expected = render_table(name, t1)[1:]
+        found = readme_table(readme, name)
+        if found is None:
+            print(f"{name}: marker {MARKER.format(name=name)} not found in README.md")
+            mismatches += len(expected) - 2
+            continue
+        for i in range(max(len(expected), len(found))):
+            exp = split_row(expected[i]) if i < len(expected) else None
+            got = split_row(found[i]) if i < len(found) else None
+            if exp is None or got is None:
+                print(f"{name} line {i}: {'missing in README' if got is None else 'extra in README'}: {exp or got}")
+                mismatches += 1
+                continue
+            if i == 1:  # separator row: alignment markers are free
+                continue
+            for j in range(max(len(exp), len(got))):
+                e = exp[j] if j < len(exp) else None
+                g = got[j] if j < len(got) else None
+                if e != g:
+                    print(f"{name} line {i} cell {j}: README {g!r} != T1 {e!r}")
+                    mismatches += 1
+        print(f"{name}: {len(expected) - 2} rows compared")
+    return mismatches
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="README result tables vs T1")
+    parser.add_argument("--render", action="store_true", help="print the tables instead of checking the README")
+    parser.add_argument("--t1", default=str(T1_PATH))
+    parser.add_argument("--readme", default=str(README_PATH))
+    args = parser.parse_args(argv)
+    t1 = pd.read_csv(args.t1, keep_default_na=False, na_values=[])
+    t1["current"] = t1["current"].astype(str).str.lower().eq("true")
+    if args.render:
+        for name in TABLES:
+            print("\n".join(render_table(name, t1)) + "\n")
+        return
+    mismatches = check(t1, Path(args.readme).read_text(encoding="utf-8"))
+    print(f"README vs T1: {mismatches} mismatches")
+    if mismatches:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
