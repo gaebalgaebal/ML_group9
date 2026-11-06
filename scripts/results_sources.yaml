@@ -89,53 +89,62 @@ eda:
 # Which development run feeds the development figures (F2, F3, F4, F5) and T4/T5 when both W8 and W8b exist.
 development_integration_run_preference: [W8b, W8]
 
-# Combination labels used in T4/F4/T6. The C0-C4/C3b labels were given in the W11 task text; the list names
-# are those of nbr.pipeline (W8, INTEGRATION_COMBOS). This mapping is an assumption recorded here, not read
-# from a repository document, and must be confirmed by the team.
+# Run priority for the T1 "current" flag: within the same stage, dataset, transfer setting, comparator, model and
+# metric, the row of the highest-priority run is current (holdout confirmatory > W8b > W9 > W8 > W7, W6 > W4a).
+run_priority: {holdout: 0, W8b: 1, W9: 2, W8: 3, W7: 4, W6: 4, W4a: 5}
+supersession_notes:
+  W4a: "pre-registered model re-run with later code in the integrated pipeline"
+  W6: "LR C grid extended to 0.001 and re-run in the integrated pipeline (W8, W8b)"
+  W7: "user-CF k grid changed (W8: 50-400, W8b: 20-400) and re-run in the integrated pipeline"
+  W8: "user-CF k grid extended with k = 20 (W8b re-run)"
+  W9: "same comparison reported by the integrated pipeline"
+# List names that denote the same list in different runs (W7 final_ucf = W8 final_star_ucf).
+list_aliases: {final_ucf: final_star_ucf}
+
+# Combination labels (fixed by the team, W11 instruction of 2026-11-06). list = name in nbr.pipeline.
 combinations:
-  C0:  {list: final,          repeat: R1, explore: E1, r_rule: "r* (stage 3 of the pre-registered selection)"}
-  C1:  {list: final_cf,       repeat: R1, explore: E4, r_rule: "r* (stage 3)"}
-  C2:  {list: final_star_ucf, repeat: R1, explore: E2, r_rule: "r re-selected on all fit users (W8)"}
-  C3:  {list: final_lr,       repeat: R2, explore: E1, r_rule: "r* (stage 3)"}
-  C3b: {list: final_lr_r,     repeat: R2, explore: E1, r_rule: "r re-selected on LR validation users (W8)"}
-  C4:  {list: final_lr_ucf,   repeat: R2, explore: E2, r_rule: "r re-selected on LR validation users (W8)"}
+  C0:    {list: final,          repeat: R1, explore: E1, r_rule: "r = 10 (stage-3 selection)", status: adopted, basis: "H3 (holdout)", note: ""}
+  C1:    {list: final_lr,       repeat: R2, explore: E1, r_rule: "r = 10 fixed", status: evaluated-not-adopted, basis: "H7 (medium)", note: ""}
+  C2:    {list: final_lr_r,     repeat: R2, explore: E1, r_rule: "r re-selected on the fit split (LR validation users)", status: evaluated-not-adopted, basis: "secondary final_lr_r_vs_final_lr (medium)", note: "r = 10 selected"}
+  C3:    {list: final_lr_ucf,   repeat: R2, explore: E2, r_rule: "r re-selected on the fit split (LR validation users)", status: evaluated-not-adopted, basis: "H9 = C3 vs C1 (medium)", note: "r = 10 selected"}
+  C3b:   {list: final_star_ucf, repeat: R1, explore: E2, r_rule: "r re-selected on the fit split (all fit users)", status: evaluated-not-adopted, basis: "secondary final_star_ucf_vs_final (medium)", note: "r = 10 selected"}
+  C4:    {list: "",             repeat: R2, explore: E3, r_rule: "", status: not run, basis: "", note: "E3 + R2 not implemented"}
+  E4+R1: {list: final_cf,       repeat: R1, explore: E4, r_rule: "r = 10 (stage-3 selection)", status: evaluated-not-adopted, basis: "secondary final_cf_vs_final (holdout v1.2 auxiliary)", note: "reference combination"}
 
 # Module catalog (T6). status: adopted = part of the pre-registered model evaluated on the holdout;
 # evaluated-not-adopted = evaluated on development data only (adoption decision TBD unless stated);
-# excluded = decided against; not-examined = no implementation or evaluation in this project.
+# excluded = decided against; not-examined = no implementation or evaluation in this project; not run = planned, not implemented.
 modules:
-  - {id: E1, group: explore, name: "hierarchical explore (theta_u(c) x pop(i) / pop(c), L2)", list: explore_star, status: adopted, basis: "H2, H4 (holdout)", note: ""}
+  - {id: E1, group: explore, name: "hierarchical explore (theta_u(c), then within-category popularity; L2)", list: explore_star, status: adopted, basis: "H2, H4 (holdout)", note: ""}
   - {id: E2, group: explore, name: "user-based CF (cosine neighbours, k, binary/log1p weighting)", list: usercf, status: evaluated-not-adopted, basis: "H8, H9 (medium)", note: "adoption decision TBD"}
   - {id: E3, group: explore, name: "flat item-CF (item cosine, 20 neighbours)", list: itemcf_flat, status: evaluated-not-adopted, basis: "H5 (holdout, secondary confirmatory)", note: ""}
   - {id: E4, group: explore, name: "theta x item-CF within category", list: explore_cf, status: evaluated-not-adopted, basis: "secondary explore_cf_vs_explore_star (holdout, medium)", note: ""}
-  - {id: E5, group: explore, name: "TBD (not defined in repository documents)", list: "", status: not-examined, basis: "", note: ""}
-  - {id: E6, group: explore, name: "TBD (not defined in repository documents)", list: "", status: not-examined, basis: "", note: ""}
-  - {id: E7, group: explore, name: "TBD (not defined in repository documents)", list: "", status: not-examined, basis: "", note: ""}
-  - {id: E8, group: explore, name: "TBD (not defined in repository documents)", list: "", status: not-examined, basis: "", note: ""}
+  - {id: E5, group: explore, name: "matrix factorisation (MF)", list: "", status: not-examined, basis: "", note: ""}
+  - {id: E6, group: explore, name: "product-name tf-idf similarity", list: "", status: not-examined, basis: "", note: ""}
+  - {id: E7, group: explore, name: "health-attribute match", list: "", status: not-examined, basis: "", note: ""}
+  - {id: E8, group: explore, name: "recent-basket item-CF", list: "", status: not-examined, basis: "", note: ""}
   - {id: flat_pop, group: explore, name: "flat popularity excluding history items (comparator)", list: flat_explore, status: evaluated-not-adopted, basis: "comparator of H2, H5, H8", note: "baseline"}
   - {id: R1, group: repeat, name: "decayed purchase frequency s_rep(gamma*)", list: repeat_star, status: adopted, basis: "H1 (holdout)", note: ""}
   - {id: R2, group: repeat, name: "L2 logistic-regression repeat ranker (12 features)", list: repeat_lr, status: evaluated-not-adopted, basis: "H6, H7 (medium)", note: "adoption decision TBD"}
   - {id: R3, group: repeat, name: "logistic ranker with binned cycle features (30 features)", list: repeat_r3, status: evaluated-not-adopted, basis: "H10 (medium)", note: ""}
-  - {id: R4, group: repeat, name: "TBD (not defined in repository documents)", list: "", status: not-examined, basis: "", note: ""}
+  - {id: R4, group: repeat, name: "decision tree repeat ranker", list: "", status: not-examined, basis: "", note: ""}
   - {id: R5, group: repeat, name: "personal purchase frequency (gamma = 1; comparator)", list: repeat_pf, status: evaluated-not-adopted, basis: "comparator of H1", note: "baseline"}
-  - {id: R6, group: repeat, name: "TBD (not defined in repository documents)", list: "", status: not-examined, basis: "", note: ""}
-  - {id: slot_split, group: combination, name: "top r repeat items + top (10 - r) explore items (r* by fit NDCG@10)", list: final, status: adopted, basis: "H3 (holdout)", note: "r* = 10 at the grid edge on every fit split"}
-  - {id: slot_reselect, group: combination, name: "r re-selected on the fit split per combination (r in 0..10)", list: "final_lr_r, final_star_ucf, final_lr_ucf", status: evaluated-not-adopted, basis: "H9 and integration secondary (medium)", note: "r = 10 selected for every combination"}
+  - {id: R6, group: repeat, name: "recent-N-basket candidate set", list: "", status: not-examined, basis: "", note: ""}
 
 hypothesis_labels:
-  H1_repeat_recall: "H1 repeat Recall@10"
-  H2_new_recall: "H2 new-item Recall@10"
-  H3_ndcg: "H3 NDCG@10"
-  H3_recall: "H3 Recall@10"
+  H1_repeat_recall: "H1 repeat Recall@10 (R1 vs R5)"
+  H2_new_recall: "H2 new-item Recall@10 (E1 vs flat popularity)"
+  H3_ndcg: "H3 NDCG@10 (C0 vs personal frequency)"
+  H3_recall: "H3 Recall@10 (C0 vs personal frequency)"
   H4_category_hit: "H4 category hit@10"
-  H5: "H5 new-item Recall@10 (secondary)"
-  H6_repeat_recall: "H6 repeat Recall@10"
-  H7_ndcg: "H7 NDCG@10"
-  H7_recall: "H7 Recall@10"
-  H8_new_recall: "H8 new-item Recall@10"
-  H9_ndcg: "H9 NDCG@10"
-  H9_recall: "H9 Recall@10"
-  H10_repeat_recall: "H10 repeat Recall@10"
+  H5: "H5 new-item Recall@10 (E3 vs flat popularity; secondary)"
+  H6_repeat_recall: "H6 repeat Recall@10 (R2 vs R1)"
+  H7_ndcg: "H7 NDCG@10 (C1 vs C0)"
+  H7_recall: "H7 Recall@10 (C1 vs C0)"
+  H8_new_recall: "H8 new-item Recall@10 (E2 vs flat popularity)"
+  H9_ndcg: "H9 NDCG@10 (C3 vs C1)"
+  H9_recall: "H9 Recall@10 (C3 vs C1)"
+  H10_repeat_recall: "H10 repeat Recall@10 (R3 vs R2)"
 
 dataset_labels:
   instacart: Instacart

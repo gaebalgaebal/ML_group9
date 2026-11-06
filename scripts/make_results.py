@@ -11,7 +11,7 @@ Outputs (all under --out):
   tables/T1_master_hypotheses.csv|.md   every primary hypothesis and secondary/auxiliary comparison, one row each
   tables/T2_selections.csv|.md          selected values per dataset x run with grid-edge flags
   tables/T3_module_screening.csv|.md    explore modules (new-item Recall@10) and repeat modules (repeat Recall@10)
-  tables/T4_final_lists.csv|.md         combinations C0-C4, C3b and the baselines: Recall@10, NDCG@10
+  tables/T4_final_lists.csv|.md         combinations C0-C3, C3b, reference E4 + R1 and the baselines: Recall@10, NDCG@10 (C4 not run)
   tables/T5_history_length.csv|.md      per history-length bin: diff and 95% CI of H1, H3, H6, H7, H8, H9, H10
   tables/T6_module_catalog.csv|.md      module status catalogue (from results_sources.yaml)
   tables/T7_datasets_eda.csv|.md        dataset summary copied from the EDA branch (feat/w5a-eda)
@@ -231,14 +231,56 @@ def eval_sources(registry: Registry, run: str | None = None) -> list[Source]:
 # ---------------------------------------------------------------------------
 T1_COLUMNS = ["id", "hypothesis", "stage", "run", "dataset", "transfer_from", "metric", "users", "users_n", "comparator", "model",
               "mean_comparator", "mean_model", "diff", "ci95_lo", "ci95_hi", "ci99375_lo", "ci99375_hi", "decision", "decision_99375",
-              "source_file", "source_sha256", "git_commit"]
+              "current", "superseded_reason", "source_file", "source_sha256", "git_commit"]
 
 
-def table_t1(registry: Registry) -> pd.DataFrame:
+def metric_key(metric: str) -> str:
+    """Normalised metric name used to match the same comparison across runs."""
+    text = str(metric).lower().replace("@10", "").strip()
+    if "category" in text:
+        return "category_hit"
+    if "new" in text:
+        return "new_recall"
+    if "repeat" in text:
+        return "repeat_recall"
+    if "ndcg" in text:
+        return "ndcg"
+    return "recall"
+
+
+def flag_current(frame: pd.DataFrame, cfg: dict[str, Any]) -> pd.DataFrame:
+    """Mark the row of the highest-priority run per (stage, dataset, transfer, comparator, model, metric) as current.
+
+    Priority comes from cfg["run_priority"] (smaller = newer); every other row of the group gets
+    superseded_reason = cfg["supersession_notes"][run] + the current run.
+    """
+    priority, notes, aliases = cfg["run_priority"], cfg.get("supersession_notes", {}), cfg.get("list_aliases", {})
+    frame = frame.copy()
+    key = pd.DataFrame({
+        "stage": frame["stage"], "dataset": frame["dataset"], "transfer_from": frame["transfer_from"].fillna(""),
+        "comparator": frame["comparator"].map(lambda x: aliases.get(x, x)), "model": frame["model"].map(lambda x: aliases.get(x, x)),
+        "metric": frame["metric"].map(metric_key),
+    })
+    frame["_key"] = key.astype(str).agg("|".join, axis=1)
+    frame["_prio"] = frame["run"].map(priority)
+    if frame["_prio"].isna().any():
+        raise ValueError(f"run_priority missing for runs {sorted(frame.loc[frame['_prio'].isna(), 'run'].unique())}")
+    best = frame.groupby("_key")["_prio"].transform("min")
+    frame["current"] = frame["_prio"] == best
+    current_run = frame[frame["current"]].groupby("_key")["run"].first()
+    frame["superseded_reason"] = [
+        "" if is_current else f"{notes.get(run, 'later run available')}; current row: {current_run[key_]}"
+        for is_current, run, key_ in zip(frame["current"], frame["run"], frame["_key"])
+    ]
+    return frame.drop(columns=["_key", "_prio"])
+
+
+def table_t1(registry: Registry, cfg: dict[str, Any]) -> pd.DataFrame:
     rows = []
     for source in eval_sources(registry):
         rows.extend(eval_rows(source))
-    frame = pd.DataFrame(rows, columns=T1_COLUMNS)
+    frame = pd.DataFrame(rows)
+    frame = flag_current(frame, cfg)[T1_COLUMNS]
     frame["_s"], frame["_d"] = frame["stage"].map(STAGE_ORDER), frame["dataset"].map(DATASET_ORDER)
     frame["_h"] = frame["hypothesis"].map(lambda h: int(h[1:]) if h[0] == "H" and h[1:].isdigit() else 99)
     frame = frame.sort_values(["_s", "run", "_d", "transfer_from", "_h", "id"], kind="mergesort").drop(columns=["_s", "_d", "_h"])
@@ -251,7 +293,7 @@ def check_t1(frame: pd.DataFrame) -> dict[str, Any]:
     bad = frame.loc[gap > DIFF_TOL, ["id", "run", "dataset"]]
     if len(bad):
         raise AssertionError(f"T1 diff identity violated (tol {DIFF_TOL}):\n{bad.to_string()}")
-    return {"rows": int(len(frame)), "max_abs_gap": float(gap.max()), "tolerance": DIFF_TOL}
+    return {"rows": int(len(frame)), "max_abs_gap": float(gap.max()), "tolerance": DIFF_TOL, "current_rows": int(frame["current"].sum())}
 
 
 def _sel_row(source: Source, dataset: str, parameter: str, value: Any, edge: Any, grid: Any, note: str = "") -> dict[str, Any]:
@@ -378,7 +420,7 @@ def table_t3(registry: Registry, dev_run: str | None) -> pd.DataFrame:
 
 def table_t4(registry: Registry, cfg: dict[str, Any], dev_run: str | None) -> pd.DataFrame:
     combos = cfg["combinations"]
-    by_list = {spec["list"]: (label, spec) for label, spec in combos.items()}
+    by_list = {spec["list"]: (label, spec) for label, spec in combos.items() if spec["list"]}
     rows = []
     for source in eval_sources(registry):
         doc = source.doc
@@ -386,9 +428,9 @@ def table_t4(registry: Registry, cfg: dict[str, Any], dev_run: str | None) -> pd
             continue
         if source.stage == "development medium" and source.run != dev_run:
             continue
-        wanted = list(by_list) + ["personal_frequency", "popularity"]
+        wanted = [l for l in by_list if l] + ["personal_frequency", "popularity"]
         if source.stage == "confirmatory holdout":
-            wanted = ["final", "personal_frequency", "popularity"]
+            wanted = ["final", "final_cf", "personal_frequency", "popularity"]
         for list_name in wanted:
             metrics = doc["list_metrics"].get(list_name)
             if metrics is None:
@@ -400,8 +442,16 @@ def table_t4(registry: Registry, cfg: dict[str, Any], dev_run: str | None) -> pd
             rows.append({"combination": label, "list": list_name, "repeat_module": spec.get("repeat", ""), "explore_module": spec.get("explore", ""),
                          "r_rule": spec.get("r_rule", ""), "r": r_value if r_value is not None else "", "stage": source.stage, "run": source.run,
                          "dataset": doc["dataset"], "users_n": int(doc["n_users"]["all"]), "recall10": float(metrics["recall"]),
-                         "ndcg10": float(metrics["ndcg"]), **prov(source)})
+                         "ndcg10": float(metrics["ndcg"]), "note": spec.get("note", ""), **prov(source)})
+        if source.stage == "development medium":  # planned combinations without a list (e.g. C4): one empty row per dataset
+            for label, spec in combos.items():
+                if not spec["list"]:
+                    rows.append({"combination": label, "list": "", "repeat_module": spec.get("repeat", ""), "explore_module": spec.get("explore", ""),
+                                 "r_rule": "", "r": "", "stage": source.stage, "run": "", "dataset": doc["dataset"], "users_n": "",
+                                 "recall10": np.nan, "ndcg10": np.nan, "note": f"{spec.get('status', 'not run')}: {spec.get('note', '')}",
+                                 "source_file": "", "source_sha256": "", "git_commit": ""})
     frame = pd.DataFrame(rows)
+    frame["r"] = frame["r"].map(lambda v: "" if v == "" or v is None else str(int(v)))
     frame["_s"], frame["_d"] = frame["stage"].map(STAGE_ORDER), frame["dataset"].map(DATASET_ORDER)
     frame["_c"] = frame["combination"].map({c: i for i, c in enumerate(list(combos) + ["personal_frequency", "popularity"])})
     return frame.sort_values(["_s", "_d", "_c"], kind="mergesort").drop(columns=["_s", "_d", "_c"]).reset_index(drop=True)
@@ -448,9 +498,14 @@ def table_t5(registry: Registry, dev_run: str | None) -> pd.DataFrame:
 
 def table_t6(cfg: dict[str, Any], t1: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    for module in cfg["modules"]:
-        ids = [h for h in str(module.get("basis", "")).replace("(", ",").replace(")", "").split(",")]
-        ids = [h.strip() for h in ids if h.strip().startswith("H")]
+    entries = list(cfg["modules"])
+    for label, spec in cfg["combinations"].items():
+        name = f"{spec['explore']} + {spec['repeat']}" + (f", {spec['r_rule']}" if spec.get("r_rule") else "")
+        entries.append({"id": label, "group": "combination", "name": name, "list": spec.get("list", ""), "status": spec["status"],
+                        "basis": spec.get("basis", ""), "note": spec.get("note", "")})
+    for module in entries:
+        ids = [h for h in str(module.get("basis", "")).replace("(", ",").replace(")", "").replace("=", ",").split(",")]
+        ids = [h.strip() for h in ids if h.strip().startswith("H") and h.strip()[1:].isdigit()]
         stages = sorted(set(t1.loc[t1["hypothesis"].isin(ids), "stage"])) if ids else []
         rows.append({"id": module["id"], "group": module["group"], "name": module["name"], "list": module.get("list", ""),
                      "status": module["status"], "basis": module.get("basis", ""), "evidence_stage": "; ".join(stages),
@@ -544,7 +599,8 @@ def _forest(frame: pd.DataFrame, path: Path, title: str, footer: str, color: str
     plt = _plt()
     frame = pd.read_csv(path.with_suffix(".csv"))  # drawn from the CSV written just before
     panels = [d for d in datasets if d in set(frame["dataset"])]
-    fig, axes = plt.subplots(1, len(panels), figsize=(3.6 * len(panels) + 1.4, 0.42 * frame["id"].nunique() + 2.2), sharey=True)
+    longest = max(len(labels.get(i, i)) for i in dict.fromkeys(frame["id"]))
+    fig, axes = plt.subplots(1, len(panels), figsize=(3.9 * len(panels) + 0.07 * longest + 0.6, 0.42 * frame["id"].nunique() + 2.2), sharey=True)
     axes = np.atleast_1d(axes)
     ids = list(dict.fromkeys(frame["id"]))
     for ax, dataset in zip(axes, panels):
@@ -564,7 +620,7 @@ def _forest(frame: pd.DataFrame, path: Path, title: str, footer: str, color: str
         ax.set_yticklabels([labels.get(i, i) for i in reversed(ids)])
         n = int(part["users_n"].max()) if len(part) else 0
         ax.set_title(f"{datasets[dataset]} ({part['stage_label'].iloc[0]})\nusers per row up to n = {n:,}", loc="left")
-        ax.set_xlabel("difference of per-user means (model - comparator)")
+        ax.set_xlabel("diff = model - comparator (per-user means)")
         _style(ax)
     fig.suptitle(title, x=0.01, ha="left", fontsize=10, color=COLOR_INK)
     _finish(fig, path, plt, footer, top=0.93)
@@ -641,21 +697,19 @@ def figure_f3(t3: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any
     fig.suptitle("Module screening: mean of the per-user metric by module (holdout vs development medium)", x=0.01, ha="left", fontsize=10)
     _finish(fig, path, plt, "Explore: new-item Recall@10 over users with >= 1 new target item. Repeat: repeat Recall@10 over users with >= 1 repeat "
             "target item. Solid = confirmatory holdout (PREREG v1.2; Complete Journey refit on medium data), hatched = development (medium). "
-            "No per-bar CI is available (only paired-difference CIs; see the F3 CSV / T3).")
+            "Error bars are not shown; 95% CIs refer to differences from the comparator (see T3).")
     return {"name": "F3_module_screening", "points": int(len(frame)), "png": path, "csv": path.with_suffix(".csv")}
 
 
 def figure_f4(registry: Registry, out: Path, cfg: dict[str, Any], dev_run: str | None) -> dict[str, Any] | None:
     rows = []
-    by_list = {spec["list"]: label for label, spec in cfg["combinations"].items()}
+    by_list = {spec["list"]: label for label, spec in cfg["combinations"].items() if spec["list"]}
     for source in registry.sources.values():
         if source.run != dev_run or source.doc.get("split") != "fit" or not source.doc.get("integration"):
             continue
         integ = source.doc["integration"]
         for list_name, scores in integ["r_scores"].items():
             label = by_list.get(list_name, list_name)
-            if list_name == "final_lr_r":
-                label = "C3/C3b"
             for entry in scores:
                 rows.append({"stage": source.stage, "run": source.run, "dataset": source.doc["dataset"], "combination": label, "list": list_name,
                              "r": int(entry["r"]), "ndcg10": float(entry["ndcg"]), "selection_users": integ["r_selection_users"][list_name]["users"],
@@ -668,12 +722,12 @@ def figure_f4(registry: Registry, out: Path, cfg: dict[str, Any], dev_run: str |
     pd.DataFrame(rows).to_csv(path.with_suffix(".csv"), index=False, lineterminator="\n")
     frame = pd.read_csv(path.with_suffix(".csv"))
     datasets = [d for d in cfg["dataset_labels"] if d in set(frame["dataset"])]
-    colors = {"C2": COLOR_HOLDOUT, "C3/C3b": COLOR_DEV, "C4": COLOR_THIRD}
-    markers = {"C2": "o", "C3/C3b": "s", "C4": "^"}
+    colors = {"C2": COLOR_HOLDOUT, "C3": COLOR_DEV, "C3b": COLOR_THIRD}
+    markers = {"C2": "o", "C3": "s", "C3b": "^"}
     fig, axes = plt.subplots(1, len(datasets), figsize=(4.2 * len(datasets), 3.6), squeeze=False)
     for ax, dataset in zip(axes[0], datasets):
         part = frame[frame["dataset"] == dataset]
-        for combo in ("C2", "C3/C3b", "C4"):
+        for combo in ("C2", "C3", "C3b"):
             line = part[part["combination"] == combo].sort_values("r")
             if line.empty:
                 continue
@@ -688,10 +742,10 @@ def figure_f4(registry: Registry, out: Path, cfg: dict[str, Any], dev_run: str |
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
         ax.legend(frameon=False, loc="upper left")
-    fig.suptitle("Slot re-selection: NDCG@10 by r for combinations C2, C3/C3b, C4 - development (medium)", x=0.01, ha="left", fontsize=10)
-    _finish(fig, path, plt, f"Source: {dev_run} tuning JSON (commit {frame['git_commit'].iloc[0][:7]}), integration.r_scores. C2 (final_star_ucf) is "
-            "scored on all fit users; C3/C3b (final_lr_r) and C4 (final_lr_ucf) on the LR validation users with a train-only model. "
-            "Selected r = 10 for every combination (grid edge).")
+    fig.suptitle("Slot re-selection: NDCG@10 by r for combinations C2, C3, C3b - development (medium)", x=0.01, ha="left", fontsize=10)
+    _finish(fig, path, plt, f"Source: {dev_run} tuning JSON (commit {frame['git_commit'].iloc[0][:7]}), integration.r_scores. "
+            "C2 (final_lr_r, E1 + R2) and C3 (final_lr_ucf, E2 + R2) are scored on the LR validation users with a train-only model; "
+            "C3b (final_star_ucf, E2 + R1) on all fit users. Selected r = 10 for every combination (grid edge).")
     return {"name": "F4_r_grid", "points": int(len(frame)), "png": path, "csv": path.with_suffix(".csv")}
 
 
@@ -703,9 +757,9 @@ def figure_f5(t5: pd.DataFrame, out: Path, cfg: dict[str, Any], dev_run: str | N
     keep.to_csv(path.with_suffix(".csv"), index=False, lineterminator="\n")
     frame = pd.read_csv(path.with_suffix(".csv"))
     datasets = [d for d in cfg["dataset_labels"] if d in set(frame["dataset"])]
-    series = [("H3_ndcg", "H3 NDCG@10 (final vs personal frequency)", COLOR_HOLDOUT, "o"),
-              ("H7_ndcg", "H7 NDCG@10 (final_lr vs final)", COLOR_DEV, "s"),
-              ("H8_new_recall", "H8 new-item Recall@10 (usercf vs flat popularity)", COLOR_THIRD, "^")]
+    series = [("H3_ndcg", "H3 NDCG@10 (C0 final vs personal frequency)", COLOR_HOLDOUT, "o"),
+              ("H7_ndcg", "H7 NDCG@10 (C1 final_lr vs C0 final)", COLOR_DEV, "s"),
+              ("H8_new_recall", "H8 new-item Recall@10 (E2 usercf vs flat popularity)", COLOR_THIRD, "^")]
     fig, axes = plt.subplots(1, len(datasets), figsize=(4.4 * len(datasets), 3.8), squeeze=False)
     for ax, dataset in zip(axes[0], datasets):
         part = frame[frame["dataset"] == dataset]
@@ -785,19 +839,19 @@ def figure_f6(registry: Registry, out: Path, cfg: dict[str, Any]) -> dict[str, A
 # RESULTS.md
 # ---------------------------------------------------------------------------
 TABLE_NOTES = {
-    "T1_master_hypotheses": "one row per hypothesis or secondary/auxiliary comparison; diff = mean_model - mean_comparator; decision as recorded in the source",
+    "T1_master_hypotheses": "one row per hypothesis or secondary/auxiliary comparison; diff = mean_model - mean_comparator; decision as recorded in the source; current = newest run for that comparison (use only these rows)",
     "T2_selections": "selected values per dataset x run (long format) with grid and grid-edge flag",
     "T3_module_screening": "explore modules by new-item Recall@10, repeat modules by repeat Recall@10; diff and 95% CI vs the comparator named in the row",
-    "T4_final_lists": "Recall@10 and NDCG@10 over all users for the combinations C0-C4, C3b and the baselines (medium); C0 and baselines on the holdout",
+    "T4_final_lists": "Recall@10 and NDCG@10 over all users for the combinations C0-C3, C3b, the reference E4 + R1 and the baselines (medium); C0, E4 + R1 and baselines on the holdout; C4 not run",
     "T5_history_length": "per history-length bin: diff and 95% CI of H1, H3, H6, H7, H8, H9, H10",
-    "T6_module_catalog": "module status catalogue from results_sources.yaml (adopted / evaluated-not-adopted / excluded / not-examined) with basis hypotheses",
+    "T6_module_catalog": "module and combination status catalogue (adopted / evaluated-not-adopted / not-examined / not run) with basis hypotheses",
     "T7_datasets_eda": "dataset summary (eval history) copied from the EDA branch feat/w5a-eda",
 }
 FIGURE_NOTES = {
     "F1_holdout_forest": "holdout confirmatory H1-H5 forest plot, Instacart and Complete Journey refit side by side (95% thick, 99.375% thin)",
     "F2_dev_forest": "development (medium) H6-H10 forest plot, same format",
     "F3_module_screening": "module means: explore (new-item Recall@10) and repeat (repeat Recall@10), holdout vs medium",
-    "F4_r_grid": "NDCG@10 by r (0-10) for C2, C3/C3b, C4 on the fit split, one panel per dataset",
+    "F4_r_grid": "NDCG@10 by r (0-10) for C2, C3, C3b on the fit split, one panel per dataset",
     "F5_history_length": "per-bin differences with 95% CIs for H3, H7, H8, one panel per dataset",
     "F6_overdue_effect": "W9 R3 log-odds effect per overdue bin (from the W9 CSV), one panel per dataset",
 }
@@ -813,8 +867,13 @@ def write_results_md(out: Path, registry: Registry, tables: list[dict[str, Any]]
     lines.append("- Stage wording: `confirmatory holdout` = PREREG v1.2 final run (Instacart holdout; Complete Journey refit on medium data); "
                  "`development medium` = development runs, not confirmatory.")
     lines.append(f"- Development integration run used for T3-T5, F2-F5: `{dev_run}`; W9 provides R3/H10 in every case.")
-    lines.append("- Combination labels C0-C4/C3b and the module catalogue E1-E8/R1-R6 are defined in `scripts/results_sources.yaml` "
-                 "(mapping assumed by W11; confirm with the team). Modules without an implementation are `not-examined`.")
+    lines.append("- Combination labels (fixed by the team): C0 = E1 + R1, r = 10 (`final`); C1 = E1 + R2, r = 10 (`final_lr`); "
+                 "C2 = E1 + R2, r re-selected (`final_lr_r`); C3 = E2 + R2, r re-selected (`final_lr_ucf`; H9 = C3 vs C1); "
+                 "C3b = E2 + R1, r re-selected (`final_star_ucf`); C4 = E3 + R2 (not run); reference E4 + R1, r = 10 (`final_cf`). "
+                 "Module codes and statuses are listed in T6 (`scripts/results_sources.yaml`).")
+    lines.append("- **For the slides and the report use only T1 rows with `current = true`.** A row is current when it comes from the "
+                 "newest run for the same stage, dataset, comparator, model and metric (holdout confirmatory > W8b > W9 > W8 > W7, W6 > W4a); "
+                 "`superseded_reason` explains every other row.")
     lines += ["", "## Tables (reports/results/tables)", "", "| table | rows | description |", "| --- | --- | --- |"]
     for t in tables:
         lines.append(f"| {t['name']} | {t['rows']} | {TABLE_NOTES[t['name']]} |")
@@ -830,7 +889,7 @@ def write_results_md(out: Path, registry: Registry, tables: list[dict[str, Any]]
             lines.append(f"- {item['run']}: {item['reason']}")
     lines += ["", "## Verification", ""]
     lines.append(f"- T1 diff identity: {checks['t1']['rows']} rows, max |diff - (mean_model - mean_comparator)| = {checks['t1']['max_abs_gap']:.3e} "
-                 f"(tolerance {checks['t1']['tolerance']:.0e}).")
+                 f"(tolerance {checks['t1']['tolerance']:.0e}); current rows: {checks['t1']['current_rows']}.")
     lines.append("- Every figure is drawn from its own CSV (written first, then read back).")
     if "determinism" in checks:
         d = checks["determinism"]
@@ -850,7 +909,7 @@ def generate(cfg: dict[str, Any], out: Path) -> dict[str, Any]:
     dev_run = next((r for r in cfg["development_integration_run_preference"] if r in runs), None)
     w8b_used = "W8b" in runs
 
-    t1 = table_t1(registry)
+    t1 = table_t1(registry, cfg)
     checks = {"t1": check_t1(t1)}
     t2 = table_t2(registry)
     t3 = table_t3(registry, dev_run)

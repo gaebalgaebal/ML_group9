@@ -4,18 +4,19 @@
 - holdout2 results: **not included** (holdout2 has not been run; the holdout2 data folder was not opened)
 - Stage wording: `confirmatory holdout` = PREREG v1.2 final run (Instacart holdout; Complete Journey refit on medium data); `development medium` = development runs, not confirmatory.
 - Development integration run used for T3-T5, F2-F5: `W8b`; W9 provides R3/H10 in every case.
-- Combination labels C0-C4/C3b and the module catalogue E1-E8/R1-R6 are defined in `scripts/results_sources.yaml` (mapping assumed by W11; confirm with the team). Modules without an implementation are `not-examined`.
+- Combination labels (fixed by the team): C0 = E1 + R1, r = 10 (`final`); C1 = E1 + R2, r = 10 (`final_lr`); C2 = E1 + R2, r re-selected (`final_lr_r`); C3 = E2 + R2, r re-selected (`final_lr_ucf`; H9 = C3 vs C1); C3b = E2 + R1, r re-selected (`final_star_ucf`); C4 = E3 + R2 (not run); reference E4 + R1, r = 10 (`final_cf`). Module codes and statuses are listed in T6 (`scripts/results_sources.yaml`).
+- **For the slides and the report use only T1 rows with `current = true`.** A row is current when it comes from the newest run for the same stage, dataset, comparator, model and metric (holdout confirmatory > W8b > W9 > W8 > W7, W6 > W4a); `superseded_reason` explains every other row.
 
 ## Tables (reports/results/tables)
 
 | table | rows | description |
 | --- | --- | --- |
-| T1_master_hypotheses | 253 | one row per hypothesis or secondary/auxiliary comparison; diff = mean_model - mean_comparator; decision as recorded in the source |
+| T1_master_hypotheses | 253 | one row per hypothesis or secondary/auxiliary comparison; diff = mean_model - mean_comparator; decision as recorded in the source; current = newest run for that comparison (use only these rows) |
 | T2_selections | 84 | selected values per dataset x run (long format) with grid and grid-edge flag |
 | T3_module_screening | 30 | explore modules by new-item Recall@10, repeat modules by repeat Recall@10; diff and 95% CI vs the comparator named in the row |
-| T4_final_lists | 22 | Recall@10 and NDCG@10 over all users for the combinations C0-C4, C3b and the baselines (medium); C0 and baselines on the holdout |
+| T4_final_lists | 26 | Recall@10 and NDCG@10 over all users for the combinations C0-C3, C3b, the reference E4 + R1 and the baselines (medium); C0, E4 + R1 and baselines on the holdout; C4 not run |
 | T5_history_length | 117 | per history-length bin: diff and 95% CI of H1, H3, H6, H7, H8, H9, H10 |
-| T6_module_catalog | 17 | module status catalogue from results_sources.yaml (adopted / evaluated-not-adopted / excluded / not-examined) with basis hypotheses |
+| T6_module_catalog | 22 | module and combination status catalogue (adopted / evaluated-not-adopted / not-examined / not run) with basis hypotheses |
 | T7_datasets_eda | 2 | dataset summary (eval history) copied from the EDA branch feat/w5a-eda |
 
 ## Figures (reports/results/figures, PNG 300 dpi + CSV of the plotted numbers)
@@ -25,7 +26,7 @@
 | F1_holdout_forest | 12 | holdout confirmatory H1-H5 forest plot, Instacart and Complete Journey refit side by side (95% thick, 99.375% thin) |
 | F2_dev_forest | 14 | development (medium) H6-H10 forest plot, same format |
 | F3_module_screening | 30 | module means: explore (new-item Recall@10) and repeat (repeat Recall@10), holdout vs medium |
-| F4_r_grid | 66 | NDCG@10 by r (0-10) for C2, C3/C3b, C4 on the fit split, one panel per dataset |
+| F4_r_grid | 66 | NDCG@10 by r (0-10) for C2, C3, C3b on the fit split, one panel per dataset |
 | F5_history_length | 27 | per-bin differences with 95% CIs for H3, H7, H8, one panel per dataset |
 | F6_overdue_effect | 14 | W9 R3 log-odds effect per overdue bin (from the W9 CSV), one panel per dataset |
 
@@ -73,7 +74,7 @@
 
 ## Verification
 
-- T1 diff identity: 253 rows, max |diff - (mean_model - mean_comparator)| = 1.041e-16 (tolerance 1e-12).
+- T1 diff identity: 253 rows, max |diff - (mean_model - mean_comparator)| = 1.041e-16 (tolerance 1e-12); current rows: 123.
 - Every figure is drawn from its own CSV (written first, then read back).
 - Determinism (`--verify`): 26 files regenerated, 0 digest mismatches.
 
