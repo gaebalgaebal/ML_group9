@@ -21,3 +21,11 @@ bootstrap:
   n: 1000
   seed: 42
   levels: [0.95, 0.99375]                      # 95% and Bonferroni over 8 primary tests
+lr_repeat:                                     # W6: L2 logistic-regression repeat ranker (H6, H7)
+  decay_gammas: [0.5, 0.8, 1.0]
+  C: [0.001, 0.01, 0.1, 1.0, 10.0]                # W8: extended grid (development)
+  val_fraction: 0.2
+  seed: 42
+  max_iter: 1000
+integration:                                   # W8: LR + user-CF combinations (development)
+  r: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]          # slot grid re-selected on the fit split for new combinations

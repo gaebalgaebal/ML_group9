@@ -23,7 +23,8 @@ def load_config(profile: str) -> dict[str, Any]:
     """Return the merged config for ``profile``.
 
     Keys in configs/<profile>.yaml override the same top-level keys in
-    configs/common.yaml (shallow merge). The result also carries
+    configs/common.yaml (shallow merge); the ``usercf`` block of
+    configs/usercf.yaml is added when neither file defines one. The result also carries
     ``repo_root`` (Path) and ``data_dir`` (Path): the NBR_DATA_DIR environment
     variable wins over ``common.data_dir`` (resolved relative to repo_root).
     """
@@ -35,6 +36,9 @@ def load_config(profile: str) -> dict[str, Any]:
         raise FileNotFoundError(f"unknown profile '{profile}': {profile_path} not found")
     config = {**common, **_read_yaml(profile_path)}
     config.setdefault("profile", profile)
+    usercf_path = CONFIG_DIR / "usercf.yaml"
+    if usercf_path.exists():  # W7/W8: user-CF grid lives in its own file; only its "usercf" block is merged
+        config.setdefault("usercf", _read_yaml(usercf_path).get("usercf"))
 
     env_dir = os.environ.get("NBR_DATA_DIR")
     if env_dir:
