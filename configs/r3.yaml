@@ -1,0 +1,10 @@
+# W9 / R3: logistic-regression repeat ranker with binned cycle features (module screening, H10).
+# Read by nbr.r3_eval only; common.yaml and the profile files are not changed.
+r3:
+  C: [0.001, 0.01, 0.1, 1.0, 10.0]                     # shared grid for the R2 re-fit and R3 (fair comparison)
+  overdue_bins: [0.0, 0.5, 1.0, 1.5, 2.5, 5.0, 10.01]   # right-open bins [a, b); last edge > 10 so the cap 10 is included
+  recency_bins: [0, 1, 2, 3, 5, 10, 1000000]           # recency 0, 1, 2, 3-4, 5-9, 10+
+  item_cadence_ratio_bins: [0.0, 0.5, 1.0, 1.5, 2.5, 5.0, 10.01]
+  val_fraction: 0.2
+  seed: 42
+  max_iter: 2000
