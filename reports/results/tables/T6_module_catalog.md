@@ -1,0 +1,25 @@
+# T6 module catalogue
+
+module status catalogue from results_sources.yaml (adopted / evaluated-not-adopted / excluded / not-examined) with basis hypotheses
+
+| id | group | name | list | status | basis | evidence_stage | note |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| E1 | explore | hierarchical explore (theta_u(c) x pop(i) / pop(c), L2) | explore_star | adopted | H2, H4 (holdout) | confirmatory holdout; development medium |  |
+| E2 | explore | user-based CF (cosine neighbours, k, binary/log1p weighting) | usercf | evaluated-not-adopted | H8, H9 (medium) | development medium | adoption decision TBD |
+| E3 | explore | flat item-CF (item cosine, 20 neighbours) | itemcf_flat | evaluated-not-adopted | H5 (holdout, secondary confirmatory) | confirmatory holdout; development medium |  |
+| E4 | explore | theta x item-CF within category | explore_cf | evaluated-not-adopted | secondary explore_cf_vs_explore_star (holdout, medium) |  |  |
+| E5 | explore | TBD (not defined in repository documents) |  | not-examined |  |  |  |
+| E6 | explore | TBD (not defined in repository documents) |  | not-examined |  |  |  |
+| E7 | explore | TBD (not defined in repository documents) |  | not-examined |  |  |  |
+| E8 | explore | TBD (not defined in repository documents) |  | not-examined |  |  |  |
+| flat_pop | explore | flat popularity excluding history items (comparator) | flat_explore | evaluated-not-adopted | comparator of H2, H5, H8 | confirmatory holdout; development medium | baseline |
+| R1 | repeat | decayed purchase frequency s_rep(gamma*) | repeat_star | adopted | H1 (holdout) | confirmatory holdout; development medium |  |
+| R2 | repeat | L2 logistic-regression repeat ranker (12 features) | repeat_lr | evaluated-not-adopted | H6, H7 (medium) | development medium | adoption decision TBD |
+| R3 | repeat | logistic ranker with binned cycle features (30 features) | repeat_r3 | evaluated-not-adopted | H10 (medium) | development medium |  |
+| R4 | repeat | TBD (not defined in repository documents) |  | not-examined |  |  |  |
+| R5 | repeat | personal purchase frequency (gamma = 1; comparator) | repeat_pf | evaluated-not-adopted | comparator of H1 |  | baseline |
+| R6 | repeat | TBD (not defined in repository documents) |  | not-examined |  |  |  |
+| slot_split | combination | top r repeat items + top (10 - r) explore items (r* by fit NDCG@10) | final | adopted | H3 (holdout) | confirmatory holdout; development medium | r* = 10 at the grid edge on every fit split |
+| slot_reselect | combination | r re-selected on the fit split per combination (r in 0..10) | final_lr_r, final_star_ucf, final_lr_ucf | evaluated-not-adopted | H9 and integration secondary (medium) |  | r = 10 selected for every combination |
+
+Hidden columns (see the CSV): .

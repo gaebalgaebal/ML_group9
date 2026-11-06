@@ -1,0 +1,3 @@
+stage,run,dataset,users,baskets,items,L1,L2,L3,history_baskets_min,history_baskets_p10,history_baskets_median,history_baskets_p90,history_baskets_max,basket_size_median,source_file,source_sha256,git_commit
+development medium,W5a,instacart,20000,313281,41250,21,134,3209,3,3.0,9.0,37.0,99,8.0,feat\w5a-eda:reports\eda\table_datasets.csv,ec54f8ddcad4ed25485d776a681657bfca3122f3e5c9813889cbe3cfd76e6b7d,5ce3e7ed007b3584ba5bbb905175058b63604c80
+development medium,W5a,complete_journey,2069,206682,82354,32,302,2323,4,25.0,76.0,197.20000000000005,1167,5.0,feat\w5a-eda:reports\eda\table_datasets.csv,ec54f8ddcad4ed25485d776a681657bfca3122f3e5c9813889cbe3cfd76e6b7d,5ce3e7ed007b3584ba5bbb905175058b63604c80
