@@ -1,5 +1,5 @@
 usercf:
-  k: [50, 100, 200, 400]                       # W8: extended grid (development)
+  k: [20, 50, 100, 200, 400]                   # W8/W8b: extended grid (development)
   weighting: [binary, log1p]
   block_size: 256
 selection_source:

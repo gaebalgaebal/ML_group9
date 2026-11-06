@@ -186,9 +186,9 @@ def test_h9_direction_with_perfect_combination(workspace, monkeypatch):
         out["source"] = source
         return out[["user_id", "rank", "item_id", "source"]]
 
-    def patched(history, pop, selections, config, *, include_itemcf=True, lr_bundle=None, integration=None):
+    def patched(history, pop, selections, config, *, include_itemcf=True, lr_bundle=None, integration=None, **extra):
         lists, timings = original(history, pop, selections, config, include_itemcf=include_itemcf,
-                                  lr_bundle=lr_bundle, integration=integration)
+                                  lr_bundle=lr_bundle, integration=integration, **extra)
         data = pipeline.prepare(config, "instacart", "eval")
         lists["final_lr_ucf"] = perfect(data["target"], "final_lr_ucf")
         lists["usercf"] = perfect(data["new_target"], "usercf")
@@ -233,3 +233,32 @@ def test_no_leakage_from_eval_target_and_fit_target_only_users(workspace):
     assert after["selections"] == before["selections"]
     assert after["integration"]["selections"] == before["integration"]["selections"]
     assert after["lr_repeat"]["n_rows"] == before["lr_repeat"]["n_rows"]
+
+
+def test_skip_l3_leaves_everything_else_unchanged(workspace):
+    config = _config(workspace)
+    run_tune(config, "instacart")
+    selections = load_selections(config, "instacart")
+    bundle = load_lr_repeat(config, "instacart")
+    integration = load_integration_selections(config, "instacart")
+    full = evaluate(config, "instacart", selections, lr_bundle=bundle, integration=integration)
+    skipped = evaluate(config, "instacart", selections, lr_bundle=bundle, integration=integration, skip_l3=True)
+    assert full["skipped"] == [] and skipped["skipped"] == ["explore_L3"]
+    assert "explore_L3" in full["list_metrics"] and "explore_L3" not in skipped["list_metrics"]
+    assert {name: full["list_metrics"][name] for name in skipped["list_metrics"]} == skipped["list_metrics"]
+    assert set(full["secondary"]) - set(skipped["secondary"]) == {"explore_L3_vs_explore_star_new_recall"}
+    assert {key: full["secondary"][key] for key in skipped["secondary"]} == skipped["secondary"]
+    for key in ("primary", "H5", "by_history_length", "lr_repeat", "integration", "n_users", "selections"):
+        assert full[key] == skipped[key]
+    assert "explore_L3" in full["peak_memory_mib"] and "explore_L3" not in skipped["peak_memory_mib"]
+    document = json.loads(run_evaluate(config, "instacart", skip_l3=True).read_text(encoding="utf-8"))
+    assert document["skipped"] == ["explore_L3"] and set(document["integration"]["primary"]) == PRIMARY
+
+
+def test_usercf_k_tie_rule_prefers_smaller_k_then_binary():
+    from nbr.usercf_eval import select_parameters
+
+    grid = [{"k": k, "weighting": w, "new_recall@10": 0.1} for k in (400, 200, 100, 50, 20) for w in ("log1p", "binary")]
+    assert select_parameters(grid) == {"k": 20, "weighting": "binary"}
+    grid[0]["new_recall@10"] = 0.1 + 1e-9  # a strictly larger value wins regardless of k
+    assert select_parameters(grid) == {"k": 400, "weighting": "log1p"}

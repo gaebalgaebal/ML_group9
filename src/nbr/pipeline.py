@@ -132,6 +132,7 @@ def tune(config: dict[str, Any], dataset: str) -> dict[str, Any]:
         stage1[gamma] = float(per_user_recall(lists, data["repeat_target"], K).mean())
     gamma_star = select_gamma(stage1)
     timings["stage1_repeat"] = time.perf_counter() - t0
+    peak_memory: dict[str, float | None] = {"stage1_repeat": peak_memory_mib()}
 
     t0 = time.perf_counter()
     gamma_cs = [float(g) for g in config["explore"]["gamma_c"]]
@@ -143,6 +144,7 @@ def tune(config: dict[str, Any], dataset: str) -> dict[str, Any]:
             stage2[(gamma_c, alpha)] = float(per_user_recall(lists, data["new_target"], K).mean())
     gamma_c_star, alpha_star = select_explore(stage2)
     timings["stage2_explore"] = time.perf_counter() - t0
+    peak_memory["stage2_explore"] = peak_memory_mib()
 
     t0 = time.perf_counter()
     rs = [int(r) for r in config["combine"]["r"]]
@@ -154,16 +156,19 @@ def tune(config: dict[str, Any], dataset: str) -> dict[str, Any]:
         stage3[r] = float(per_user_ndcg(final, target, K).mean())
     r_star = select_r(stage3)
     timings["stage3_combine"] = time.perf_counter() - t0
+    peak_memory["stage3_combine"] = peak_memory_mib()
 
     t0 = time.perf_counter()
     lr_bundle = tune_lr_repeat(history, target, config)
     lr_document = save_lr_repeat(lr_bundle, config, dataset)
     timings["lr_repeat"] = time.perf_counter() - t0
+    peak_memory["lr_repeat"] = peak_memory_mib()
 
     t0 = time.perf_counter()
     integration = tune_integration(history, target, pop, lr_bundle,
                                    {"repeat_star": repeat_star, "explore_star": explore_star}, config)
     timings["integration"] = time.perf_counter() - t0
+    peak_memory["integration"] = peak_memory_mib()
 
     return {
         "profile": config["profile"],
@@ -192,6 +197,7 @@ def tune(config: dict[str, Any], dataset: str) -> dict[str, Any]:
         "lr_repeat": lr_document,
         "integration": integration,
         "timing_seconds": timings,
+        "peak_memory_mib": peak_memory,
     }
 
 
@@ -411,8 +417,13 @@ def build_lists(
     include_itemcf: bool = True,
     lr_bundle: dict[str, Any] | None = None,
     integration: dict[str, Any] | None = None,
+    skip_l3: bool = False,
+    peak_memory: dict[str, float | None] | None = None,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, float]]:
     """All model lists (k = 10) from the eval history; returns (lists, timings).
+
+    ``skip_l3`` (W8b) leaves out the explore_L3 list. ``peak_memory``, when given, receives the
+    process peak working set (MiB) after each list.
 
     With ``lr_bundle`` (W6) the lists repeat_lr and final_lr = combine(repeat_lr, explore_star, r*) are added.
     With ``integration`` selections (W8, requires ``lr_bundle``) the user-CF list and the combinations
@@ -430,6 +441,8 @@ def build_lists(
         t0 = time.perf_counter()
         lists[name] = function()
         timings[name] = time.perf_counter() - t0
+        if peak_memory is not None:
+            peak_memory[name] = peak_memory_mib()
 
     timed("popularity", lambda: popularity_list(history, users, K, pop, exclude_history=False))
     timed("personal_frequency", lambda: personal_frequency_list(history, K, pop))
@@ -439,7 +452,8 @@ def build_lists(
     timed("explore_star", lambda: explore_list(history, K, gamma_c, alpha, level))
     timed("final", lambda: combine(lists["repeat_star"], lists["explore_star"], r, K))
     timed("final_r10", lambda: combine(lists["repeat_star"], lists["explore_star"], K, K))
-    timed("explore_L3", lambda: explore_list(history, K, gamma_c, alpha, "L3"))
+    if not skip_l3:
+        timed("explore_L3", lambda: explore_list(history, K, gamma_c, alpha, "L3"))
     if include_itemcf:
         n_neighbors = int(config["explore"]["itemcf"]["neighbors"])
         t0 = time.perf_counter()
@@ -517,8 +531,12 @@ def evaluate(
     include_itemcf: bool = True,
     lr_bundle: dict[str, Any] | None = None,
     integration: dict[str, Any] | None = None,
+    skip_l3: bool = False,
 ) -> dict[str, Any]:
     """Evaluate all models on the eval split with the given (fixed) selections.
+
+    ``skip_l3`` (W8b) leaves out the explore_L3 list and its secondary comparison; the
+    document then carries "skipped": ["explore_L3"]. Every other entry is unchanged.
 
     ``lr_bundle`` (W6) adds repeat_lr / final_lr and the H6, H7 comparisons under the
     "lr_repeat" key; the H1-H5 entries do not depend on it. ``integration`` (W8, the
@@ -532,9 +550,11 @@ def evaluate(
     repeat_target, new_target, pop = data["repeat_target"], data["new_target"], data["pop"]
     level = config["explore"]["level"]
     timings["prepare"] = time.perf_counter() - t0
+    peak_memory: dict[str, float | None] = {"prepare": peak_memory_mib()}
 
     lists, list_timings = build_lists(history, pop, selections, config, include_itemcf=include_itemcf,
-                                      lr_bundle=lr_bundle, integration=integration)
+                                      lr_bundle=lr_bundle, integration=integration, skip_l3=skip_l3,
+                                      peak_memory=peak_memory)
     timings.update({f"list_{name}": seconds for name, seconds in list_timings.items()})
 
     t0 = time.perf_counter()
@@ -731,7 +751,9 @@ def evaluate(
         "by_history_length": breakdown,
         "lr_repeat": lr_repeat,
         "integration": integration_result,
+        "skipped": ["explore_L3"] if skip_l3 else [],
         "timing_seconds": timings,
+        "peak_memory_mib": {**peak_memory, "end": peak_memory_mib()},
     }
 
 
@@ -744,6 +766,7 @@ def run_evaluate(
     include_itemcf: bool = True,
     include_lr: bool = True,
     include_integration: bool = True,
+    skip_l3: bool = False,
 ) -> Path:
     """Evaluate with the selections (and, if ``include_lr``, the lr_repeat artifact, and if also
     ``include_integration``, the W8 selections) of ``transfer_from or dataset``."""
@@ -753,5 +776,5 @@ def run_evaluate(
     integration = load_integration_selections(config, source) if include_lr and include_integration else None
     document = evaluate(config, dataset, selections, allow_holdout_eval=allow_holdout_eval,
                         transfer_from=transfer_from, include_itemcf=include_itemcf, lr_bundle=lr_bundle,
-                        integration=integration)
+                        integration=integration, skip_l3=skip_l3)
     return write_json(eval_path(config, dataset, transfer_from), document, config)

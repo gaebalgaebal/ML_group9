@@ -2,7 +2,7 @@
 
     python -m nbr check --profile P
     python -m nbr tune --profile P --dataset D
-    python -m nbr evaluate --profile P --dataset D [--transfer-from instacart] [--final] [--no-itemcf] [--no-lr] [--no-integration]
+    python -m nbr evaluate --profile P --dataset D [--transfer-from instacart] [--final] [--no-itemcf] [--no-lr] [--no-integration] [--skip-l3]
 
 tune also fits the W6 logistic-regression repeat ranker (stored under
 artifacts/<profile>/<dataset>_lr_repeat.joblib) and runs the W8 user-CF / slot
@@ -66,6 +66,7 @@ def main(argv: list[str] | None = None) -> None:
     eval_parser.add_argument("--no-itemcf", action="store_true", help="skip the item-CF auxiliary models")
     eval_parser.add_argument("--no-lr", action="store_true", help="skip the logistic-regression repeat ranker (H6, H7)")
     eval_parser.add_argument("--no-integration", action="store_true", help="skip user-CF and the W8 combinations (H8, H9)")
+    eval_parser.add_argument("--skip-l3", action="store_true", help="skip the explore_L3 list and its secondary comparison")
     args = parser.parse_args(argv)
 
     if args.command == "check":
@@ -81,7 +82,7 @@ def main(argv: list[str] | None = None) -> None:
         path = run_evaluate(
             config, args.dataset, transfer_from=args.transfer_from,
             allow_holdout_eval=args.final, include_itemcf=not args.no_itemcf, include_lr=not args.no_lr,
-            include_integration=not args.no_integration,
+            include_integration=not args.no_integration, skip_l3=args.skip_l3,
         )
     print(f"{args.command} {args.profile}/{args.dataset}: wrote {path} in {time.perf_counter() - t0:.1f}s")
 

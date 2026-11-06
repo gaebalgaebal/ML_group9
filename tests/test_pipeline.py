@@ -194,9 +194,9 @@ def test_h5_direction_item_cf_better(workspace, monkeypatch):
     config = _config(workspace)
     original = pipeline.build_lists
 
-    def patched(history, pop, selections, config, *, include_itemcf=True, lr_bundle=None, integration=None):
+    def patched(history, pop, selections, config, *, include_itemcf=True, lr_bundle=None, integration=None, **extra):
         lists, timings = original(history, pop, selections, config, include_itemcf=include_itemcf,
-                                  lr_bundle=lr_bundle, integration=integration)
+                                  lr_bundle=lr_bundle, integration=integration, **extra)
         data = pipeline.prepare(config, "instacart", "eval")
         perfect = data["new_target"][["user_id", "item_id"]].drop_duplicates().copy()
         perfect["rank"] = perfect.groupby("user_id").cumcount() + 1
@@ -332,9 +332,9 @@ def test_h6_h7_direction_with_perfect_lr_lists(workspace, monkeypatch):
         out["source"] = source
         return out[["user_id", "rank", "item_id", "source"]]
 
-    def patched(history, pop, selections, config, *, include_itemcf=True, lr_bundle=None, integration=None):
+    def patched(history, pop, selections, config, *, include_itemcf=True, lr_bundle=None, integration=None, **extra):
         lists, timings = original(history, pop, selections, config, include_itemcf=include_itemcf,
-                                  lr_bundle=lr_bundle, integration=integration)
+                                  lr_bundle=lr_bundle, integration=integration, **extra)
         data = pipeline.prepare(config, "instacart", "eval")
         lists["repeat_lr"] = perfect(data["repeat_target"], "repeat_lr")
         lists["final_lr"] = perfect(data["target"], "final_lr")
