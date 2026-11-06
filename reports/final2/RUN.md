@@ -58,9 +58,37 @@ Selections to be fixed after command 1 (from `holdout2_instacart_tuning.json`): 
 and `at_grid_edge.{gamma, gamma_c, alpha, r}`; `integration.selections.{k, weighting, C, r.{final_lr_ucf, final_star_ucf, final_lr_r}}`
 and `integration.at_grid_edge.{k, C, r.*}`; `lr_repeat.C` (grid of `integration.lr.C_grid`).
 
-## Pre-checks
+## Pre-checks (2026-11-06, commit `dc849d7`, working tree clean, `NBR_DATA_DIR=C:\dev_ML\data\processed`)
 
-(to be filled before command 1)
+Code commit used for the commands: HEAD of this branch at command time (recorded per command in the
+commands table); `src/` and `configs/` were last changed in `535b490`.
+
+1. `python -m nbr check --profile holdout2` (exit 0, 2.6 s; reads the fit split only):
+
+```
+profile=holdout2 role=final data_dir=C:\dev_ML\data\processed
+instacart/fit: users=20000 history_rows=2950640 target_rows=207902 users_with_repeat_target=18600 users_with_new_target=16344
+instacart/eval: skipped (holdout guard)
+```
+
+2. Holdout guard on the holdout2 config, direct call (`load_split(load_config('holdout2'), 'instacart', 'eval')`
+   without `allow_holdout_eval`), exit 1 before any Parquet file is opened:
+
+```
+role final data_dir C:\dev_ML\data\processed
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\dev_ML-wt-w10b\src\nbr\data.py", line 49, in load_split
+    raise PermissionError(
+PermissionError: profile role is 'final': the Instacart eval split is read once, after all selections are fixed; pass allow_holdout_eval=True explicitly
+```
+
+3. `python -m nbr evaluate --profile holdout2 --dataset instacart` WITHOUT `--final`, run before command 1
+   (exit 1): the command stops in `load_selections` with
+   `FileNotFoundError: ... reports\metrics\holdout2_instacart_tuning.json` because `run_evaluate` loads the
+   tuning selections before `load_split`; the guard itself is therefore reached only once the tuning file
+   exists. The same command is repeated after command 1 and before command 2 (see "Guard check after
+   command 1" below); the eval split is never opened on this path.
 
 ## Selections (written after command 1, before command 2)
 
