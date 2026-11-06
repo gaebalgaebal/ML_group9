@@ -2,9 +2,8 @@
 
     python scripts/audit_code.py [--repo DIR] [--out docs/CODE_AUDIT.md] [--extra BRANCH:PATH ...]
 
-For every Python file under src/nbr and scripts/ of the repository, plus files of other
-branches read with ``git show`` (default: src/nbr/features_cycle.py and src/nbr/r3_eval.py
-of feat/w9-r3-cycle), the script reports
+For every Python file under src/nbr and scripts/ of the repository (plus, optionally, files of
+other branches read with ``git show`` via --extra), the script reports
 
   1. module, class and public-function docstrings, and whether each docstring mentions
      every parameter of its function;
@@ -43,7 +42,7 @@ from pathlib import Path
 THIRD_PARTY = ("numpy", "pandas", "scipy", "sklearn", "joblib", "yaml", "matplotlib", "pyarrow")
 FIRST_PARTY = ("nbr", "ml_group9")
 STDLIB = set(getattr(sys, "stdlib_module_names", ()))
-DEFAULT_EXTRA = ("feat/w9-r3-cycle:src/nbr/features_cycle.py", "feat/w9-r3-cycle:src/nbr/r3_eval.py")
+DEFAULT_EXTRA: tuple[str, ...] = ()  # every audited file is in the worktree since the release merge (W13)
 SELF_LABEL = "scripts/audit_code.py"
 ATTRIBUTION_PATTERN = re.compile(r"\badapted\b|\bported from\b|\bcopied from\b|\btaken from\b|\bborrowed from\b",
                                  re.IGNORECASE)
@@ -87,50 +86,31 @@ PROBABLE_LIBRARY = {
 # file label as printed in section 1, the line, and a snippet that must occur on that line; a stale
 # entry is printed with a warning instead of silently disappearing.
 OBSERVATIONS = [
-    {"file": "scripts/make_holdout.py", "line": 17, "snippet": "import resource",
-     "kind": "portability",
-     "text": "`resource` is a POSIX-only module; the script cannot start on Windows. data/SOURCE.md records the "
-             "holdout build under Python 3.10.12 (a non-Windows interpreter), consistent with this."},
-    {"file": "scripts/check_data.py", "line": 20, "snippet": 'Path("data/processed")',
-     "kind": "consistency",
-     "text": "Reads the fixed relative path data/processed and ignores NBR_DATA_DIR / configs/common.yaml "
-             "(nbr.config honours both); run from the repository root with the data copied in place."},
-    {"file": "feat/w9-r3-cycle:src/nbr/r3_eval.py", "line": 57, "snippet": r"C:\dev_ML-wt-w4",
-     "kind": "portability",
-     "text": "Hard-coded absolute Windows path as the default gamma* source (overridable with --gamma-dir). "
-             "configs/usercf.yaml (selection_source.tuning_dir) carries the same machine-specific path."},
-    {"file": "src/nbr/usercf_eval.py", "line": 27, "snippet": "from nbr.usercf import _list_from_vectors",
+    {"file": "src/nbr/usercf_eval.py", "line": 34, "snippet": "from nbr.usercf import _list_from_vectors",
      "kind": "style",
-     "text": "Imports a private helper of another module (also src/nbr/usercf.py line 15 imports "
-             "nbr.itemcf._topn_with_ties). The helpers are shared by design but are not part of a public interface."},
+     "text": "Imports a private helper of another module (also src/nbr/usercf.py imports nbr.itemcf._topn_with_ties). "
+             "Kept in W13: the helpers are shared by design; renaming them would change the module interfaces and "
+             "the tests for no behavioural gain."},
     {"file": "src/nbr/lr_repeat.py", "line": 101, "snippet": "np.expm1",
      "kind": "numerical",
      "text": "The tie-break popularity is recovered from the log_pop feature with expm1(log1p(pop)); the float "
-             "round trip can differ from the integer pop by about 1e-12, which only matters for exact score ties."},
+             "round trip can differ from the integer pop by about 1e-12, which only matters for exact score ties. "
+             "Kept in W13: changing it could alter validation ties and therefore C* (behaviour change)."},
     {"file": "src/nbr/usercf.py", "line": 47, "snippet": "matrix.user_index, matrix.item_index",
      "kind": "fragility",
      "text": "Row/column labels are attached as ad-hoc attributes of a scipy csr_matrix; this works for the "
-             "legacy csr_matrix class but would not for the newer sparse-array API (csr_array)."},
-    {"file": "src/nbr/__init__.py", "line": 1, "snippet": "core package (config, data, metrics, io)",
-     "kind": "documentation",
-     "text": "The package docstring lists only the W1 modules; the package now also holds repeat, baselines, "
-             "explore, itemcf, combine, pipeline, features, lr_repeat, usercf and usercf_eval."},
-    {"file": "src/nbr/pipeline.py", "line": 490, "snippet": "'inf' if math.isinf(hi) else hi",
-     "kind": "style",
-     "text": "Redundant inner conditional: the branch is only taken when hi is finite, so the 'inf' alternative "
-             "cannot occur. Harmless."},
-    {"file": "src/nbr/usercf_eval.py", "line": 79, "snippet": "config.update(yaml.safe_load(handle))",
-     "kind": "consistency",
-     "text": "Merges every top-level key of configs/usercf.yaml into the profile config, including a second "
-             "`bootstrap` block; its values equal configs/common.yaml today, so no behaviour differs."},
+             "legacy csr_matrix class but would not for the newer sparse-array API (csr_array). Kept in W13: a "
+             "wrapper type would touch every user-CF function and test; scipy is pinned (1.13.1)."},
     {"file": "src/nbr/metrics.py", "line": 40, "snippet": "for user, items in targets.items():",
      "kind": "performance",
      "text": "per_user_recall / per_user_ndcg / per_user_category_hit loop over users in Python (unlike the "
-             "vectorised list builders); correct, but the slowest step for large eval splits."},
-    {"file": "src/nbr/usercf_eval.py", "line": 127, "snippet": "print(",
+             "vectorised list builders); correct, but the slowest step for large eval splits. Kept in W13: a "
+             "vectorised rewrite changes floating-point summation order and is not a no-behaviour-change edit."},
+    {"file": "src/nbr/usercf_eval.py", "line": 138, "snippet": "print(",
      "kind": "style",
-     "text": "Library function prints progress to stdout (also line 248); nbr.pipeline reuses tune_history, so "
-             "`python -m nbr tune` output interleaves these lines."},
+     "text": "Library function prints progress to stdout (also in evaluate); nbr.pipeline reuses tune_history, so "
+             "`python -m nbr tune` output interleaves these lines. Kept in W13: stdout only, the JSON documents are "
+             "unaffected; the lines are the only progress indicator of the long medium runs."},
 ]
 
 
@@ -452,8 +432,8 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
                  "Do not edit by hand: re-run the script. -->")
     lines.append("# Code audit (static)")
     lines.append("")
-    lines.append(f"Generated by `python scripts/audit_code.py` from worktree HEAD `{head}` (branch `{branch}`); "
-                 f"extra files read with `git show`: " + ", ".join(f"`{e}`" for e in extras) + ".")
+    extra_note = ("extra files read with `git show`: " + ", ".join(f"`{e}`" for e in extras)) if extras else "no extra files"
+    lines.append(f"Generated by `python scripts/audit_code.py` from worktree HEAD `{head}` (branch `{branch}`); {extra_note}.")
     lines.append("The audit is static (ast module); nothing is imported or executed. "
                  "Rules are listed at the end of this document.")
     lines.append("")
@@ -623,7 +603,8 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
     lines.append("## 9. Observations from manual reading")
     lines.append("")
     lines.append("Maintained in `OBSERVATIONS` inside scripts/audit_code.py; each entry is checked against the current "
-                 "text of the named line. src/ is not modified by W12; these are notes for the team.")
+                 "text of the named line. Observations fixed in W13 were removed; each remaining entry "
+                 "states why it is kept.")
     lines.append("")
     by_label = {s.label: s for s in sources}
     rows = []

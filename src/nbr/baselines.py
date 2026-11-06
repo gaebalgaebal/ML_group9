@@ -17,7 +17,7 @@ SOURCE_POPULARITY = "popularity"
 
 
 def item_popularity(history: pd.DataFrame) -> pd.Series:
-    """pop(i) = number of distinct (user_id, basket_seq) baskets containing item i.
+    """pop(i) = number of distinct (user_id, basket_seq) baskets of ``history`` containing item i.
 
     Returns a Series named "pop" indexed by item_id (sorted by item_id).
     """
@@ -44,7 +44,7 @@ def popularity_list(
     pop: pd.Series,
     exclude_history: bool,
 ) -> pd.DataFrame:
-    """Top-k globally popular items for each user in ``users`` (source = "popularity").
+    """Top-k globally popular items (by ``pop``) for each user in ``users`` (source = "popularity").
 
     With ``exclude_history`` the user's own history items I(H_u) are removed
     first (flat popularity baseline for new items). Vectorised: every user is
@@ -95,7 +95,7 @@ def pad_list(lists: pd.DataFrame, filler: pd.DataFrame, k: int) -> pd.DataFrame:
 
 
 def personal_frequency_list(history: pd.DataFrame, k: int, pop: pd.Series) -> pd.DataFrame:
-    """Personal purchase frequency (gamma = 1) padded with popularity outside I(H_u)."""
+    """Top-``k`` list per user of ``history``: personal purchase frequency (gamma = 1) padded with ``pop``-popularity outside I(H_u)."""
     repeat = repeat_list(history, 1.0, k, pop)
     users = history["user_id"].drop_duplicates()
     filler = popularity_list(history, users, k, pop, exclude_history=True)

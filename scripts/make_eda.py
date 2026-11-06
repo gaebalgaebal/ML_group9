@@ -276,6 +276,7 @@ def write_csv(frame: pd.DataFrame, name: str) -> None:
 
 
 def style_axis(ax) -> None:
+    """Recessive axis styling of ``ax``: hidden top/right spines, muted ticks and grid below the marks."""
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(axis="y", color="#DCE1E7", linewidth=0.7)
     ax.set_axisbelow(True)
@@ -406,8 +407,8 @@ def summary_markdown(datasets, repeats, levels, preprocessing, quality, check):
               "- CJ의 주차 경계 통과, history 최소 바스켓 수, 정답 최소 상품 수, fit/eval 교집합 조건 각각으로 탈락한 가구 수와 정제 거래 전체 행 수.",
               "- data/SOURCE.md는 기존 medium/sample 생성 코드 버전을 파일 시각으로 추정한다고 명시한다. vendor e11b365는 확인한 규칙의 근거이며 복사본의 모든 생성 단계를 확정하는 실행 로그는 아니다.",
               "- holdout의 131,209 → 109,936 → 20,000명 및 기존 사용자 21,273명 제외·중복 0명은 SOURCE.md 기록이다. 이 작업에서는 holdout 파일을 열거나 해당 수치를 재검증하지 않았다.", "",
-              "## 재현과 출처", "", "```powershell", '$env:NBR_DATA_DIR = "C:\\dev_ML\\data\\processed"',
-              r"C:\dev_ML\.venv\Scripts\python.exe scripts/make_eda.py", "```", "",
+              "## 재현과 출처", "", "```powershell", '$env:NBR_DATA_DIR = "<processed-data folder>"   # default: data/processed',
+              "python scripts/make_eda.py", "```", "",
               f"pandas {pd.__version__}; matplotlib {matplotlib.__version__}. 제3자 라이브러리를 직접 불러오는 것은 이 두 패키지뿐이며 nbr에 의존하지 않는다.", ""]
     for relative in ["data/SOURCE.md", DATA_CODE, SETTINGS, CHECK]:
         digest = hashlib.sha256(committed_text(relative).encode("utf-8")).hexdigest()

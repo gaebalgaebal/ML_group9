@@ -1,4 +1,13 @@
-"""Standalone development-only fit selection and eval-split H8 evaluation."""
+"""Stand-alone development-only user-CF fit selection and eval-split H8 evaluation (W7).
+
+Module screening entry point (stand-alone; ``python -m nbr tune`` reuses tune_history):
+
+    python -m nbr.usercf_eval --profile {sample,medium} --dataset D --stage {tune,evaluate,all} [--tuning-dir DIR]
+
+The base selections (gamma, gamma_c, alpha, r) of evaluate are read from
+<tuning-dir>/<profile>_<dataset>_tuning.json (default: NBR_TUNING_DIR or reports/metrics of this
+repository, nbr.config.resolve_tuning_dir); holdout profiles and paths are refused.
+"""
 
 from __future__ import annotations
 
@@ -9,15 +18,13 @@ import math
 import os
 import time
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import pandas as pd
-import yaml
 
 from nbr.baselines import item_popularity, popularity_list
 from nbr.combine import combine
-from nbr.config import load_config
+from nbr.config import load_config, resolve_tuning_dir
 from nbr.data import attach_levels, dataset_dir, load_items, load_split, split_target
 from nbr.explore import explore_list
 from nbr.io import write_json
@@ -70,17 +77,19 @@ def _guard(config: dict, dataset: str) -> None:
         raise ValueError("Holdout access is forbidden in the user-CF development runner")
 
 
-def settings(profile: str) -> dict:
+def settings(profile: str, tuning_dir: str | None = None) -> dict:
+    """Runner configuration of ``profile``: load_config (merges the ``usercf`` block of configs/usercf.yaml) plus
+    ``selection_source.tuning_dir`` = resolve_tuning_dir(config, tuning_dir), the folder of the base tuning JSON.
+    """
     if profile not in ("sample", "medium"):
         raise ValueError("Only sample and medium are supported")
     config = load_config(profile)
-    # yaml.safe_load(stream) reads YAML without constructing arbitrary objects.
-    with open(Path(config["repo_root"]) / "configs" / "usercf.yaml", encoding="utf-8") as handle:
-        config.update(yaml.safe_load(handle))
+    config["selection_source"] = {"tuning_dir": str(resolve_tuning_dir(config, tuning_dir))}
     return config
 
 
 def output_path(config: dict, dataset: str, stage: str) -> Path:
+    """reports/metrics/<profile>_<dataset>_usercf_<stage>.json under the repo_root of ``config``."""
     return Path(config["repo_root"]) / "reports" / "metrics" / f"{config['profile']}_{dataset}_usercf_{stage}.json"
 
 
@@ -93,7 +102,8 @@ def _prepare(config: dict, dataset: str, split: str) -> tuple:
 
 
 def select_parameters(grid: list[dict]) -> dict:
-    """Maximum fit recall; exact ties use smaller k, then binary weighting."""
+    """Row of ``grid`` (dicts with k, weighting, new_recall@10) with the maximum fit recall; exact ties use smaller k,
+    then binary weighting."""
     if not grid or any(not math.isfinite(row["new_recall@10"]) for row in grid):
         raise ValueError("selection requires finite fit scores and a nonempty grid")
     best = min(grid, key=lambda row: (-row["new_recall@10"], row["k"], row["weighting"] != "binary"))
@@ -101,7 +111,8 @@ def select_parameters(grid: list[dict]) -> dict:
 
 
 def tune_history(history: pd.DataFrame, target: pd.DataFrame, config: dict) -> dict:
-    """Fit-only selection; target provides labels for recall, never model inputs."""
+    """Fit-only (k, weighting) selection over the ``config["usercf"]`` grid on ``history``; ``target`` provides labels for
+    recall, never model inputs."""
     started = time.perf_counter()
     _, new_target = split_target(history, target)
     if new_target.empty:
@@ -137,6 +148,9 @@ def tune_history(history: pd.DataFrame, target: pd.DataFrame, config: dict) -> d
 
 
 def tune(config: dict, dataset: str) -> dict:
+    """Fit-split (k, weighting) selection of ``dataset`` under ``config`` (tune_history) with provenance, timing and
+    peak memory; returns the tuning document.
+    """
     started = time.perf_counter()
     history, target = _prepare(config, dataset, "fit")
     prepare_seconds = time.perf_counter() - started
@@ -171,7 +185,9 @@ def _decision(ci: list) -> str:
 
 def compare(a: pd.Series, b: pd.Series, config: dict, comparator: str,
             model: str, metric: str, primary: bool = False) -> dict:
-    """Paired comparator-to-model comparison: diff = model minus comparator."""
+    """Paired comparison of the per-user series ``a`` (comparator) and ``b`` (model) with the bootstrap settings of
+    ``config``: diff = model minus comparator. ``primary`` adds every level and the decision wording (else 95 % only);
+    ``comparator``, ``model`` and ``metric`` are recorded as labels."""
     levels = [float(level) for level in config["bootstrap"]["levels"]] if primary else [0.95]
     result = {"comparator": comparator, "model": model, "metric": metric, "n_users": len(a)}
     if a.empty:
@@ -191,6 +207,9 @@ def compare(a: pd.Series, b: pd.Series, config: dict, comparator: str,
 
 def history_breakdown(history: pd.DataFrame, a: pd.Series, b: pd.Series,
                       dataset: str, config: dict) -> list:
+    """H8 comparison (``a`` = flat_explore, ``b`` = usercf new-item recall per user) per history-length bin of
+    ``dataset`` (HISTORY_BINS; basket counts from ``history``) with the bootstrap settings of ``config``.
+    """
     lengths = history[["user_id", "basket_seq"]].drop_duplicates().groupby("user_id").size()
     edges = [0, *HISTORY_BINS[dataset], math.inf]
     rows = []
@@ -205,7 +224,8 @@ def history_breakdown(history: pd.DataFrame, a: pd.Series, b: pd.Series,
 
 
 def diagnostics(lists: dict, pop: pd.Series, neighbors: pd.DataFrame) -> dict:
-    """Popularity rank uses pop descending, then lexical item ID; counts slots."""
+    """Popularity-rank and neighbour-similarity diagnostics of ``lists`` (usercf, flat_explore, itemcf_flat) and the
+    ``neighbors`` frame; popularity rank uses ``pop`` descending, then lexical item ID; counts slots."""
     ranked = pop.rename("pop").rename_axis("item_id").reset_index().sort_values(
         ["pop", "item_id"], ascending=[False, True], kind="mergesort")
     ranks = pd.Series(np.arange(1, len(ranked) + 1), index=ranked["item_id"])
@@ -227,6 +247,9 @@ def diagnostics(lists: dict, pop: pd.Series, neighbors: pd.DataFrame) -> dict:
 
 
 def evaluate(config: dict, dataset: str) -> dict:
+    """Eval-split H8 evaluation of ``dataset`` under ``config``: user-CF list with the own (k, weighting) selection,
+    comparators and combinations with the base selections, paired bootstrap, breakdown and diagnostics.
+    """
     _guard(config, dataset)
     started = time.perf_counter()
     profile = config["profile"]
@@ -292,12 +315,17 @@ def evaluate(config: dict, dataset: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse ``argv`` (default: sys.argv) and run the tune / evaluate / all stage; the base tuning JSON must exist
+    before any data is read.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", choices=("sample", "medium"), required=True)
     parser.add_argument("--dataset", choices=DATASETS, required=True)
     parser.add_argument("--stage", choices=("tune", "evaluate", "all"), required=True)
+    parser.add_argument("--tuning-dir", default=None,
+                        help="folder with the base <profile>_<dataset>_tuning.json (default: NBR_TUNING_DIR or <repo>/reports/metrics)")
     args = parser.parse_args(argv)
-    config = settings(args.profile)
+    config = settings(args.profile, args.tuning_dir)
     _guard(config, args.dataset)
     # For all, fail before expensive work when the read-only baseline is absent.
     if args.stage in ("evaluate", "all"):

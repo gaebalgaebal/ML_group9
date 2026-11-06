@@ -1,13 +1,20 @@
 """Integrity and descriptive checks for the copied processed data (history/target splits).
 
-Usage: python scripts/check_data.py <profile>   (reads data/processed/<profile>/, writes reports/data_check/<profile>.json)
-Only history and target Parquet files are read; nothing is modified.
+Usage: python scripts/check_data.py <profile>   (reads <data_dir>/<profile>/, writes reports/data_check/<profile>.json)
+The data root follows nbr.config.load_config: the NBR_DATA_DIR environment variable wins over
+configs/common.yaml:data_dir (relative to the repository root). Only history and target Parquet files
+are read; nothing is modified.
 """
 import json
 import sys
 from pathlib import Path
 
 import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from nbr.config import load_config  # noqa: E402
 
 # Hierarchy levels per dataset: L1 -> L2 -> L3 -> item.
 LEVELS = {
@@ -16,8 +23,9 @@ LEVELS = {
 }
 
 
-def check(profile: str, dataset: str) -> dict:
-    base = Path("data/processed") / profile / dataset
+def check(profile: str, dataset: str, data_dir: Path) -> dict:
+    """Item-table sizes and per-split integrity/descriptive statistics of ``dataset`` under <data_dir>/<profile>."""
+    base = Path(data_dir) / profile / dataset
     items = pd.read_parquet(base / "items.parquet")
     out = {"items": len(items)}
     lv = LEVELS[dataset]
@@ -57,7 +65,8 @@ def check(profile: str, dataset: str) -> dict:
 
 if __name__ == "__main__":
     profile = sys.argv[1] if len(sys.argv) > 1 else "medium"
-    res = {ds: check(profile, ds) for ds in LEVELS if (Path("data/processed") / profile / ds).exists()}
-    dst = Path("reports/data_check") / f"{profile}.json"
+    data_dir = Path(load_config(profile)["data_dir"])
+    res = {ds: check(profile, ds, data_dir) for ds in LEVELS if (data_dir / profile / ds).exists()}
+    dst = ROOT / "reports" / "data_check" / f"{profile}.json"
     dst.write_text(json.dumps(res, indent=2, ensure_ascii=False))
     print(json.dumps(res, indent=2, ensure_ascii=False))

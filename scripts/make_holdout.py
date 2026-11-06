@@ -14,10 +14,14 @@ import argparse
 import hashlib
 import json
 import platform
-import resource
 import sys
 import time
 from pathlib import Path
+
+try:
+    import resource  # POSIX only: peak RSS of this process
+except ImportError:  # Windows: peak_rss_mb is recorded as null; the extraction itself is unchanged
+    resource = None
 
 ROOT = Path(__file__).resolve().parents[1]
 VENDOR = ROOT / "vendor" / "ml_group9_e11b365"
@@ -43,10 +47,12 @@ def used_users() -> set[str]:
 
 
 def ids_digest(ids: set[str]) -> str:
+    """SHA-256 of the sorted, newline-joined user ``ids`` (provenance of the drawn user set)."""
     return hashlib.sha256("\n".join(sorted(ids)).encode()).hexdigest()
 
 
 def main() -> None:
+    """Draw the holdout users with the vendored preprocessing code (excluding earlier profiles) and write the selection report."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--raw-dir", required=True)
     parser.add_argument("--size", type=int, default=20000)
@@ -110,7 +116,7 @@ def main() -> None:
         "mapping": {k: v for k, v in provenance.items() if k != "path"} if isinstance(provenance, dict) else str(provenance),
         "prepare_summary": {k: v for k, v in summary.items() if k != "attributes"},
         "runtime_s": round(time.time() - start, 1),
-        "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 0),
+        "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 0) if resource is not None else None,
         "python": platform.python_version(), "pandas": pd.__version__, "numpy": np.__version__,
     })
     out = Path(config["report_dir"]) / "holdout_selection.json"

@@ -54,12 +54,12 @@ def bin_edges(cfg: dict[str, Any], key: str) -> list[float]:
 
 
 def bin_labels(edges: Sequence[float]) -> list[str]:
-    """Interval labels "[lo, hi)" of every bin, including the reference bin."""
+    """Interval labels "[lo, hi)" of every bin of ``edges``, including the reference bin."""
     return [f"[{_fmt(lo)}, {_fmt(hi)})" for lo, hi in zip(edges[:-1], edges[1:])]
 
 
 def bin_columns(prefix: str, edges: Sequence[float]) -> list[str]:
-    """Dummy column names "<prefix>_<lo>_<hi>" of every bin except the first (reference)."""
+    """Dummy column names "<prefix>_<lo>_<hi>" of every bin of ``edges`` except the first (reference)."""
     return [f"{prefix}_{_fmt(lo)}_{_fmt(hi)}" for lo, hi in zip(edges[1:-1], edges[2:])]
 
 
@@ -80,7 +80,7 @@ def bin_index(values: np.ndarray, edges: Sequence[float]) -> np.ndarray:
 
 
 def cycle_feature_names(cfg: dict[str, Any], decay_gammas: Sequence[float] = DEFAULT_DECAY_GAMMAS) -> list[str]:
-    """Feature columns of ``cycle_features`` in output order (R2 columns first)."""
+    """Feature columns of ``cycle_features`` in output order: R2 columns for ``decay_gammas`` first, then the bins of ``cfg``."""
     names = feature_names(decay_gammas) + ["item_cadence", "cadence_ratio"]
     for prefix, key, _ in BIN_GROUPS:
         names += bin_columns(prefix, bin_edges(cfg, key))
@@ -90,7 +90,7 @@ def cycle_feature_names(cfg: dict[str, Any], decay_gammas: Sequence[float] = DEF
 
 
 def item_cadence(features: pd.DataFrame) -> pd.Series:
-    """item_id -> median mean_gap over the pairs with once == 0 (users who repeated the item).
+    """item_id -> median mean_gap over the pairs of ``features`` (repeat_features) with once == 0 (users who repeated the item).
 
     Items without a repeating buyer are absent from the result; callers fill
     them with the global median returned by ``global_cadence``.
@@ -100,7 +100,7 @@ def item_cadence(features: pd.DataFrame) -> pd.Series:
 
 
 def global_cadence(features: pd.DataFrame) -> float:
-    """Global median of mean_gap over the pairs with once == 0 (1.0 if no pair repeated)."""
+    """Global median of mean_gap over the pairs of ``features`` with once == 0 (1.0 if no pair repeated)."""
     repeated = features.loc[features["once"] == 0.0, "mean_gap"]
     return float(repeated.median()) if len(repeated) else 1.0
 

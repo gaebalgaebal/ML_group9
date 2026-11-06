@@ -1,56 +1,58 @@
 # Input registry for scripts/make_results.py (W11). Every path is read-only; nothing here is written.
-# Paths are absolute because the inputs live in other git worktrees of C:\dev_ML.
+# Relative paths are taken from the repository root; ${VAR:-default} is expanded from the environment.
+# The development inputs are untracked run outputs of sibling git worktrees of this repository
+# (<parent>/dev_ML-wt-*); set NBR_WORKTREES to the folder that holds them (default: the parent folder).
 # "stage" wording is fixed: "confirmatory holdout" (PREREG v1.2 final run) or "development medium".
 
 sources:
   holdout:
     stage: confirmatory holdout
     run: holdout
-    description: final evaluation, PREREG v1.2 (C:/dev_ML-wt-w4/reports/final, code commit 9d51446)
+    description: final evaluation, PREREG v1.2 (reports/final of this repository, code commit 9d51446)
     files:
-      instacart_tuning: C:/dev_ML-wt-w4/reports/final/holdout_instacart_tuning.json
-      instacart_eval: C:/dev_ML-wt-w4/reports/final/holdout_instacart_eval.json
-      complete_journey_tuning: C:/dev_ML-wt-w4/reports/final/holdout_complete_journey_tuning.json
-      complete_journey_eval: C:/dev_ML-wt-w4/reports/final/holdout_complete_journey_eval.json
-      complete_journey_eval_transfer: C:/dev_ML-wt-w4/reports/final/holdout_complete_journey_eval_transfer.json
+      instacart_tuning: reports/final/holdout_instacart_tuning.json
+      instacart_eval: reports/final/holdout_instacart_eval.json
+      complete_journey_tuning: reports/final/holdout_complete_journey_tuning.json
+      complete_journey_eval: reports/final/holdout_complete_journey_eval.json
+      complete_journey_eval_transfer: reports/final/holdout_complete_journey_eval_transfer.json
   w4a:
     stage: development medium
     run: W4a
     description: development run of the pre-registered model (backup kept in the W6 worktree, code commit 7baa6a1)
     files:
-      instacart_tuning: C:/dev_ML-wt-w6/reports/metrics/_w4_backup/medium_instacart_tuning.json
-      instacart_eval: C:/dev_ML-wt-w6/reports/metrics/_w4_backup/medium_instacart_eval.json
-      complete_journey_tuning: C:/dev_ML-wt-w6/reports/metrics/_w4_backup/medium_complete_journey_tuning.json
-      complete_journey_eval: C:/dev_ML-wt-w6/reports/metrics/_w4_backup/medium_complete_journey_eval.json
-      complete_journey_eval_transfer: C:/dev_ML-wt-w6/reports/metrics/_w4_backup/medium_complete_journey_eval_transfer.json
+      instacart_tuning: ${NBR_WORKTREES:-..}/dev_ML-wt-w6/reports/metrics/_w4_backup/medium_instacart_tuning.json
+      instacart_eval: ${NBR_WORKTREES:-..}/dev_ML-wt-w6/reports/metrics/_w4_backup/medium_instacart_eval.json
+      complete_journey_tuning: ${NBR_WORKTREES:-..}/dev_ML-wt-w6/reports/metrics/_w4_backup/medium_complete_journey_tuning.json
+      complete_journey_eval: ${NBR_WORKTREES:-..}/dev_ML-wt-w6/reports/metrics/_w4_backup/medium_complete_journey_eval.json
+      complete_journey_eval_transfer: ${NBR_WORKTREES:-..}/dev_ML-wt-w6/reports/metrics/_w4_backup/medium_complete_journey_eval_transfer.json
   w6:
     stage: development medium
     run: W6
     description: logistic-regression repeat ranker, C grid [0.01, 0.1, 1, 10] (H6, H7)
     files:
-      instacart_tuning: C:/dev_ML-wt-w6/reports/metrics/medium_instacart_tuning.json
-      instacart_eval: C:/dev_ML-wt-w6/reports/metrics/medium_instacart_eval.json
-      complete_journey_tuning: C:/dev_ML-wt-w6/reports/metrics/medium_complete_journey_tuning.json
-      complete_journey_eval: C:/dev_ML-wt-w6/reports/metrics/medium_complete_journey_eval.json
+      instacart_tuning: ${NBR_WORKTREES:-..}/dev_ML-wt-w6/reports/metrics/medium_instacart_tuning.json
+      instacart_eval: ${NBR_WORKTREES:-..}/dev_ML-wt-w6/reports/metrics/medium_instacart_eval.json
+      complete_journey_tuning: ${NBR_WORKTREES:-..}/dev_ML-wt-w6/reports/metrics/medium_complete_journey_tuning.json
+      complete_journey_eval: ${NBR_WORKTREES:-..}/dev_ML-wt-w6/reports/metrics/medium_complete_journey_eval.json
   w7:
     stage: development medium
     run: W7
     description: user-based CF explore list, k grid {20, 50, 100} (H8)
     files:
-      instacart_tuning: C:/dev_ML-wt-w7/reports/metrics/medium_instacart_usercf_tuning.json
-      instacart_eval: C:/dev_ML-wt-w7/reports/metrics/medium_instacart_usercf_eval.json
-      complete_journey_tuning: C:/dev_ML-wt-w7/reports/metrics/medium_complete_journey_usercf_tuning.json
-      complete_journey_eval: C:/dev_ML-wt-w7/reports/metrics/medium_complete_journey_usercf_eval.json
+      instacart_tuning: ${NBR_WORKTREES:-..}/dev_ML-wt-w7/reports/metrics/medium_instacart_usercf_tuning.json
+      instacart_eval: ${NBR_WORKTREES:-..}/dev_ML-wt-w7/reports/metrics/medium_instacart_usercf_eval.json
+      complete_journey_tuning: ${NBR_WORKTREES:-..}/dev_ML-wt-w7/reports/metrics/medium_complete_journey_usercf_tuning.json
+      complete_journey_eval: ${NBR_WORKTREES:-..}/dev_ML-wt-w7/reports/metrics/medium_complete_journey_usercf_eval.json
   w8:
     stage: development medium
     run: W8
     description: integrated pipeline (LR repeat ranker + user-CF explore, slot re-selection), code commit 24ce85f; backup written by W8b before its run
     optional: true            # skipped with a note when the backup folder does not exist yet
     files:
-      instacart_tuning: C:/dev_ML-wt-w8/reports/metrics/_w8_backup/medium_instacart_tuning.json
-      instacart_eval: C:/dev_ML-wt-w8/reports/metrics/_w8_backup/medium_instacart_eval.json
-      complete_journey_tuning: C:/dev_ML-wt-w8/reports/metrics/_w8_backup/medium_complete_journey_tuning.json
-      complete_journey_eval: C:/dev_ML-wt-w8/reports/metrics/_w8_backup/medium_complete_journey_eval.json
+      instacart_tuning: ${NBR_WORKTREES:-..}/dev_ML-wt-w8/reports/metrics/_w8_backup/medium_instacart_tuning.json
+      instacart_eval: ${NBR_WORKTREES:-..}/dev_ML-wt-w8/reports/metrics/_w8_backup/medium_instacart_eval.json
+      complete_journey_tuning: ${NBR_WORKTREES:-..}/dev_ML-wt-w8/reports/metrics/_w8_backup/medium_complete_journey_tuning.json
+      complete_journey_eval: ${NBR_WORKTREES:-..}/dev_ML-wt-w8/reports/metrics/_w8_backup/medium_complete_journey_eval.json
   w8b:
     stage: development medium
     run: W8b
@@ -58,26 +60,26 @@ sources:
     optional: true
     complete_when_commit_is_not: "24ce85f"
     files:
-      instacart_tuning: C:/dev_ML-wt-w8/reports/metrics/medium_instacart_tuning.json
-      instacart_eval: C:/dev_ML-wt-w8/reports/metrics/medium_instacart_eval.json
-      complete_journey_tuning: C:/dev_ML-wt-w8/reports/metrics/medium_complete_journey_tuning.json
-      complete_journey_eval: C:/dev_ML-wt-w8/reports/metrics/medium_complete_journey_eval.json
+      instacart_tuning: ${NBR_WORKTREES:-..}/dev_ML-wt-w8/reports/metrics/medium_instacart_tuning.json
+      instacart_eval: ${NBR_WORKTREES:-..}/dev_ML-wt-w8/reports/metrics/medium_instacart_eval.json
+      complete_journey_tuning: ${NBR_WORKTREES:-..}/dev_ML-wt-w8/reports/metrics/medium_complete_journey_tuning.json
+      complete_journey_eval: ${NBR_WORKTREES:-..}/dev_ML-wt-w8/reports/metrics/medium_complete_journey_eval.json
   w9:
     stage: development medium
     run: W9
     description: R3 logistic ranker with binned cycle features, module screening (H10)
     files:
-      instacart_r3: C:/dev_ML-wt-w9/reports/metrics/medium_instacart_r3.json
-      complete_journey_r3: C:/dev_ML-wt-w9/reports/metrics/medium_complete_journey_r3.json
-      instacart_overdue_csv: C:/dev_ML-wt-w9/reports/tables/medium_instacart_r3_overdue_coef.csv
-      complete_journey_overdue_csv: C:/dev_ML-wt-w9/reports/tables/medium_complete_journey_r3_overdue_coef.csv
-      instacart_coefficients_csv: C:/dev_ML-wt-w9/reports/tables/medium_instacart_r3_coefficients.csv
-      complete_journey_coefficients_csv: C:/dev_ML-wt-w9/reports/tables/medium_complete_journey_r3_coefficients.csv
+      instacart_r3: ${NBR_WORKTREES:-..}/dev_ML-wt-w9/reports/metrics/medium_instacart_r3.json
+      complete_journey_r3: ${NBR_WORKTREES:-..}/dev_ML-wt-w9/reports/metrics/medium_complete_journey_r3.json
+      instacart_overdue_csv: ${NBR_WORKTREES:-..}/dev_ML-wt-w9/reports/tables/medium_instacart_r3_overdue_coef.csv
+      complete_journey_overdue_csv: ${NBR_WORKTREES:-..}/dev_ML-wt-w9/reports/tables/medium_complete_journey_r3_overdue_coef.csv
+      instacart_coefficients_csv: ${NBR_WORKTREES:-..}/dev_ML-wt-w9/reports/tables/medium_instacart_r3_coefficients.csv
+      complete_journey_coefficients_csv: ${NBR_WORKTREES:-..}/dev_ML-wt-w9/reports/tables/medium_complete_journey_r3_coefficients.csv
 
 eda:
   stage: development medium
   run: W5a
-  repo: C:/dev_ML
+  repo: .                     # this repository (the branch is read with git show)
   branch: feat/w5a-eda
   files:
     - reports/eda/table_datasets.csv

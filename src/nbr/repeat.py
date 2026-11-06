@@ -15,7 +15,7 @@ LIST_COLUMNS = ["user_id", "rank", "item_id", "source"]
 
 
 def basket_ages(history: pd.DataFrame) -> pd.DataFrame:
-    """Return [user_id, basket_seq, age] for every distinct user basket.
+    """Return [user_id, basket_seq, age] for every distinct basket of ``history``.
 
     Within a user, distinct basket_seq values sorted ascending get
     age = 0 for the most recent basket, 1 for the one before, and so on.
@@ -28,7 +28,7 @@ def basket_ages(history: pd.DataFrame) -> pd.DataFrame:
 
 
 def repeat_scores(history: pd.DataFrame, gamma: float) -> pd.DataFrame:
-    """Decayed repurchase score for every (user, item) in I(H_u).
+    """Decayed repurchase score for every (user, item) pair of ``history`` (I(H_u)) with decay ``gamma``.
 
     s_rep(u, i) = sum over baskets b of user u containing i of gamma ** age(b).
     An item appearing several times in one basket counts once. With gamma = 1
@@ -47,7 +47,7 @@ def repeat_scores(history: pd.DataFrame, gamma: float) -> pd.DataFrame:
 
 
 def rank_scores(scores: pd.DataFrame, pop: pd.Series, k: int, source: str) -> pd.DataFrame:
-    """Turn a score frame into a list frame with at most k items per user.
+    """Turn ``scores`` ([user_id, item_id, score]) into a list frame with at most ``k`` items per user, tagged ``source``.
 
     Ties are broken by score desc, then pop desc, then item_id asc. Items
     missing from ``pop`` get popularity 0. Output: [user_id, rank, item_id, source].
@@ -66,5 +66,6 @@ def rank_scores(scores: pd.DataFrame, pop: pd.Series, k: int, source: str) -> pd
 
 
 def repeat_list(history: pd.DataFrame, gamma: float, k: int, pop: pd.Series) -> pd.DataFrame:
-    """Top-k repurchase candidates per user (source = "repeat"); may be shorter than k."""
+    """Top-``k`` repurchase candidates per user of ``history`` by repeat_scores(history, gamma), ties by ``pop``
+    (source = "repeat"); may be shorter than k."""
     return rank_scores(repeat_scores(history, gamma), pop, k, "repeat")

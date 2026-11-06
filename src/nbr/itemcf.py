@@ -23,7 +23,7 @@ def _topn_with_ties(block: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray]:
     columns equal to it are added in ascending column order until n are chosen.
     Returns (row_indices, column_indices).
     """
-    rows, cols = block.shape
+    _, cols = block.shape
     if cols <= n:
         row_index, col_index = np.nonzero(block > 0)
         return row_index, col_index
@@ -42,7 +42,7 @@ def _topn_with_ties(block: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 def item_neighbors(history: pd.DataFrame, n_neighbors: int = 20, block_size: int = 256) -> pd.DataFrame:
-    """Top-n cosine neighbours of every item from the binary user x item matrix.
+    """Top-``n_neighbors`` cosine neighbours of every item of ``history`` from the binary user x item matrix.
 
     scipy.sparse.csr_matrix((data, (rows, cols)), shape) builds the sparse
     user x item matrix; cosine(i, j) = |U_i & U_j| / sqrt(|U_i| |U_j|) is
@@ -86,7 +86,7 @@ def item_neighbors(history: pd.DataFrame, n_neighbors: int = 20, block_size: int
 
 
 def cf_scores(history: pd.DataFrame, neighbors: pd.DataFrame, chunk_users: int = 2000) -> pd.DataFrame:
-    """score(u, i) = sum over bought j of sim(j, i), restricted to unbought i.
+    """score(u, i) = sum over the items j bought by u in ``history`` of sim(j, i), restricted to unbought i.
 
     Each bought item j contributes to its stored neighbours i (rows of
     ``neighbors`` with item_id = j, neighbor_id = i); candidates are items
@@ -114,7 +114,8 @@ def cf_scores(history: pd.DataFrame, neighbors: pd.DataFrame, chunk_users: int =
 
 
 def cf_list(history: pd.DataFrame, neighbors: pd.DataFrame, k: int, pop: pd.Series) -> pd.DataFrame:
-    """Top-k flat item-CF list per user (source = "itemcf"); ties: score desc, pop desc, item_id asc."""
+    """Top-k flat item-CF list per user of ``history`` from cf_scores(history, neighbors) (source = "itemcf");
+    ties: score desc, pop desc, item_id asc."""
     if k < 1:
         raise ValueError(f"k must be >= 1, got {k}")
     scores = cf_scores(history, neighbors)

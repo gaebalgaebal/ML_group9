@@ -60,7 +60,8 @@ def _catalog(history: pd.DataFrame, level: str) -> pd.DataFrame:
 def category_profile(
     history: pd.DataFrame, gamma_c: float, alpha: float, level: str = "L2"
 ) -> tuple[pd.DataFrame, pd.Series]:
-    """Smoothed, decayed category profile theta_u(c) and the population share p(c).
+    """Smoothed, decayed category profile theta_u(c) of every user of ``history`` and the population share p(c);
+    categories are the column ``level``.
 
     theta_u(c) = (sum_b gamma_c^age(b) n_b(c) + alpha p(c)) / (sum_b gamma_c^age(b) n_b + alpha)
     where n_b(c) is the number of distinct items of category c in basket b and
@@ -153,7 +154,8 @@ def _unbought_top(bought: pd.DataFrame, pairs: pd.DataFrame, k: int) -> pd.DataF
 def explore_list(
     history: pd.DataFrame, k: int, gamma_c: float, alpha: float, level: str = "L2"
 ) -> pd.DataFrame:
-    """Exact top-k explore list per user (source = "explore") over items outside I(H_u).
+    """Exact top-k explore list per user (source = "explore") over items outside I(H_u); ``gamma_c`` and ``alpha``
+    parametrise category_profile and ``level`` is the category column.
 
     Score (PREREG v1.1): s_exp(u, i) = theta_u(c) * pop(i) / pop(c), with
     pop(c) = sum of pop over all items of c. It is computed in the equivalent
@@ -222,7 +224,7 @@ def category_ranking(theta: pd.DataFrame, k: int) -> pd.DataFrame:
 
 
 def population_category_ranking(p_c: pd.Series, users: Iterable[str], k: int) -> pd.DataFrame:
-    """Top-k categories by p(c) desc, then category asc, replicated for every user."""
+    """Top-k categories of ``p_c`` (category -> share) by p desc, then category asc, replicated for every user in ``users``."""
     if k < 1:
         raise ValueError(f"k must be >= 1, got {k}")
     top = p_c.rename("p").rename_axis("category").reset_index()
@@ -241,7 +243,8 @@ def population_category_ranking(p_c: pd.Series, users: Iterable[str], k: int) ->
 def explore_list_cf(
     history: pd.DataFrame, cf: pd.DataFrame, k: int, gamma_c: float, alpha: float, level: str = "L2"
 ) -> pd.DataFrame:
-    """Explore list (source = "explore_cf") using item-CF scores inside each category.
+    """Top-``k`` explore list per user of ``history`` (source = "explore_cf") using item-CF scores inside each
+    ``level`` category; ``gamma_c`` and ``alpha`` parametrise category_profile.
 
     s(u, i) = theta_u(c) * cf(u, i) / sum_{j in c, cf(u, j) > 0} cf(u, j), over
     unbought items with cf(u, i) > 0 (``cf`` is the score frame of

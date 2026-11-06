@@ -33,7 +33,7 @@ def _topk_lists(lists: pd.DataFrame, k: int) -> pd.Series:
 
 
 def per_user_recall(lists: pd.DataFrame, target: pd.DataFrame, k: int) -> pd.Series:
-    """Recall@k = |L_u(k) & T_u| / |T_u|; users without a list score 0."""
+    """Recall@k = |L_u(k) & T_u| / |T_u| per user of ``target``, L_u(k) = top-k rows of ``lists``; users without a list score 0."""
     targets = _target_sets(target)
     ranked = _topk_lists(lists, k)
     values = []
@@ -44,7 +44,7 @@ def per_user_recall(lists: pd.DataFrame, target: pd.DataFrame, k: int) -> pd.Ser
 
 
 def per_user_ndcg(lists: pd.DataFrame, target: pd.DataFrame, k: int) -> pd.Series:
-    """NDCG@k with binary relevance; IDCG uses min(|T_u|, k) ideal hits."""
+    """NDCG@k of ``lists`` against ``target`` with binary relevance; IDCG uses min(|T_u|, k) ideal hits."""
     targets = _target_sets(target)
     ranked = _topk_lists(lists, k)
     discounts = 1.0 / np.log2(np.arange(2, k + 2))  # position r (1-based) -> 1/log2(r+1)
@@ -89,7 +89,7 @@ def paired_bootstrap(
     levels: list[float],
     chunk_size: int = 200,
 ) -> dict[str, Any]:
-    """Percentile bootstrap CI of mean(b) - mean(a) over users (resampled with replacement).
+    """Percentile bootstrap CI of mean(b) - mean(a) over users: ``n`` resamples with replacement, one CI per level in ``levels``.
 
     ``a`` and ``b`` must share the same index set. Resamples are drawn in
     chunks of ``chunk_size`` replicates to bound memory. Uses

@@ -28,7 +28,7 @@ def decay_column(gamma: float) -> str:
 
 
 def feature_names(decay_gammas: Sequence[float] = DEFAULT_DECAY_GAMMAS) -> list[str]:
-    """Feature columns of ``repeat_features`` in output order."""
+    """Feature columns of ``repeat_features`` in output order, one dec_g column per gamma in ``decay_gammas``."""
     return [decay_column(g) for g in decay_gammas] + [
         "recency", "mean_gap", "once", "overdue", "item_repeat_rate", "log_pop",
         "user_repeat_rate", "log_hist_len", "share",
@@ -38,7 +38,7 @@ def feature_names(decay_gammas: Sequence[float] = DEFAULT_DECAY_GAMMAS) -> list[
 def repeat_features(
     history: pd.DataFrame, decay_gammas: Sequence[float] = DEFAULT_DECAY_GAMMAS
 ) -> pd.DataFrame:
-    """One row per (user_id, item_id) pair in the history with float64 features.
+    """One row per (user_id, item_id) pair in ``history`` with float64 features (one dec_g column per gamma in ``decay_gammas``).
 
     Columns (after the keys user_id, item_id):
       dec_g{gamma}      sum over baskets containing the item of gamma ** age (gamma = 1 -> basket count)

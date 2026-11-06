@@ -1,5 +1,7 @@
 """R3 module screening: binned cycle features vs the R2 logistic repeat ranker (W9, H10).
 
+Module screening entry point (stand-alone; not run by ``python -m nbr``):
+
     python -m nbr.r3_eval --profile P --dataset D [--gamma-dir DIR] [--r3-config FILE]
 
 Development profiles only (sample, medium): a profile with role == "final" is
@@ -11,7 +13,8 @@ refused. Steps:
               on the validation users (ties -> smaller C); both are refit on the whole
               fit split with their C*.
   eval split  k = 10 repeat lists from the eval history: R1 = repeat_star with gamma*
-              read from <gamma-dir>/<profile>_<dataset>_tuning.json (W4, read-only),
+              read from <gamma-dir>/<profile>_<dataset>_tuning.json (read-only; default
+              NBR_TUNING_DIR or reports/metrics of this repository, nbr.config.resolve_tuning_dir),
               R2 = repeat_lr (re-fit), R3 = repeat_r3. Paired bootstrap of repeat
               Recall@10 over users with >= 1 repeat target item: H10 = R3 vs R2,
               auxiliary R3 vs R1 and R2 vs R1 (W6 H6 check), and the three per
@@ -39,7 +42,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from nbr.config import CONFIG_DIR, load_config
+from nbr.config import CONFIG_DIR, load_config, resolve_tuning_dir
 from nbr.features import DEFAULT_DECAY_GAMMAS
 from nbr.features_cycle import BIN_GROUPS, ONCE_COLUMN, bin_columns, bin_edges, bin_labels, cycle_feature_names, cycle_features
 from nbr.io import write_json
@@ -53,8 +56,6 @@ K = 10
 R1_SOURCE = "repeat_star"
 R3_SOURCE = "repeat_r3"
 R3_CONFIG_PATH = CONFIG_DIR / "r3.yaml"
-# gamma* is taken read-only from the W4 tuning files (never recomputed here).
-DEFAULT_GAMMA_DIR = Path(r"C:\dev_ML-wt-w4\reports\metrics")
 BOOTSTRAP = {"n": 1000, "seed": 42, "levels": [0.95, 0.99375]}
 HYPOTHESES = {  # name -> (comparator list, model list)
     "H10_repeat_recall": (R2_SOURCE, R3_SOURCE),
@@ -68,7 +69,7 @@ BIN_KEYS = tuple(key for _, key, _ in BIN_GROUPS)
 # configuration and inputs
 # ---------------------------------------------------------------------------
 def load_r3_config(path: Path = R3_CONFIG_PATH) -> dict[str, Any]:
-    """The "r3" mapping of configs/r3.yaml (yaml.safe_load: plain YAML -> dict)."""
+    """The "r3" mapping of the YAML file at ``path`` (configs/r3.yaml; yaml.safe_load: plain YAML -> dict)."""
     with open(path, encoding="utf-8") as handle:
         loaded = yaml.safe_load(handle)
     cfg = dict(loaded["r3"])
@@ -77,11 +78,12 @@ def load_r3_config(path: Path = R3_CONFIG_PATH) -> dict[str, Any]:
     return cfg
 
 
-def load_gamma_star(profile: str, dataset: str, gamma_dir: Path = DEFAULT_GAMMA_DIR) -> tuple[float, Path]:
-    """(gamma*, path) from <gamma_dir>/<profile>_<dataset>_tuning.json; missing file -> FileNotFoundError."""
+def load_gamma_star(profile: str, dataset: str, gamma_dir: Path) -> tuple[float, Path]:
+    """(gamma*, path) of ``profile`` / ``dataset`` from <gamma_dir>/<profile>_<dataset>_tuning.json (read-only, never
+    recomputed); missing file -> FileNotFoundError."""
     path = Path(gamma_dir) / f"{profile}_{dataset}_tuning.json"
     if not path.exists():
-        raise FileNotFoundError(f"gamma* source not found: {path} (W4 tuning file required, not recomputed)")
+        raise FileNotFoundError(f"gamma* source not found: {path} (tuning file of `python -m nbr tune` required, not recomputed)")
     with open(path, encoding="utf-8") as handle:
         document = json.load(handle)
     return float(document["selections"]["gamma"]), path
@@ -96,7 +98,8 @@ def build_training_r3(
     cfg: dict[str, Any],
     decay_gammas: Sequence[float] = DEFAULT_DECAY_GAMMAS,
 ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
-    """R3 features X (MultiIndex (user_id, item_id)), labels y, groups (user_id): same rows as build_training."""
+    """R3 features X of ``fit_history`` (cycle_features with the bins of ``cfg`` and ``decay_gammas``; MultiIndex
+    (user_id, item_id)), labels y from ``fit_target``, groups (user_id): same rows as build_training."""
     features = cycle_features(fit_history, cfg, decay_gammas)
     keys = pd.MultiIndex.from_frame(features[PAIR_KEY])
     positives = pd.MultiIndex.from_frame(fit_target[PAIR_KEY].drop_duplicates())
@@ -117,7 +120,8 @@ def fit_r2_r3(
     decay_gammas: Sequence[float] = DEFAULT_DECAY_GAMMAS,
     k: int = K,
 ) -> dict[str, Any]:
-    """Fit R2 (repeat_features) and R3 (cycle_features) with identical rows, labels, C grid and user split.
+    """Fit R2 (repeat_features) and R3 (cycle_features) on the fit split ``history`` / ``target`` with identical rows,
+    labels, C grid and user split (``cfg``: C, val_fraction, seed, max_iter; validation repeat Recall@``k``).
 
     Returns {"r2": bundle, "r3": bundle, "C_grid", "timing_seconds"}; each bundle is the
     nbr.lr_repeat.fit_select result plus decay_gammas (R3 also carries "bins").
@@ -158,7 +162,8 @@ def r3_scores(history: pd.DataFrame, bundle: dict[str, Any]) -> pd.DataFrame:
 
 
 def r3_list(history: pd.DataFrame, bundle: dict[str, Any], k: int, pop: pd.Series) -> pd.DataFrame:
-    """Top-k repurchase candidates per user ranked by R3 (source = "repeat_r3"), contract tie rule."""
+    """Top-``k`` repurchase candidates per user of ``history`` ranked by the R3 ``bundle``, ties by ``pop``
+    (source = "repeat_r3", contract tie rule)."""
     return rank_scores(r3_scores(history, bundle), pop, k, R3_SOURCE)
 
 
@@ -166,7 +171,8 @@ def r3_list(history: pd.DataFrame, bundle: dict[str, Any], k: int, pop: pd.Serie
 # hypotheses
 # ---------------------------------------------------------------------------
 def compare(a: pd.Series, b: pd.Series, comparator: str, model: str, bootstrap: dict[str, Any] = BOOTSTRAP) -> dict[str, Any]:
-    """paired_bootstrap(comparator a, model b): diff = mean(b) - mean(a) with CI and PREREG decision wording."""
+    """paired_bootstrap(comparator a, model b) with the ``bootstrap`` settings (n, seed, levels): diff = mean(b) - mean(a)
+    with CI and PREREG decision wording; ``comparator`` / ``model`` are the list names recorded."""
     levels = [float(level) for level in bootstrap["levels"]]
     result = paired_bootstrap(a, b, int(bootstrap["n"]), int(bootstrap["seed"]), levels)
     return {
@@ -187,7 +193,8 @@ def compare(a: pd.Series, b: pd.Series, comparator: str, model: str, bootstrap: 
 # interpretation: coefficient tables and the overdue-bin figure
 # ---------------------------------------------------------------------------
 def coefficient_table(r3: dict[str, Any], r2: dict[str, Any] | None = None) -> pd.DataFrame:
-    """All standardized R3 coefficients with the training mean/std of each column (R2 coefficient where shared).
+    """All standardized coefficients of the R3 bundle ``r3`` with the training mean/std of each column (coefficient of
+    the R2 bundle ``r2`` where the feature is shared).
 
     scaler.mean_ / scaler.scale_ are the per-column mean and standard deviation that
     StandardScaler subtracted and divided by, so coef / scale is the log-odds effect
@@ -212,7 +219,7 @@ def coefficient_table(r3: dict[str, Any], r2: dict[str, Any] | None = None) -> p
 
 
 def overdue_table(r3: dict[str, Any]) -> pd.DataFrame:
-    """Coefficient per overdue bin: the reference bin (0 by construction), the ob_* dummies, and ob_once.
+    """Coefficient of the R3 bundle ``r3`` per overdue bin: the reference bin (0 by construction), the ob_* dummies, and ob_once.
 
     effect_log_odds = coef_std / train_std is the log-odds shift of a pair in the bin relative to
     the reference bin [edges[0], edges[1]) with every other feature held fixed.
@@ -239,7 +246,8 @@ def overdue_table(r3: dict[str, Any]) -> pd.DataFrame:
 
 
 def plot_overdue(table: pd.DataFrame, path: Path, title: str) -> Path:
-    """Bar chart of effect_log_odds per overdue bin (English labels), written as PNG with matplotlib (Agg)."""
+    """Bar chart of effect_log_odds per overdue bin of ``table`` (overdue_table) titled ``title``, written as PNG to
+    ``path`` with matplotlib (Agg)."""
     import matplotlib
 
     matplotlib.use("Agg")  # file-only backend; no display needed
@@ -278,6 +286,7 @@ def plot_overdue(table: pd.DataFrame, path: Path, title: str) -> Path:
 # artifacts and process information
 # ---------------------------------------------------------------------------
 def artifact_path(config: dict[str, Any], dataset: str) -> Path:
+    """artifacts/<profile>/<dataset>_r3.joblib under the repo_root of ``config``."""
     return Path(config["repo_root"]) / "artifacts" / str(config["profile"]) / f"{dataset}_r3.joblib"
 
 
@@ -287,7 +296,8 @@ def _stored(bundle: dict[str, Any]) -> dict[str, Any]:
 
 
 def save_models(fitted: dict[str, Any], config: dict[str, Any], dataset: str) -> tuple[Path, str]:
-    """joblib.dump (pickle-based) of the R3 bundle with the R2 re-fit under "r2_refit"; returns (path, sha256)."""
+    """joblib.dump (pickle-based) of ``fitted["r3"]`` with ``fitted["r2"]`` under "r2_refit" to
+    artifact_path(config, dataset); returns (path, sha256)."""
     path = artifact_path(config, dataset)
     path.parent.mkdir(parents=True, exist_ok=True)
     stored = _stored(fitted["r3"])
@@ -297,7 +307,8 @@ def save_models(fitted: dict[str, Any], config: dict[str, Any], dataset: str) ->
 
 
 def load_r3(config: dict[str, Any], dataset: str) -> dict[str, Any]:
-    """Load the bundle written by save_models (artifacts/<profile>/<dataset>_r3.joblib)."""
+    """Load the bundle of ``dataset`` written by save_models (artifacts/<profile>/<dataset>_r3.joblib under
+    the repo_root of ``config``)."""
     path = artifact_path(config, dataset)
     if not path.exists():
         raise FileNotFoundError(f"missing R3 artifact {path}")
@@ -358,8 +369,12 @@ def _validation_rows(bundle: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def run(config: dict[str, Any], cfg: dict[str, Any], dataset: str, gamma_dir: Path = DEFAULT_GAMMA_DIR) -> dict[str, Any]:
-    """Fit R2/R3 on the fit split, evaluate R1/R2/R3 on the eval split, write figure/tables/model; return the document."""
+def run(config: dict[str, Any], cfg: dict[str, Any], dataset: str, gamma_dir: Path | None = None) -> dict[str, Any]:
+    """Fit R2/R3 (settings ``cfg``) on the fit split of ``dataset`` under ``config``, evaluate R1/R2/R3 on the eval
+    split, write figure/tables/model; return the document.
+
+    ``gamma_dir`` holds the tuning JSON with gamma* (default: nbr.config.resolve_tuning_dir).
+    """
     if config.get("role") == "final":
         raise PermissionError("r3_eval is a development tool: holdout (role == 'final') profiles are not evaluated")
     gammas = [float(g) for g in config["lr_repeat"]["decay_gammas"]]
@@ -369,6 +384,8 @@ def run(config: dict[str, Any], cfg: dict[str, Any], dataset: str, gamma_dir: Pa
     timings: dict[str, float] = {}
     t_all = time.perf_counter()
 
+    if gamma_dir is None:
+        gamma_dir = resolve_tuning_dir(config)
     gamma_star, gamma_path = load_gamma_star(profile, dataset, gamma_dir)
 
     t0 = time.perf_counter()
@@ -459,20 +476,23 @@ def run(config: dict[str, Any], cfg: dict[str, Any], dataset: str, gamma_dir: Pa
 
 
 def report_path(config: dict[str, Any], dataset: str) -> Path:
+    """reports/metrics/<profile>_<dataset>_r3.json under the repo_root of ``config``."""
     return Path(config["repo_root"]) / "reports" / "metrics" / f"{config['profile']}_{dataset}_r3.json"
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse ``argv`` (default: sys.argv), run the screening and write the JSON report."""
     parser = argparse.ArgumentParser(prog="python -m nbr.r3_eval", description="W9 R3 screening (H10)")
     parser.add_argument("--profile", required=True)
     parser.add_argument("--dataset", required=True)
-    parser.add_argument("--gamma-dir", default=str(DEFAULT_GAMMA_DIR), help="folder with <profile>_<dataset>_tuning.json")
+    parser.add_argument("--gamma-dir", default=None,
+                        help="folder with <profile>_<dataset>_tuning.json (default: NBR_TUNING_DIR or <repo>/reports/metrics)")
     parser.add_argument("--r3-config", default=str(R3_CONFIG_PATH))
     args = parser.parse_args(argv)
     config = load_config(args.profile)
     cfg = load_r3_config(Path(args.r3_config))
     t0 = time.perf_counter()
-    document = run(config, cfg, args.dataset, Path(args.gamma_dir))
+    document = run(config, cfg, args.dataset, Path(args.gamma_dir) if args.gamma_dir else None)
     path = write_json(report_path(config, args.dataset), document, config)
     h10 = document["hypotheses"]["H10_repeat_recall"]
     print(f"r3_eval {args.profile}/{args.dataset}: C*(R2)={document['fit']['r2']['C']} C*(R3)={document['fit']['r3']['C']} "

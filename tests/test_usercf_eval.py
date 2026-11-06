@@ -174,7 +174,7 @@ def test_diagnostics_slot_denominators_and_popularity_ranks():
 
 def test_cli_all_writes_fit_then_eval_with_fixed_selection(frames, config, monkeypatch):
     _save_selections(config)
-    monkeypatch.setattr(runner, "settings", lambda profile: config)
+    monkeypatch.setattr(runner, "settings", lambda profile, tuning_dir=None: config)
     monkeypatch.setattr(runner, "_prepare", lambda *args: frames)
     runner.main(["--profile", "sample", "--dataset", "instacart", "--stage", "all"])
     tuning = json.loads(runner.output_path(config, "instacart", "tuning").read_text(encoding="utf-8"))

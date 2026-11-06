@@ -16,7 +16,7 @@ KEY_COLUMNS = ["user_id", "item_id"]
 
 
 def dataset_dir(config: dict[str, Any], dataset: str) -> Path:
-    """Return <data_dir>/<profile>/<dataset>, honouring complete_journey_profile."""
+    """Return <data_dir>/<profile>/<dataset> from ``config`` (data_dir, profile), honouring complete_journey_profile."""
     profile = config["profile"]
     if dataset == "complete_journey" and config.get("complete_journey_profile"):
         profile = config["complete_journey_profile"]
@@ -24,7 +24,7 @@ def dataset_dir(config: dict[str, Any], dataset: str) -> Path:
 
 
 def load_items(config: dict[str, Any], dataset: str) -> pd.DataFrame:
-    """Load the item catalogue (items.parquet) of ``dataset``."""
+    """Load the item catalogue (items.parquet) of ``dataset`` from dataset_dir(config, dataset)."""
     return pd.read_parquet(dataset_dir(config, dataset) / "items.parquet")
 
 
@@ -35,7 +35,7 @@ def load_split(
     *,
     allow_holdout_eval: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load (history, target) for ``split`` in {"fit", "eval"}.
+    """Load (history, target) of ``dataset`` for ``split`` in {"fit", "eval"} from dataset_dir(config, dataset).
 
     Holdout guard: with role == "final", reading the Instacart eval split is
     refused (PermissionError) unless ``allow_holdout_eval`` is True.
@@ -83,7 +83,7 @@ def attach_levels(
 def split_target(
     history: pd.DataFrame, target: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Split target rows into repeat (item in I(H_u)) and new (item not in I(H_u)).
+    """Split ``target`` rows into repeat (item in I(H_u) of ``history``) and new (item not in I(H_u)).
 
     (user_id, item_id) duplicates are dropped first (first occurrence kept), so
     any extra columns of ``target`` (e.g. L1..L3) are preserved.

@@ -24,7 +24,7 @@ from nbr.data import load_split, split_target
 
 
 def describe_split(history: pd.DataFrame, target: pd.DataFrame) -> dict[str, int]:
-    """Row/user counts for one split, including repeat/new target user counts."""
+    """Row/user counts of one split from its ``history`` and ``target`` frames, including repeat/new target user counts."""
     repeat_target, new_target = split_target(history, target)
     return {
         "users": int(target["user_id"].nunique()),
@@ -36,6 +36,7 @@ def describe_split(history: pd.DataFrame, target: pd.DataFrame) -> dict[str, int
 
 
 def check(profile: str) -> None:
+    """Print row/user counts of every dataset and split of ``profile``; the holdout guard skips the final eval split."""
     config = load_config(profile)
     print(f"profile={profile} role={config.get('role')} data_dir={config['data_dir']}")
     for dataset in config["datasets"]:
@@ -51,6 +52,7 @@ def check(profile: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse ``argv`` (default: sys.argv) and run the check / tune / evaluate command."""
     parser = argparse.ArgumentParser(prog="python -m nbr")
     sub = parser.add_subparsers(dest="command", required=True)
     check_parser = sub.add_parser("check", help="print split statistics per dataset")

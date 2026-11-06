@@ -28,6 +28,8 @@ import argparse
 import hashlib
 import json
 import math
+import os
+import re
 import shutil
 import textwrap
 import subprocess
@@ -43,6 +45,7 @@ import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
+ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 DIFF_TOL = 1e-12
 DPI = 300
 # Palette (one hue per role; stage is also carried by labels/hatching, never by colour alone).
@@ -57,6 +60,7 @@ PRIMARY_USERS = {"H1": "users with repeat target", "H2": "users with new target"
 # provenance helpers
 # ---------------------------------------------------------------------------
 def sha256_bytes(data: bytes) -> str:
+    """Hex SHA-256 of ``data``."""
     return hashlib.sha256(data).hexdigest()
 
 
@@ -84,17 +88,22 @@ class Source:
 
 @dataclass
 class Registry:
+    """Registered input files by key, plus the optional inputs that were skipped (with the reason)."""
+
     sources: dict[str, Source] = field(default_factory=dict)
     skipped: list[dict[str, str]] = field(default_factory=list)
 
     def add(self, source: Source) -> Source:
+        """Register ``source`` under its key and return it."""
         self.sources[source.key] = source
         return source
 
     def get(self, key: str) -> Source | None:
+        """The Source registered under ``key``, or None."""
         return self.sources.get(key)
 
     def runs(self) -> list[str]:
+        """Run names in registration order (holdout, W4a, ...)."""
         seen = []
         for source in self.sources.values():
             if source.run not in seen:
@@ -102,7 +111,20 @@ class Registry:
         return seen
 
 
-def load_source(key: str, path: Path, run: str, stage: str) -> Source:
+def resolve_input(text: str) -> tuple[Path, Path]:
+    """(path to read, path to print) of a registered input: ``${VAR}`` / ``${VAR:-default}`` are expanded from the
+    environment and ``~`` from the home folder; a relative path is taken from the repository root. The printed
+    path is relative to the repository root (no machine-specific prefix in the generated tables)."""
+    expanded = os.path.expanduser(ENV_PATTERN.sub(lambda m: os.environ.get(m.group(1)) or (m.group(2) or ""), text))
+    path = Path(expanded)
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path, Path(os.path.relpath(path, REPO_ROOT))
+
+
+def load_source(key: str, path: Path, run: str, stage: str, label: Path | None = None) -> Source:
+    """Read the file at ``path`` (JSON, CSV or text) into a Source ``key`` of ``run`` / ``stage``; ``label`` is the path
+    recorded in the tables (default: ``path``)."""
     data = path.read_bytes()
     digest = sha256_bytes(data)
     if path.suffix == ".json":
@@ -114,7 +136,7 @@ def load_source(key: str, path: Path, run: str, stage: str) -> Source:
     else:
         doc = data.decode("utf-8")
         commit = ""
-    return Source(key, path, run, stage, digest, commit, doc)
+    return Source(key, label if label is not None else path, run, stage, digest, commit, doc)
 
 
 def git_show(repo: Path, ref: str, rel_path: str) -> bytes:
@@ -124,6 +146,7 @@ def git_show(repo: Path, ref: str, rel_path: str) -> bytes:
 
 
 def git_rev(repo: Path, ref: str) -> str:
+    """Full commit hash of ``ref`` in ``repo`` (`git rev-parse`)."""
     return subprocess.run(["git", "-C", str(repo), "rev-parse", ref], capture_output=True, text=True, check=True).stdout.strip()
 
 
@@ -131,14 +154,16 @@ def build_registry(cfg: dict[str, Any]) -> Registry:
     """Load every registered file; apply the optional / W8b completion rules; record skips."""
     registry = Registry()
     for group, spec in cfg["sources"].items():
-        files = {name: Path(p) for name, p in spec["files"].items()}
+        resolved = {name: resolve_input(str(p)) for name, p in spec["files"].items()}
+        files = {name: path for name, (path, _) in resolved.items()}
         missing = [name for name, p in files.items() if not p.exists()]
         if missing:
             if spec.get("optional"):
                 registry.skipped.append({"run": spec["run"], "reason": f"files missing: {', '.join(missing)}"})
                 continue
             raise FileNotFoundError(f"{group}: required input missing: {missing}")
-        loaded = {name: load_source(f"{group}/{name}", p, spec["run"], spec["stage"]) for name, p in files.items()}
+        loaded = {name: load_source(f"{group}/{name}", p, spec["run"], spec["stage"], resolved[name][1])
+                  for name, p in files.items()}
         stale = spec.get("complete_when_commit_is_not")
         if stale:
             stale_files = [name for name, s in loaded.items() if s.git_commit.startswith(stale) or not s.git_commit]
@@ -149,7 +174,7 @@ def build_registry(cfg: dict[str, Any]) -> Registry:
             registry.add(source)
     eda = cfg.get("eda")
     if eda:
-        repo, branch = Path(eda["repo"]), eda["branch"]
+        repo, branch = resolve_input(str(eda["repo"]))[0], eda["branch"]
         commit = git_rev(repo, branch)
         for rel in eda["files"]:
             data = git_show(repo, branch, rel)
@@ -160,7 +185,8 @@ def build_registry(cfg: dict[str, Any]) -> Registry:
 
 
 def prov(source: Source) -> dict[str, str]:
-    return {"source_file": str(source.path), "source_sha256": source.sha256, "git_commit": source.git_commit}
+    """Provenance columns (source_file, source_sha256, git_commit) of ``source``."""
+    return {"source_file": source.path.as_posix(), "source_sha256": source.sha256, "git_commit": source.git_commit}
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +194,9 @@ def prov(source: Source) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 def entry_row(entry: dict[str, Any], *, id_: str, hypothesis: str, source: Source, dataset: str, transfer_from: str | None,
               users: str | None = None) -> dict[str, Any]:
+    """One T1 row from a comparison ``entry`` of an eval JSON: ``id_`` (entry key), ``hypothesis`` label, provenance of
+    ``source``, ``dataset``, ``transfer_from`` and the ``users`` label (fallback when the entry carries none).
+    """
     ci = entry.get("ci", {})
     ci95 = ci.get("0.95", ci.get(0.95, [np.nan, np.nan]))
     ci99 = ci.get("0.99375", ci.get(0.99375, [np.nan, np.nan]))
@@ -183,6 +212,7 @@ def entry_row(entry: dict[str, Any], *, id_: str, hypothesis: str, source: Sourc
 
 
 def hypothesis_of(key: str) -> str:
+    """"H<n>" when the entry ``key`` starts with a hypothesis id, else "secondary"."""
     head = key.split("_")[0]
     return head if head[0] == "H" and head[1:].isdigit() else "secondary"
 
@@ -216,6 +246,7 @@ def eval_rows(source: Source) -> list[dict[str, Any]]:
 
 
 def eval_sources(registry: Registry, run: str | None = None) -> list[Source]:
+    """Eval JSON sources of ``registry`` (optionally only those of ``run``) in registration order."""
     out = []
     for source in registry.sources.values():
         if source.path.suffix != ".json" or (run and source.run != run):
@@ -276,6 +307,7 @@ def flag_current(frame: pd.DataFrame, cfg: dict[str, Any]) -> pd.DataFrame:
 
 
 def table_t1(registry: Registry, cfg: dict[str, Any]) -> pd.DataFrame:
+    """T1 master hypotheses table from every eval source of ``registry``, with the current / superseded flags of ``cfg``."""
     rows = []
     for source in eval_sources(registry):
         rows.extend(eval_rows(source))
@@ -302,6 +334,7 @@ def _sel_row(source: Source, dataset: str, parameter: str, value: Any, edge: Any
 
 
 def table_t2(registry: Registry) -> pd.DataFrame:
+    """T2 selected values (long format) from every tuning source of ``registry``."""
     rows = []
     for source in registry.sources.values():
         if source.path.suffix != ".json":
@@ -339,11 +372,11 @@ def table_t2(registry: Registry) -> pd.DataFrame:
                 rows.append(_sel_row(source, dataset, f"C ({'repeat_lr re-fit' if name == 'r2' else 'repeat_r3'})", block["C"],
                                      block["at_grid_edge"], block["C_grid"], "chosen by validation repeat Recall@10; ties -> smaller C"))
             rows.append(_sel_row(source, dataset, "gamma (R1 comparator, read from W4 tuning)", doc["gamma_star"]["value"], "", None,
-                                 doc["gamma_star"]["source"]))
+                                 f"read from {Path(doc['gamma_star']['source']).name}"))  # file name only: no machine-specific path
         elif doc.get("split") == "eval" and doc.get("transfer_from"):  # transfer evaluations: selections applied
             for name in ("gamma", "gamma_c", "alpha", "r"):
                 rows.append(_sel_row(source, dataset, f"{name} (transfer from {doc['transfer_from']})", doc["selections"][name], "", None,
-                                     doc["selections"].get("source", "")))
+                                     f"read from {Path(doc['selections']['source']).name}" if doc["selections"].get("source") else ""))
     frame = pd.DataFrame(rows)
     frame["_s"], frame["_d"] = frame["stage"].map(STAGE_ORDER), frame["dataset"].map(DATASET_ORDER)
     return frame.sort_values(["_s", "run", "_d", "parameter"], kind="mergesort").drop(columns=["_s", "_d"]).reset_index(drop=True)
@@ -386,6 +419,9 @@ REPEAT_MODULES = [
 
 
 def table_t3(registry: Registry, dev_run: str | None) -> pd.DataFrame:
+    """T3 module screening: explore modules by new-item Recall@10 and repeat modules by repeat Recall@10; development
+    rows come from ``dev_run``.
+    """
     rows = []
     for source in eval_sources(registry):
         doc = source.doc
@@ -419,6 +455,9 @@ def table_t3(registry: Registry, dev_run: str | None) -> pd.DataFrame:
 
 
 def table_t4(registry: Registry, cfg: dict[str, Any], dev_run: str | None) -> pd.DataFrame:
+    """T4 Recall@10 / NDCG@10 of the final lists and baselines per dataset (combination labels of ``cfg``; development
+    rows from ``dev_run``).
+    """
     combos = cfg["combinations"]
     by_list = {spec["list"]: (label, spec) for label, spec in combos.items() if spec["list"]}
     rows = []
@@ -462,6 +501,7 @@ T5_KEYS = ["H1_repeat_recall", "H3_ndcg", "H3_recall", "H6_repeat_recall", "H7_n
 
 
 def table_t5(registry: Registry, dev_run: str | None) -> pd.DataFrame:
+    """T5 per history-length bin differences with 95% CIs (development rows from ``dev_run``)."""
     rows = []
     for source in eval_sources(registry):
         doc = source.doc
@@ -497,6 +537,7 @@ def table_t5(registry: Registry, dev_run: str | None) -> pd.DataFrame:
 
 
 def table_t6(cfg: dict[str, Any], t1: pd.DataFrame) -> pd.DataFrame:
+    """T6 module and combination catalogue from ``cfg`` (modules, combinations) with the basis rows of ``t1``."""
     rows = []
     entries = list(cfg["modules"])
     for label, spec in cfg["combinations"].items():
@@ -514,6 +555,7 @@ def table_t6(cfg: dict[str, Any], t1: pd.DataFrame) -> pd.DataFrame:
 
 
 def table_t7(registry: Registry) -> pd.DataFrame:
+    """T7 dataset summary copied from the EDA table registered in ``registry`` (key eda/table_datasets)."""
     source = registry.get("eda/table_datasets")
     frame = source.doc.copy()
     frame.insert(0, "stage", source.stage)
@@ -539,6 +581,7 @@ def _fmt(value: Any) -> str:
 
 
 def to_markdown(frame: pd.DataFrame, title: str, note: str = "", hide: tuple[str, ...] = ("source_sha256",)) -> str:
+    """Markdown table of ``frame`` headed by ``title`` and ``note``; the columns in ``hide`` are left out."""
     columns = [c for c in frame.columns if c not in hide]
     lines = [f"# {title}", ""]
     if note:
@@ -553,6 +596,7 @@ def to_markdown(frame: pd.DataFrame, title: str, note: str = "", hide: tuple[str
 
 
 def write_table(frame: pd.DataFrame, out_dir: Path, name: str, title: str, note: str = "") -> dict[str, Any]:
+    """Write ``frame`` as <out_dir>/<name>.csv and .md (``title``, ``note``); returns the table record (name, rows, path)."""
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path, md_path = out_dir / f"{name}.csv", out_dir / f"{name}.md"
     frame.to_csv(csv_path, index=False, lineterminator="\n", encoding="utf-8")
@@ -627,6 +671,7 @@ def _forest(frame: pd.DataFrame, path: Path, title: str, footer: str, color: str
 
 
 def figure_f1(t1: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any]:
+    """F1 holdout forest plot (H1-H5) from ``t1`` into ``out``, labels from ``cfg``; returns the figure record."""
     keep = t1[(t1["stage"] == "confirmatory holdout") & (t1["transfer_from"] == "") & t1["hypothesis"].isin(["H1", "H2", "H3", "H4", "H5"])].copy()
     keep["stage_label"] = keep["dataset"].map({"instacart": "holdout", "complete_journey": "refit on medium data"})
     keep["note"] = np.where((keep["hypothesis"] == "H5") & (keep["dataset"] == "complete_journey"), "H5 pre-registered for Instacart only", "")
@@ -645,6 +690,7 @@ def figure_f1(t1: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any
 
 
 def figure_f2(t1: pd.DataFrame, out: Path, cfg: dict[str, Any], dev_run: str | None) -> dict[str, Any]:
+    """F2 development forest plot (H6-H10) from the ``dev_run`` rows of ``t1`` into ``out``; returns the figure record."""
     keep = t1[(t1["stage"] == "development medium") & t1["hypothesis"].isin(["H6", "H7", "H8", "H9", "H10"])
               & t1["run"].isin([dev_run, "W9"])].copy()
     keep = keep[~((keep["run"] == "W9") & (keep["hypothesis"] != "H10"))]
@@ -662,6 +708,7 @@ def figure_f2(t1: pd.DataFrame, out: Path, cfg: dict[str, Any], dev_run: str | N
 
 
 def figure_f3(t3: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any]:
+    """F3 module screening means from ``t3`` into ``out`` (labels from ``cfg``); returns the figure record."""
     plt = _plt()
     path = out / "F3_module_screening.png"
     t3.to_csv(path.with_suffix(".csv"), index=False, lineterminator="\n")
@@ -702,6 +749,7 @@ def figure_f3(t3: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any
 
 
 def figure_f4(registry: Registry, out: Path, cfg: dict[str, Any], dev_run: str | None) -> dict[str, Any] | None:
+    """F4 NDCG@10 by r for C2, C3, C3b from the ``dev_run`` tuning sources of ``registry`` into ``out``; None when absent."""
     rows = []
     by_list = {spec["list"]: label for label, spec in cfg["combinations"].items() if spec["list"]}
     for source in registry.sources.values():
@@ -750,6 +798,7 @@ def figure_f4(registry: Registry, out: Path, cfg: dict[str, Any], dev_run: str |
 
 
 def figure_f5(t5: pd.DataFrame, out: Path, cfg: dict[str, Any], dev_run: str | None) -> dict[str, Any]:
+    """F5 per-bin differences (H3, H7, H8) from ``t5`` into ``out`` (``dev_run`` rows for H7/H8); returns the figure record."""
     keep = t5[(t5["stage"] == "development medium") & (t5["run"] == dev_run) & t5["id"].isin(["H3_ndcg", "H7_ndcg", "H8_new_recall"])
               & t5["users_n"].gt(0)].copy()
     plt = _plt()
@@ -790,6 +839,7 @@ def figure_f5(t5: pd.DataFrame, out: Path, cfg: dict[str, Any], dev_run: str | N
 
 
 def figure_f6(registry: Registry, out: Path, cfg: dict[str, Any]) -> dict[str, Any]:
+    """F6 W9 overdue-bin log-odds effects from the R3 CSV sources of ``registry`` into ``out``; returns the figure record."""
     rows = []
     for dataset in cfg["dataset_labels"]:
         source = registry.get(f"w9/{dataset}_overdue_csv")
@@ -859,6 +909,9 @@ FIGURE_NOTES = {
 
 def write_results_md(out: Path, registry: Registry, tables: list[dict[str, Any]], figures: list[dict[str, Any]], checks: dict[str, Any],
                      w8b_used: bool, dev_run: str | None, cfg: dict[str, Any]) -> Path:
+    """Write <out>/RESULTS.md: header flags (``w8b_used``, ``dev_run``, combination labels of ``cfg``), the ``tables`` and
+    ``figures`` records, the inputs of ``registry`` and the ``checks``.
+    """
     lines = ["# Consolidated results (W11)", ""]
     lines.append(f"- W8b outputs reflected: **{'yes' if w8b_used else 'no'}**"
                  + ("" if w8b_used else " (W8b not complete at generation time; development figures use run "
@@ -882,7 +935,7 @@ def write_results_md(out: Path, registry: Registry, tables: list[dict[str, Any]]
         lines.append(f"| {f['name']} | {f['points']} | {FIGURE_NOTES[f['name']]} |")
     lines += ["", "## Inputs (read-only)", "", "| key | run | stage | path | git_commit | sha256 |", "| --- | --- | --- | --- | --- | --- |"]
     for source in registry.sources.values():
-        lines.append(f"| {source.key} | {source.run} | {source.stage} | {source.path} | {source.git_commit} | {source.sha256} |")
+        lines.append(f"| {source.key} | {source.run} | {source.stage} | {source.path.as_posix()} | {source.git_commit} | {source.sha256} |")
     if registry.skipped:
         lines += ["", "### Skipped inputs", ""]
         for item in registry.skipped:
@@ -904,6 +957,7 @@ def write_results_md(out: Path, registry: Registry, tables: list[dict[str, Any]]
 # main
 # ---------------------------------------------------------------------------
 def generate(cfg: dict[str, Any], out: Path) -> dict[str, Any]:
+    """Build the registry from ``cfg``, write every table and figure under ``out`` and return the records and checks."""
     registry = build_registry(cfg)
     runs = registry.runs()
     dev_run = next((r for r in cfg["development_integration_run_preference"] if r in runs), None)
@@ -940,10 +994,14 @@ def generate(cfg: dict[str, Any], out: Path) -> dict[str, Any]:
 
 
 def digests(folder: Path) -> dict[str, str]:
+    """{relative path: sha256} of every file under ``folder``."""
     return {str(p.relative_to(folder)).replace("\\", "/"): sha256_file(p) for p in sorted(folder.rglob("*")) if p.is_file()}
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse ``argv`` (default: sys.argv), generate the results and, with --verify, regenerate into a temporary folder and
+    compare the digests.
+    """
     parser = argparse.ArgumentParser(description="W11 consolidated result tables and figures")
     parser.add_argument("--sources", default=str(SCRIPT_DIR / "results_sources.yaml"))
     parser.add_argument("--out", default=str(REPO_ROOT / "reports" / "results"))

@@ -40,7 +40,7 @@ def _default(obj: Any) -> Any:
 
 
 def write_json(path: str | Path, payload: dict[str, Any], config: dict[str, Any]) -> Path:
-    """Write ``payload`` plus a ``meta`` block (commit, UTC time, profile, versions) as UTF-8 JSON."""
+    """Write ``payload`` plus a ``meta`` block (commit of ``config``'s repo_root, UTC time, profile, versions) to ``path`` as UTF-8 JSON."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     meta = {

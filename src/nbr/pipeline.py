@@ -57,7 +57,7 @@ INTEGRATION_SECONDARY = {"final_star_ucf_vs_final_ndcg": ("final", "final_star_u
 
 
 def run_label(config: dict[str, Any]) -> str:
-    """Role and profile of a run, e.g. "development (medium)"."""
+    """Role and profile of a run from ``config`` ("role", "profile"), e.g. "development (medium)"."""
     return f"{config.get('role')} ({config.get('profile')})"
 
 
@@ -65,7 +65,11 @@ def run_label(config: dict[str, Any]) -> str:
 # data preparation
 # ---------------------------------------------------------------------------
 def prepare(config: dict[str, Any], dataset: str, split: str, *, allow_holdout_eval: bool = False) -> dict[str, Any]:
-    """Load a split, attach L1..L3, split the target, and compute pop from the history."""
+    """Load ``split`` of ``dataset`` under ``config``, attach L1..L3, split the target, compute pop.
+
+    ``allow_holdout_eval`` is passed to nbr.data.load_split (holdout guard). Returns a dict with
+    history, target, repeat_target, new_target and pop (basket popularity of the history).
+    """
     history, target = load_split(config, dataset, split, allow_holdout_eval=allow_holdout_eval)
     items = load_items(config, dataset)
     levels = config["levels"][dataset]
@@ -93,21 +97,21 @@ def _at_edge(value: float, grid: list[float]) -> bool:
 # selection rules (pure functions, testable)
 # ---------------------------------------------------------------------------
 def select_gamma(scores: dict[float, float]) -> float:
-    """argmax repeat Recall@10; ties -> gamma closest to 1."""
+    """argmax of ``scores`` (gamma -> repeat Recall@10); ties -> gamma closest to 1."""
     best = max(scores.values())
     tied = [g for g, s in scores.items() if _isclose(s, best)]
     return min(tied, key=lambda g: (abs(1.0 - g), -g))
 
 
 def select_explore(scores: dict[tuple[float, float], float]) -> tuple[float, float]:
-    """argmax new-item Recall@10 over (gamma_c, alpha); ties -> larger alpha, then larger gamma_c."""
+    """argmax of ``scores`` ((gamma_c, alpha) -> new-item Recall@10); ties -> larger alpha, then larger gamma_c."""
     best = max(scores.values())
     tied = [key for key, s in scores.items() if _isclose(s, best)]
     return max(tied, key=lambda key: (key[1], key[0]))
 
 
 def select_r(scores: dict[int, float]) -> int:
-    """argmax final-list NDCG@10; ties -> larger r."""
+    """argmax of ``scores`` (r -> final-list NDCG@10); ties -> larger r."""
     best = max(scores.values())
     return max(r for r, s in scores.items() if _isclose(s, best))
 
@@ -116,7 +120,7 @@ def select_r(scores: dict[int, float]) -> int:
 # tuning
 # ---------------------------------------------------------------------------
 def tune(config: dict[str, Any], dataset: str) -> dict[str, Any]:
-    """Run the three-stage selection on the fit split and return the tuning document."""
+    """Three-stage selection, W6 LR fit and W8 integration on the fit split of ``dataset`` under ``config``; returns the tuning document."""
     timings: dict[str, float] = {}
     t0 = time.perf_counter()
     data = prepare(config, dataset, "fit")
@@ -214,7 +218,9 @@ def tune_integration(
 ) -> dict[str, Any]:
     """Select (k, weighting) of user-CF by fit new-item Recall@10 and r of each combination by NDCG@10.
 
-    ``lists`` holds the fit-split repeat_star and explore_star lists. For the
+    ``history`` / ``target`` are the fit split, ``pop`` its basket popularity, ``lr_bundle`` the
+    fit_select result of tune_lr_repeat and ``config`` supplies the usercf, integration.r and
+    lr_repeat.C grids. ``lists`` holds the fit-split repeat_star and explore_star lists. For the
     combinations that use the LR ranker, repeat_lr is scored with the C* model
     fitted on the LR training users only and r is chosen on the LR validation
     users (same split and seed as fit_select); the other combination uses all
@@ -274,7 +280,7 @@ def tune_integration(
 
 
 def load_integration_selections(config: dict[str, Any], dataset: str) -> dict[str, Any]:
-    """Read the W8 selections (k, weighting, C, r per combination) from the tuning JSON."""
+    """Read the W8 selections (k, weighting, C, r per combination) of ``dataset`` from the tuning JSON of ``config``'s profile."""
     path = tuning_path(config, dataset)
     with open(path, encoding="utf-8") as handle:
         document = json.load(handle)
@@ -289,7 +295,8 @@ def load_integration_selections(config: dict[str, Any], dataset: str) -> dict[st
 # W6: logistic-regression repeat ranker (fit split only)
 # ---------------------------------------------------------------------------
 def tune_lr_repeat(history: pd.DataFrame, target: pd.DataFrame, config: dict[str, Any]) -> dict[str, Any]:
-    """Build the training rows from the fit split and select C / refit (nbr.lr_repeat.fit_select)."""
+    """Build the training rows from the fit split (``history``, ``target``) and select C / refit
+    (nbr.lr_repeat.fit_select) with the lr_repeat settings of ``config``."""
     settings = config["lr_repeat"]
     gammas = [float(g) for g in settings["decay_gammas"]]
     t0 = time.perf_counter()
@@ -303,11 +310,12 @@ def tune_lr_repeat(history: pd.DataFrame, target: pd.DataFrame, config: dict[str
 
 
 def lr_artifact_path(config: dict[str, Any], dataset: str) -> Path:
+    """artifacts/<profile>/<dataset>_lr_repeat.joblib under the repo_root of ``config``."""
     return Path(config["repo_root"]) / "artifacts" / str(config["profile"]) / f"{dataset}_lr_repeat.joblib"
 
 
 def sha256_of(path: Path) -> str:
-    """Hex SHA-256 digest of a file (hashlib.sha256 over the bytes, read in 1 MiB blocks)."""
+    """Hex SHA-256 digest of the file at ``path`` (hashlib.sha256 over the bytes, read in 1 MiB blocks)."""
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for block in iter(lambda: handle.read(1 << 20), b""):
@@ -316,7 +324,8 @@ def sha256_of(path: Path) -> str:
 
 
 def save_lr_repeat(bundle: dict[str, Any], config: dict[str, Any], dataset: str) -> dict[str, Any]:
-    """Persist the fitted bundle with joblib.dump (pickle-based) and return the JSON summary."""
+    """Persist the fitted ``bundle`` of ``dataset`` with joblib.dump (pickle-based) at
+    lr_artifact_path(config, dataset) and return the JSON summary."""
     path = lr_artifact_path(config, dataset)
     path.parent.mkdir(parents=True, exist_ok=True)
     stored = {key: bundle[key] for key in ("scaler", "model", "C", "features", "decay_gammas", "coefficients",
@@ -344,7 +353,8 @@ def save_lr_repeat(bundle: dict[str, Any], config: dict[str, Any], dataset: str)
 
 
 def load_lr_repeat(config: dict[str, Any], dataset: str) -> dict[str, Any]:
-    """Load the bundle written by save_lr_repeat (artifacts/<profile>/<dataset>_lr_repeat.joblib)."""
+    """Load the bundle of ``dataset`` written by save_lr_repeat (artifacts/<profile>/<dataset>_lr_repeat.joblib
+    under the repo_root of ``config``)."""
     path = lr_artifact_path(config, dataset)
     if not path.exists():
         raise FileNotFoundError(f"missing lr_repeat artifact {path}; run tune first")
@@ -355,21 +365,24 @@ def load_lr_repeat(config: dict[str, Any], dataset: str) -> dict[str, Any]:
 
 
 def tuning_path(config: dict[str, Any], dataset: str) -> Path:
+    """reports/metrics/<profile>_<dataset>_tuning.json under the repo_root of ``config``."""
     return Path(config["repo_root"]) / "reports" / "metrics" / f"{config['profile']}_{dataset}_tuning.json"
 
 
 def eval_path(config: dict[str, Any], dataset: str, transfer_from: str | None) -> Path:
+    """reports/metrics/<profile>_<dataset>_eval.json (``_eval_transfer.json`` when ``transfer_from`` is set) under the repo_root of ``config``."""
     suffix = "_eval_transfer.json" if transfer_from else "_eval.json"
     return Path(config["repo_root"]) / "reports" / "metrics" / f"{config['profile']}_{dataset}{suffix}"
 
 
 def run_tune(config: dict[str, Any], dataset: str) -> Path:
+    """tune(config, dataset) and write the document to tuning_path(config, dataset); returns the written path."""
     document = tune(config, dataset)
     return write_json(tuning_path(config, dataset), document, config)
 
 
 def load_selections(config: dict[str, Any], dataset: str) -> dict[str, Any]:
-    """Read the selected values from reports/metrics/<profile>_<dataset>_tuning.json."""
+    """Read the selected values of ``dataset`` from reports/metrics/<profile>_<dataset>_tuning.json (profile of ``config``)."""
     path = tuning_path(config, dataset)
     with open(path, encoding="utf-8") as handle:
         document = json.load(handle)
@@ -382,7 +395,7 @@ def load_selections(config: dict[str, Any], dataset: str) -> dict[str, Any]:
 # evaluation
 # ---------------------------------------------------------------------------
 def decision(ci: list[float]) -> str:
-    """PREREG decision wording for a confidence interval of (model - comparator)."""
+    """PREREG decision wording for the confidence interval ``ci`` = [lo, hi] of (model - comparator)."""
     lo, hi = ci
     if lo > 0:
         return "improvement observed"
@@ -420,7 +433,11 @@ def build_lists(
     skip_l3: bool = False,
     peak_memory: dict[str, float | None] | None = None,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, float]]:
-    """All model lists (k = 10) from the eval history; returns (lists, timings).
+    """All model lists (k = 10) from the eval ``history``; returns (lists, timings).
+
+    ``pop`` is the basket popularity of the history, ``selections`` the tuned (gamma, gamma_c,
+    alpha, r), ``config`` supplies the explore level, item-CF neighbour count and user-CF block
+    size, and ``include_itemcf`` adds the item-CF lists (itemcf_flat, explore_cf, final_cf).
 
     ``skip_l3`` (W8b) leaves out the explore_L3 list. ``peak_memory``, when given, receives the
     process peak working set (MiB) after each list.
@@ -487,7 +504,7 @@ def _bin_labels(edges: list[int]) -> list[tuple[str, float, float]]:
     bounds = [0] + edges + [math.inf]
     labels = []
     for lo, hi in zip(bounds[:-1], bounds[1:]):
-        name = f"({lo},{'inf' if math.isinf(hi) else hi}]" if not math.isinf(hi) else f"({lo},inf)"
+        name = f"({lo},inf)" if math.isinf(hi) else f"({lo},{hi}]"
         labels.append((name, lo, hi))
     return labels
 
@@ -497,7 +514,9 @@ def by_history_length(
 ) -> list[dict[str, Any]]:
     """Per history-length bin: user counts and comparator/model means with a 95% CI of the diff.
 
-    ``metrics`` maps a hypothesis name to (comparator, model) per-user Series.
+    ``metrics`` maps a hypothesis name to (comparator, model) per-user Series; ``lengths`` maps
+    user_id to the number of history baskets (history_lengths); ``dataset`` selects HISTORY_BINS
+    and ``config`` the bootstrap settings.
     """
     boot = config["bootstrap"]
     rows = []
@@ -533,7 +552,11 @@ def evaluate(
     integration: dict[str, Any] | None = None,
     skip_l3: bool = False,
 ) -> dict[str, Any]:
-    """Evaluate all models on the eval split with the given (fixed) selections.
+    """Evaluate all models on the eval split of ``dataset`` under ``config`` with the given (fixed) ``selections``.
+
+    ``allow_holdout_eval`` is passed to the holdout guard (CLI --final); ``transfer_from`` is only
+    recorded in the document (the caller loads the selections of that dataset); ``include_itemcf``
+    adds the item-CF lists and H5.
 
     ``skip_l3`` (W8b) leaves out the explore_L3 list and its secondary comparison; the
     document then carries "skipped": ["explore_L3"]. Every other entry is unchanged.
@@ -768,8 +791,13 @@ def run_evaluate(
     include_integration: bool = True,
     skip_l3: bool = False,
 ) -> Path:
-    """Evaluate with the selections (and, if ``include_lr``, the lr_repeat artifact, and if also
-    ``include_integration``, the W8 selections) of ``transfer_from or dataset``."""
+    """Evaluate ``dataset`` with the selections of ``transfer_from or dataset`` and write the eval JSON.
+
+    ``config`` is the profile configuration, ``allow_holdout_eval`` the holdout-guard override
+    (--final); ``include_itemcf`` / ``include_lr`` / ``include_integration`` add the item-CF lists,
+    the lr_repeat artifact (H6, H7) and the W8 selections (H8, H9); ``skip_l3`` leaves out
+    explore_L3. Returns the written path.
+    """
     source = transfer_from or dataset
     selections = load_selections(config, source)
     lr_bundle = load_lr_repeat(config, source) if include_lr else None

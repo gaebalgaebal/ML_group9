@@ -48,3 +48,18 @@ def load_config(profile: str) -> dict[str, Any]:
     config["repo_root"] = REPO_ROOT
     config["data_dir"] = data_dir
     return config
+
+
+def resolve_tuning_dir(config: dict[str, Any], override: str | Path | None = None) -> Path:
+    """Folder of the <profile>_<dataset>_tuning.json files read by the stand-alone runners.
+
+    ``override`` (a CLI argument) wins, then the NBR_TUNING_DIR environment variable, then
+    <repo_root>/reports/metrics of ``config`` (where ``python -m nbr tune`` writes). Paths are
+    used as given (a relative path is relative to the current working directory).
+    """
+    if override:
+        return Path(override)
+    env_dir = os.environ.get("NBR_TUNING_DIR")
+    if env_dir:
+        return Path(env_dir)
+    return Path(config["repo_root"]) / "reports" / "metrics"

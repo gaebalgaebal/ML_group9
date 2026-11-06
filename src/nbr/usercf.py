@@ -25,7 +25,7 @@ def _positive_integer(value: int, name: str) -> None:
 
 
 def user_vectors(history: pd.DataFrame, weighting: str) -> tuple:
-    """Return (labelled CSR U x I, sorted user Index, sorted item Index).
+    """Return (labelled CSR U x I, sorted user Index, sorted item Index) of ``history`` with ``weighting`` "binary" or "log1p".
 
     scipy.sparse.csr_matrix((data, (rows, cols)), shape) stores only observed
     user/item weights. numpy.log1p(x) computes log(1+x) for basket counts.
@@ -57,7 +57,7 @@ def _labels(X: sparse.csr_matrix) -> tuple[pd.Index, pd.Index]:
 
 
 def user_neighbors(X: sparse.csr_matrix, k: int, block_size: int = 256) -> pd.DataFrame:
-    """Top positive cosine neighbours, excluding self; ties use neighbour ID.
+    """Top-``k`` positive cosine neighbours of every row of ``X`` (labelled CSR of user_vectors), excluding self; ties use neighbour ID.
 
     scipy.sparse.diags(diagonals) builds a diagonal row-scaling matrix.
     CSR.multiply(other) multiplies elementwise; sum(axis=1) gives row norms.
@@ -127,7 +127,7 @@ def _score_blocks(history, neighbors, X, block_size):
 
 def ucf_scores(history: pd.DataFrame, neighbors: pd.DataFrame, X: sparse.csr_matrix,
                block_size: int = 256) -> pd.DataFrame:
-    """Sum sim(u,v)*X[v,i] for unseen i, using only supplied history and vectors.
+    """Sum sim(u,v)*X[v,i] over the ``neighbors`` v of u for items i unseen in ``history``, ``block_size`` users at a time.
 
     Intermediates are blocked; this API materializes all returned candidates.
     ucf_list instead ranks each block immediately to keep only k per user.
@@ -156,7 +156,8 @@ def _list_from_vectors(history, neighbors, X, k, pop, block_size=256):
 
 def ucf_list(history: pd.DataFrame, k_neighbors: int, weighting: str, k: int = 10,
              pop: pd.Series | None = None, *, block_size: int = 256) -> pd.DataFrame:
-    """Top-k unseen user-CF items, padded with history-excluding popularity.
+    """Top-``k`` unseen user-CF items per user of ``history`` (``k_neighbors`` cosine neighbours on ``weighting``
+    vectors, scored ``block_size`` users at a time), padded with history-excluding popularity.
 
     If fewer than k distinct unseen catalogue items exist, returns all of them.
     pop defaults to history basket popularity; target is never accepted or read.

@@ -35,7 +35,7 @@ def build_training(
 
     X rows are exactly the (user, item) pairs of ``fit_history``; y[r] = 1 when
     the pair of row r also occurs in ``fit_target``. Targets only define y,
-    never a feature.
+    never a feature. ``decay_gammas`` are the gammas of the dec_g{gamma} features (must contain 1.0).
     """
     features = repeat_features(fit_history, decay_gammas)
     keys = pd.MultiIndex.from_frame(features[PAIR_KEY])
@@ -65,7 +65,7 @@ def split_users(users: np.ndarray, val_fraction: float, seed: int) -> tuple[np.n
 
 
 def select_c(table: dict[float, float]) -> float:
-    """argmax validation Recall@10 over C; numerically tied values -> smallest C."""
+    """argmax of ``table`` (C -> validation Recall@10); numerically tied values -> smallest C."""
     best = max(table.values())
     return min(c for c, value in table.items() if math.isclose(value, best, rel_tol=1e-12, abs_tol=1e-12))
 
@@ -84,7 +84,7 @@ def _fit(X: pd.DataFrame, y: np.ndarray, C: float, max_iter: int, seed: int) -> 
 
 
 def score_frame(X: pd.DataFrame, scaler: StandardScaler, model: LogisticRegression) -> pd.DataFrame:
-    """[user_id, item_id, score] with score = linear decision function on standardized features."""
+    """[user_id, item_id, score] for the rows of ``X``: ``model``.decision_function on ``scaler``-standardized features."""
     scores = model.decision_function(scaler.transform(X.to_numpy(dtype="float64")))
     frame = X.index.to_frame(index=False)[PAIR_KEY].copy()
     frame["score"] = scores.astype("float64")
@@ -92,7 +92,7 @@ def score_frame(X: pd.DataFrame, scaler: StandardScaler, model: LogisticRegressi
 
 
 def validation_recall(X: pd.DataFrame, y: np.ndarray, scaler: StandardScaler, model: LogisticRegression, k: int) -> float:
-    """Mean repeat Recall@k over validation users with >= 1 positive row.
+    """Mean repeat Recall@``k`` of (``scaler``, ``model``) on the validation rows ``X`` with labels ``y``, over users with >= 1 positive row.
 
     Lists are the top-k rows per user by score with the contract tie rule
     (score desc, pop desc, item_id asc); pop is recovered from log_pop.
@@ -115,7 +115,8 @@ def fit_select(
     max_iter: int = 1000,
     k: int = 10,
 ) -> dict[str, Any]:
-    """Select C on a user-level split, refit on all rows, and return the model bundle.
+    """Select C from ``C_grid`` on a user-level split of ``X`` / ``y`` (``users`` per row; ``val_fraction``, ``seed`` as in
+    split_users; validation repeat Recall@``k``), refit on all rows (``max_iter`` iterations), return the bundle.
 
     Returns a dict with keys: scaler, model (refit on all rows at C*), C,
     validation (list of rows with C, val_recall, n_iter, fit_seconds),
@@ -195,7 +196,7 @@ def lr_repeat_scores(history: pd.DataFrame, bundle: dict[str, Any]) -> pd.DataFr
 def lr_repeat_list(
     history: pd.DataFrame, bundle: dict[str, Any], k: int, pop: pd.Series, users: Any = None
 ) -> pd.DataFrame:
-    """Top-k repurchase candidates per user ranked by the logistic model (source = "repeat_lr").
+    """Top-k repurchase candidates per user ranked by the logistic model of ``bundle``, ties by ``pop`` (source = "repeat_lr").
 
     Features are always computed on the whole ``history`` (item- and population-level
     statistics); with ``users`` the returned lists are restricted to those users.
@@ -207,5 +208,5 @@ def lr_repeat_list(
 
 
 def train_only_bundle(bundle: dict[str, Any]) -> dict[str, Any]:
-    """Bundle view that scores with the C* model fitted on the training users only (W8 slot selection)."""
+    """View of ``bundle`` that scores with the C* model fitted on the training users only (W8 slot selection)."""
     return {**bundle, "scaler": bundle["train_scaler"], "model": bundle["train_model"]}
