@@ -20,3 +20,4 @@
 - Same preprocessing snapshot `vendor/ml_group9_e11b365` (release/term-project e11b365) and mapping v2.1 (version check passed) as holdout. Checks: the unmodified draw reproduces the medium user set; `items.parquet` and `attribute_categories.parquet` are identical to medium (and byte-identical to the holdout copies, see `MANIFEST.sha256`). No `reports/data_check/holdout2.json`: the split checks read target content, which stays unread until the final run.
 - Environment: Python 3.12.16 (Windows), pandas 2.2.3, numpy 1.26.4, pyarrow 17.0.0. Runtime 37.0 s, peak working set 1.5 GB.
 - Rule: holdout2 is used once, for the final evaluation of PREREG v1.3; its Instacart eval split is read only with `--final`.
+- A post-hoc verification during W10a read the user_id column of holdout/instacart/eval_target.parquet (the v1.2 holdout, already used on 2026-11-05); no selection or file depends on it.
