@@ -92,7 +92,28 @@ PermissionError: profile role is 'final': the Instacart eval split is read once,
 
 ## Selections (written after command 1, before command 2)
 
-(to be filled)
+Source: `reports/metrics/holdout2_instacart_tuning.json` written by command 1 (commit `a0f130c`, fit split of
+holdout2 Instacart: 20,000 users, 18,600 with a repeat target item, 16,344 with a new target item). Values as
+written by the code; the Instacart eval split has not been read at this point.
+
+| Selection | Value | Grid | At grid edge | Selection score (fit split) |
+|---|---|---|---|---|
+| gamma* (R1 decay) | 0.8 | {0.5, 0.6, 0.7, 0.8, 0.9, 1.0} | no | repeat Recall@10 0.581628 (0.5: 0.551498, 0.6: 0.561797, 0.7: 0.574499, 0.9: 0.580986, 1.0: 0.554819) |
+| gamma_c*, alpha* (E1) | 0.8, 100 | {0.8, 0.9, 1.0} x {1, 10, 100} | gamma_c yes (lower), alpha yes (upper) | new-item Recall@10 0.042091 (0.9/100: 0.041960, 1.0/100: 0.041700) |
+| r* (C0) | 10 | {5, ..., 10} | yes (upper) | NDCG@10 0.419145 (r = 9: 0.408743) |
+| LR C* (R2) | 0.1 | {0.001, 0.01, 0.1, 1, 10} | no | selected on 4,000 validation users (16,000 training users), refit on all fit users |
+| user-CF k*, weighting* (E2) | 100, binary | {10, 20, 50, 100, 200, 400} x {binary, log1p} | k no | new-item Recall@10 0.060198 |
+| r (C3 = final_lr_ucf) | 10 | {0, ..., 10} | yes (upper) | NDCG@10 0.422704 on the 4,000 LR validation users (train-only model); r = 9: 0.412607 |
+| r (C3b = final_star_ucf) | 10 | {0, ..., 10} | yes (upper) | NDCG@10 0.419587 on all 20,000 fit users; r = 9: 0.410039 |
+| r (C2 = final_lr_r) | 10 | {0, ..., 10} | yes (upper) | NDCG@10 0.422474 on the 4,000 LR validation users; r = 9: 0.411587 |
+
+User-CF grid (fit new-item Recall@10, 16,344 users): binary k = 10: 0.042806, 20: 0.051979, 50: 0.058278,
+100: 0.060198, 200: 0.059618, 400: 0.058162; log1p k = 10: 0.041379, 20: 0.050005, 50: 0.057426, 100: 0.058534,
+200: 0.058330, 400: 0.056573. `at_grid_edge` flags as written: three-stage {gamma: false, gamma_c: true,
+alpha: true, r: true}; integration {k: false, C: false, r: {final_lr_ucf: true, final_star_ucf: true, final_lr_r: true}}.
+
+Command 1 record (runner log): start 2026-11-06T08:02:07.899Z, end 08:23:13.619Z, wall 1265.7 s, exit 0, peak
+working set 2551.7 MiB (process tree sampled every 0.5 s; the JSON `peak_memory_mib.integration` is 2551.7 MiB).
 
 ## Commands (fixed order, each executed exactly once)
 
