@@ -206,8 +206,3 @@ vendor/      ml_group9_e11b365 (unmodified preprocessing snapshot, release/term-
 ## Team and contributions
 
 TBD (team members, roles and contribution shares to be filled in by the team).
-
-## AI-tool usage
-
-TBD (see `docs/CITATIONS.md`, section 5). Git history: commits carry a `Co-Authored-By` trailer where
-an AI assistant co-wrote the change.
