@@ -1,21 +1,22 @@
-# Consolidated results (W11)
+# Consolidated results (W11; updated in W11b with the PREREG v1.3 run on holdout2)
 
 - W8b outputs reflected: **yes**
-- holdout2 results: **not included** (holdout2 has not been run; the holdout2 data folder was not opened)
-- Stage wording: `confirmatory holdout` = PREREG v1.2 final run (Instacart holdout; Complete Journey refit on medium data); `development medium` = development runs, not confirmatory.
+- holdout2 results: **included** (stage `confirmatory holdout2`, PREREG v1.3 final run, reports/final2; T1 columns `prereg` and `tier` carry the pre-registered classification, see `classification` in results_sources.yaml)
+- Stage wording: `confirmatory holdout2` = PREREG v1.3 final run (Instacart holdout2; Complete Journey refit on medium data, not independent of development); `confirmatory holdout` = PREREG v1.2 final run (Instacart holdout; Complete Journey refit on medium data); `development medium` = development runs, not confirmatory.
+- Tier (T1 `tier`): primary = pre-registered primary test of that stage (v1.3: H6, H7' NDCG, H7' Recall, H8 on Instacart holdout2; v1.2: H1-H4 on Instacart holdout and the Complete Journey refit); secondary-confirmatory = H5 (v1.2); secondary = every other confirmatory-stage row (H9, H7, the H1-H5 replication, transfer, CI-only comparisons); development = development rows.
 - Development integration run used for T3-T5, F2-F5: `W8b`; W9 provides R3/H10 in every case.
 - Combination labels (fixed by the team): C0 = E1 + R1, r = 10 (`final`); C1 = E1 + R2, r = 10 (`final_lr`); C2 = E1 + R2, r re-selected (`final_lr_r`); C3 = E2 + R2, r re-selected (`final_lr_ucf`; H9 = C3 vs C1); C3b = E2 + R1, r re-selected (`final_star_ucf`); C4 = E3 + R2 (not run); reference E4 + R1, r = 10 (`final_cf`). Module codes and statuses are listed in T6 (`scripts/results_sources.yaml`).
-- **For the slides and the report use only T1 rows with `current = true`.** A row is current when it comes from the newest run for the same stage, dataset, comparator, model and metric (holdout confirmatory > W8b > W9 > W8 > W7, W6 > W4a); `superseded_reason` explains every other row.
+- **For the slides and the report use only T1 rows with `current = true`.** A row is current when it comes from the newest run for the same stage, dataset, comparator, model and metric (holdout2 and holdout are separate confirmatory stages; development: W8b > W9 > W8 > W7, W6 > W4a); `superseded_reason` explains every other row.
 
 ## Tables (reports/results/tables)
 
 | table | rows | description |
 | --- | --- | --- |
-| T1_master_hypotheses | 253 | one row per hypothesis or secondary/auxiliary comparison; diff = mean_model - mean_comparator; decision as recorded in the source; current = newest run for that comparison (use only these rows) |
-| T2_selections | 84 | selected values per dataset x run (long format) with grid and grid-edge flag |
-| T3_module_screening | 30 | explore modules by new-item Recall@10, repeat modules by repeat Recall@10; diff and 95% CI vs the comparator named in the row |
-| T4_final_lists | 26 | Recall@10 and NDCG@10 over all users for the combinations C0-C3, C3b, the reference E4 + R1 and the baselines (medium); C0, E4 + R1 and baselines on the holdout; C4 not run |
-| T5_history_length | 117 | per history-length bin: diff and 95% CI of H1, H3, H6, H7, H8, H9, H10 |
+| T1_master_hypotheses | 337 | one row per hypothesis or secondary/auxiliary comparison; diff = mean_model - mean_comparator; decision as recorded in the source; prereg / tier = pre-registered classification (results_sources.yaml); current = newest run for that comparison (use only these rows) |
+| T2_selections | 108 | selected values per dataset x run (long format) with grid and grid-edge flag |
+| T3_module_screening | 46 | explore modules by new-item Recall@10, repeat modules by repeat Recall@10; diff and 95% CI vs the comparator named in the row |
+| T4_final_lists | 42 | Recall@10 and NDCG@10 over all users for the combinations C0-C3, C3b, the reference E4 + R1 and the baselines (holdout2 and medium); C0, E4 + R1 and baselines on the holdout (v1.2); C4 not run |
+| T5_history_length | 198 | per history-length bin: diff and 95% CI of H1, H3, H6, H7, H8, H9, H10 |
 | T6_module_catalog | 22 | module and combination status catalogue (adopted / evaluated-not-adopted / not-examined / not run) with basis hypotheses |
 | T7_datasets_eda | 2 | dataset summary (eval history) copied from the EDA branch feat/w5a-eda |
 
@@ -24,8 +25,9 @@
 | figure | points | description |
 | --- | --- | --- |
 | F1_holdout_forest | 12 | holdout confirmatory H1-H5 forest plot, Instacart and Complete Journey refit side by side (95% thick, 99.375% thin) |
+| F7_holdout2_forest | 30 | holdout2 confirmatory forest plot (PREREG v1.3): primary H6, H7' (NDCG, Recall), H8 and the H1-H5 replication; Instacart holdout2, Complete Journey refit and transfer side by side (95% thick, 99.375% thin) |
 | F2_dev_forest | 14 | development (medium) H6-H10 forest plot, same format |
-| F3_module_screening | 30 | module means: explore (new-item Recall@10) and repeat (repeat Recall@10), holdout vs medium |
+| F3_module_screening | 46 | module means: explore (new-item Recall@10) and repeat (repeat Recall@10), holdout2 and holdout vs medium |
 | F4_r_grid | 66 | NDCG@10 by r (0-10) for C2, C3, C3b on the fit split, one panel per dataset |
 | F5_history_length | 27 | per-bin differences with 95% CIs for H3, H7, H8, one panel per dataset |
 | F6_overdue_effect | 14 | W9 R3 log-odds effect per overdue bin (from the W9 CSV), one panel per dataset |
@@ -34,6 +36,11 @@
 
 | key | run | stage | path | git_commit | sha256 |
 | --- | --- | --- | --- | --- | --- |
+| holdout2/instacart_tuning | holdout2 | confirmatory holdout2 | reports/final2/holdout2_instacart_tuning.json | a0f130c8770d36a5ae4e0851780e2f536505a46c | ffdb99c6e72ee2c5af403d4c58352d80e47fb6a2396a13541903ba9636ae1257 |
+| holdout2/instacart_eval | holdout2 | confirmatory holdout2 | reports/final2/holdout2_instacart_eval.json | e7ad59d3c220609cbfc1d101177c02ee9abecd79 | a6745a1090750f3e5941ee23e3161fd1398fd271b8f4e418019108e9e37eaa09 |
+| holdout2/complete_journey_tuning | holdout2 | confirmatory holdout2 | reports/final2/holdout2_complete_journey_tuning.json | e7ad59d3c220609cbfc1d101177c02ee9abecd79 | b8e71b97bf771b6c275f964246bcede675911ed5cf33900624b6bcb4a4b6d016 |
+| holdout2/complete_journey_eval | holdout2 | confirmatory holdout2 | reports/final2/holdout2_complete_journey_eval.json | e7ad59d3c220609cbfc1d101177c02ee9abecd79 | b558d1c8c4b5e58b30dc5264a415bd03d20f3d2d125f2ee1881f99448cf2f13e |
+| holdout2/complete_journey_eval_transfer | holdout2 | confirmatory holdout2 | reports/final2/holdout2_complete_journey_eval_transfer.json | e7ad59d3c220609cbfc1d101177c02ee9abecd79 | 8e95abebe6a1389a0f461130cb5907d5b67920e0039f4b4b59e9186102606907 |
 | holdout/instacart_tuning | holdout | confirmatory holdout | reports/final/holdout_instacart_tuning.json | 9d51446207bd8d803cd4e3c2a3708f8276752dba | bc103b88546554debe55f7480d51d4c98ac8b41e324f44b3be5d5b38e629f931 |
 | holdout/instacart_eval | holdout | confirmatory holdout | reports/final/holdout_instacart_eval.json | 9d51446207bd8d803cd4e3c2a3708f8276752dba | c4c27a9d10fceb7df7950366806d34824bec8d35abcbf5d039c0dd744f153d7f |
 | holdout/complete_journey_tuning | holdout | confirmatory holdout | reports/final/holdout_complete_journey_tuning.json | 9d51446207bd8d803cd4e3c2a3708f8276752dba | 2659a34da8f49ded8e0e75ab0403e4e2d144bbe18688f1f4236b87f25f8faef0 |
@@ -74,9 +81,9 @@
 
 ## Verification
 
-- T1 diff identity: 253 rows, max |diff - (mean_model - mean_comparator)| = 1.041e-16 (tolerance 1e-12); current rows: 123.
+- T1 diff identity: 337 rows, max |diff - (mean_model - mean_comparator)| = 1.041e-16 (tolerance 1e-12); current rows: 207.
 - Every figure is drawn from its own CSV (written first, then read back).
-- Determinism (`--verify`): 26 files regenerated, 0 digest mismatches.
+- Determinism (`--verify`): 28 files regenerated, 0 digest mismatches.
 
 ## Generator
 

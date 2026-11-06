@@ -5,17 +5,19 @@
 Every number is read from the JSON/CSV files registered in results_sources.yaml (read-only; other git
 worktrees of C:\\dev_ML). Each table row and figure point carries its source file, the file's SHA-256 and
 the meta.git_commit recorded in that file. Confirmatory holdout results (PREREG v1.2) and development
-(medium) results are always labelled by the "stage" column / figure title.
+(medium) results are always labelled by the "stage" column / figure title; the PREREG v1.3 run on holdout2
+(reports/final2) is the stage "confirmatory holdout2", and the T1 columns prereg / tier carry the pre-registered
+classification of every row (results_sources.yaml: classification).
 
 Outputs (all under --out):
-  tables/T1_master_hypotheses.csv|.md   every primary hypothesis and secondary/auxiliary comparison, one row each
+  tables/T1_master_hypotheses.csv|.md   every primary hypothesis and secondary/auxiliary comparison, one row each (prereg, tier)
   tables/T2_selections.csv|.md          selected values per dataset x run with grid-edge flags
   tables/T3_module_screening.csv|.md    explore modules (new-item Recall@10) and repeat modules (repeat Recall@10)
   tables/T4_final_lists.csv|.md         combinations C0-C3, C3b, reference E4 + R1 and the baselines: Recall@10, NDCG@10 (C4 not run)
   tables/T5_history_length.csv|.md      per history-length bin: diff and 95% CI of H1, H3, H6, H7, H8, H9, H10
   tables/T6_module_catalog.csv|.md      module status catalogue (from results_sources.yaml)
   tables/T7_datasets_eda.csv|.md        dataset summary copied from the EDA branch (feat/w5a-eda)
-  figures/F1..F6 *.png (300 dpi) + *.csv with exactly the plotted numbers (each figure is drawn from its CSV)
+  figures/F1..F7 *.png (300 dpi) + *.csv with exactly the plotted numbers (each figure is drawn from its CSV)
   RESULTS.md                            index, input provenance, verification summary
 
 Checks: for every T1 row |diff - (mean_model - mean_comparator)| <= 1e-12 against the source values;
@@ -51,7 +53,7 @@ DPI = 300
 # Palette (one hue per role; stage is also carried by labels/hatching, never by colour alone).
 COLOR_HOLDOUT, COLOR_DEV, COLOR_THIRD, COLOR_INK, COLOR_MUTED, COLOR_GRID = "#2a78d6", "#eb6834", "#1baf7a", "#0b0b0b", "#52514e", "#e2e1dc"
 DATASET_ORDER = {"instacart": 0, "complete_journey": 1}
-STAGE_ORDER = {"confirmatory holdout": 0, "development medium": 1}
+STAGE_ORDER = {"confirmatory holdout2": 0, "confirmatory holdout": 1, "development medium": 2}
 PRIMARY_USERS = {"H1": "users with repeat target", "H2": "users with new target", "H3": "all users",
                  "H4": "users with new target", "H5": "users with new target"}
 
@@ -260,7 +262,7 @@ def eval_sources(registry: Registry, run: str | None = None) -> list[Source]:
 # ---------------------------------------------------------------------------
 # tables
 # ---------------------------------------------------------------------------
-T1_COLUMNS = ["id", "hypothesis", "stage", "run", "dataset", "transfer_from", "metric", "users", "users_n", "comparator", "model",
+T1_COLUMNS = ["id", "hypothesis", "prereg", "tier", "stage", "run", "dataset", "transfer_from", "metric", "users", "users_n", "comparator", "model",
               "mean_comparator", "mean_model", "diff", "ci95_lo", "ci95_hi", "ci99375_lo", "ci99375_hi", "decision", "decision_99375",
               "current", "superseded_reason", "source_file", "source_sha256", "git_commit"]
 
@@ -306,15 +308,51 @@ def flag_current(frame: pd.DataFrame, cfg: dict[str, Any]) -> pd.DataFrame:
     return frame.drop(columns=["_key", "_prio"])
 
 
+def hypothesis_order(label: str) -> float:
+    """Sort key of a T1 hypothesis label: H<n> -> n, H<n>' -> n + 0.5, anything else -> 99."""
+    match = re.fullmatch(r"H([0-9]+)('?)", str(label))
+    return int(match.group(1)) + (0.5 if match.group(2) else 0.0) if match else 99.0
+
+
+def classify(frame: pd.DataFrame, cfg: dict[str, Any]) -> pd.DataFrame:
+    """Add the T1 columns ``prereg`` and ``tier`` from cfg["classification"] and apply its per-stage id renames.
+
+    The classification is explicit per stage (results_sources.yaml) and independent of the JSON block names: a rule
+    marks the rows of its stage whose id is in ``ids`` and dataset in ``datasets`` and which are not transfer rows;
+    rows matched by no rule get the stage's ``default_tier``. ``rename`` replaces the T1 id and hypothesis label of
+    an entry (the C3-vs-C0 comparisons of the v1.3 stage become H7prime_ndcg / H7prime_recall, hypothesis H7').
+    Every stage present in ``frame`` must be configured.
+    """
+    spec = cfg["classification"]
+    missing = sorted(set(frame["stage"]) - set(spec))
+    if missing:
+        raise ValueError(f"classification missing for stages {missing}")
+    frame = frame.copy()
+    frame["prereg"], frame["tier"] = "", ""
+    for stage, rules in spec.items():
+        mask = frame["stage"] == stage
+        for old, new in (rules.get("rename") or {}).items():
+            hit = mask & (frame["id"] == old)
+            frame.loc[hit, "id"], frame.loc[hit, "hypothesis"] = new["id"], new["hypothesis"]
+        frame.loc[mask, "prereg"] = str(rules.get("prereg") or "")
+        frame.loc[mask, "tier"] = str(rules["default_tier"])
+        for rule in rules.get("rules") or []:
+            hit = (mask & frame["id"].isin(rule["ids"]) & frame["dataset"].isin(rule["datasets"])
+                   & (frame["transfer_from"].fillna("") == ""))
+            frame.loc[hit, "tier"] = str(rule["tier"])
+    return frame
+
+
 def table_t1(registry: Registry, cfg: dict[str, Any]) -> pd.DataFrame:
-    """T1 master hypotheses table from every eval source of ``registry``, with the current / superseded flags of ``cfg``."""
+    """T1 master hypotheses table from every eval source of ``registry``, with the current / superseded flags and the
+    prereg / tier classification of ``cfg``."""
     rows = []
     for source in eval_sources(registry):
         rows.extend(eval_rows(source))
     frame = pd.DataFrame(rows)
-    frame = flag_current(frame, cfg)[T1_COLUMNS]
+    frame = classify(flag_current(frame, cfg), cfg)[T1_COLUMNS]
     frame["_s"], frame["_d"] = frame["stage"].map(STAGE_ORDER), frame["dataset"].map(DATASET_ORDER)
-    frame["_h"] = frame["hypothesis"].map(lambda h: int(h[1:]) if h[0] == "H" and h[1:].isdigit() else 99)
+    frame["_h"] = frame["hypothesis"].map(hypothesis_order)
     frame = frame.sort_values(["_s", "run", "_d", "transfer_from", "_h", "id"], kind="mergesort").drop(columns=["_s", "_d", "_h"])
     return frame.reset_index(drop=True)
 
@@ -545,8 +583,7 @@ def table_t6(cfg: dict[str, Any], t1: pd.DataFrame) -> pd.DataFrame:
         entries.append({"id": label, "group": "combination", "name": name, "list": spec.get("list", ""), "status": spec["status"],
                         "basis": spec.get("basis", ""), "note": spec.get("note", "")})
     for module in entries:
-        ids = [h for h in str(module.get("basis", "")).replace("(", ",").replace(")", "").replace("=", ",").split(",")]
-        ids = [h.strip() for h in ids if h.strip().startswith("H") and h.strip()[1:].isdigit()]
+        ids = re.findall(r"H[0-9]+'?", str(module.get("basis", "")))  # H<n> and H<n>' (H7' = C3 vs C0 on holdout2)
         stages = sorted(set(t1.loc[t1["hypothesis"].isin(ids), "stage"])) if ids else []
         rows.append({"id": module["id"], "group": module["group"], "name": module["name"], "list": module.get("list", ""),
                      "status": module["status"], "basis": module.get("basis", ""), "evidence_stage": "; ".join(stages),
@@ -639,16 +676,19 @@ def _finish(fig, path: Path, plt, footer: str, top: float = 0.94) -> None:
     plt.close(fig)
 
 
-def _forest(frame: pd.DataFrame, path: Path, title: str, footer: str, color: str, labels: dict[str, str], datasets: dict[str, str]) -> None:
+def _forest(frame: pd.DataFrame, path: Path, title: str, footer: str, color: str, labels: dict[str, str], datasets: dict[str, str],
+            panel_column: str = "dataset") -> None:
+    """Forest plot of ``frame`` (one panel per value of ``panel_column`` listed in ``datasets``: value -> panel title) into
+    ``path``; the numbers are re-read from the CSV next to ``path``."""
     plt = _plt()
     frame = pd.read_csv(path.with_suffix(".csv"))  # drawn from the CSV written just before
-    panels = [d for d in datasets if d in set(frame["dataset"])]
+    panels = [d for d in datasets if d in set(frame[panel_column])]
     longest = max(len(labels.get(i, i)) for i in dict.fromkeys(frame["id"]))
     fig, axes = plt.subplots(1, len(panels), figsize=(3.9 * len(panels) + 0.07 * longest + 0.6, 0.42 * frame["id"].nunique() + 2.2), sharey=True)
     axes = np.atleast_1d(axes)
     ids = list(dict.fromkeys(frame["id"]))
     for ax, dataset in zip(axes, panels):
-        part = frame[frame["dataset"] == dataset].set_index("id")
+        part = frame[frame[panel_column] == dataset].set_index("id")
         for i, id_ in enumerate(ids):
             y = len(ids) - 1 - i
             if id_ not in part.index:
@@ -689,6 +729,38 @@ def figure_f1(t1: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any
     return {"name": "F1_holdout_forest", "points": int(len(keep)), "png": path, "csv": path.with_suffix(".csv")}
 
 
+def figure_f7(t1: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any]:
+    """F7 holdout2 forest plot from ``t1`` into ``out`` (labels from ``cfg``): PREREG v1.3 primary H6, H7' (NDCG, Recall), H8 and
+    the H1-H5 replication; panels Instacart holdout2, Complete Journey refit and Complete Journey transfer; returns the record."""
+    ids = ["H6_repeat_recall", "H7prime_ndcg", "H7prime_recall", "H8_new_recall",
+           "H1_repeat_recall", "H2_new_recall", "H3_ndcg", "H3_recall", "H4_category_hit", "H5"]
+    keep = t1[(t1["stage"] == "confirmatory holdout2") & t1["id"].isin(ids)].copy()
+    transfer = keep["transfer_from"].fillna("") != ""
+    keep["panel"] = np.where(keep["dataset"] == "instacart", "instacart",
+                             np.where(transfer, "complete_journey_transfer", "complete_journey_refit"))
+    keep["stage_label"] = keep["panel"].map({"instacart": "holdout2", "complete_journey_refit": "refit on medium data",
+                                             "complete_journey_transfer": "Instacart holdout2 selections transferred"})
+    keep["note"] = np.where(keep["tier"] == "primary", "", "secondary under PREREG v1.3")
+    keep["_i"] = keep["id"].map({id_: i for i, id_ in enumerate(ids)})
+    keep = keep.sort_values(["_i", "panel"], kind="mergesort").drop(columns="_i")
+    keep = keep[["id", "hypothesis", "prereg", "tier", "panel", "dataset", "transfer_from", "stage", "stage_label", "metric", "users_n", "diff",
+                 "ci95_lo", "ci95_hi", "ci99375_lo", "ci99375_hi", "decision", "decision_99375", "note", "source_file", "source_sha256",
+                 "git_commit"]]
+    path = out / "F7_holdout2_forest.png"
+    keep.to_csv(path.with_suffix(".csv"), index=False, lineterminator="\n")
+    n_i = int(keep.loc[keep["panel"] == "instacart", "users_n"].max())
+    n_c = int(keep.loc[keep["panel"] != "instacart", "users_n"].max())
+    _forest(keep, path, "Confirmatory results (holdout2, PREREG v1.3): primary H6, H7', H8 and the H1-H5 replication, paired bootstrap CIs",
+            f"Source: Instacart holdout2 (n = {n_i:,}), Complete Journey refit on medium data and Complete Journey with the Instacart holdout2 "
+            f"selections transferred (n = {n_c:,}), PREREG v1.3, code commit {keep['git_commit'].iloc[0][:7]}. Thick bar 95% CI, thin bar "
+            "99.375% CI (the multiplicity-adjusted interval of the family of 3), 1,000 resamples. Circle: primary (Instacart holdout2: H6, "
+            "H7' NDCG, H7' Recall reported, H8). Diamond: secondary under PREREG v1.3 (H1-H5 replication; every Complete Journey row).",
+            COLOR_THIRD, cfg["hypothesis_labels"],
+            {"instacart": cfg["dataset_labels"]["instacart"], "complete_journey_refit": cfg["dataset_labels"]["complete_journey"],
+             "complete_journey_transfer": cfg["dataset_labels"]["complete_journey"]}, panel_column="panel")
+    return {"name": "F7_holdout2_forest", "points": int(len(keep)), "png": path, "csv": path.with_suffix(".csv")}
+
+
 def figure_f2(t1: pd.DataFrame, out: Path, cfg: dict[str, Any], dev_run: str | None) -> dict[str, Any]:
     """F2 development forest plot (H6-H10) from the ``dev_run`` rows of ``t1`` into ``out``; returns the figure record."""
     keep = t1[(t1["stage"] == "development medium") & t1["hypothesis"].isin(["H6", "H7", "H8", "H9", "H10"])
@@ -715,8 +787,8 @@ def figure_f3(t3: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any
     frame = pd.read_csv(path.with_suffix(".csv"))
     datasets = [d for d in cfg["dataset_labels"] if d in set(frame["dataset"])]
     fig, axes = plt.subplots(2, len(datasets), figsize=(4.2 * len(datasets), 5.6), squeeze=False)
-    stage_color = {"confirmatory holdout": COLOR_HOLDOUT, "development medium": COLOR_DEV}
-    stage_hatch = {"confirmatory holdout": "", "development medium": "////"}
+    stage_color = {"confirmatory holdout2": COLOR_THIRD, "confirmatory holdout": COLOR_HOLDOUT, "development medium": COLOR_DEV}
+    stage_hatch = {"confirmatory holdout2": "", "confirmatory holdout": "", "development medium": "////"}
     for row_i, (group, metric) in enumerate((("explore", "new-item Recall@10"), ("repeat", "repeat Recall@10"))):
         for col_i, dataset in enumerate(datasets):
             ax = axes[row_i][col_i]
@@ -741,9 +813,11 @@ def figure_f3(t3: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any
                 ax.spines[side].set_visible(False)
             if row_i == 0 and col_i == 0:
                 ax.legend(frameon=False)
-    fig.suptitle("Module screening: mean of the per-user metric by module (holdout vs development medium)", x=0.01, ha="left", fontsize=10)
+    fig.suptitle("Module screening: mean of the per-user metric by module (holdout2, holdout vs development medium)", x=0.01, ha="left",
+                 fontsize=10)
     _finish(fig, path, plt, "Explore: new-item Recall@10 over users with >= 1 new target item. Repeat: repeat Recall@10 over users with >= 1 repeat "
-            "target item. Solid = confirmatory holdout (PREREG v1.2; Complete Journey refit on medium data), hatched = development (medium). "
+            "target item. Solid = confirmatory (holdout2 = PREREG v1.3, holdout = PREREG v1.2; Complete Journey refit on medium data), hatched = "
+            "development (medium). "
             "Error bars are not shown; 95% CIs refer to differences from the comparator (see T3).")
     return {"name": "F3_module_screening", "points": int(len(frame)), "png": path, "csv": path.with_suffix(".csv")}
 
@@ -889,10 +963,10 @@ def figure_f6(registry: Registry, out: Path, cfg: dict[str, Any]) -> dict[str, A
 # RESULTS.md
 # ---------------------------------------------------------------------------
 TABLE_NOTES = {
-    "T1_master_hypotheses": "one row per hypothesis or secondary/auxiliary comparison; diff = mean_model - mean_comparator; decision as recorded in the source; current = newest run for that comparison (use only these rows)",
+    "T1_master_hypotheses": "one row per hypothesis or secondary/auxiliary comparison; diff = mean_model - mean_comparator; decision as recorded in the source; prereg / tier = pre-registered classification (results_sources.yaml); current = newest run for that comparison (use only these rows)",
     "T2_selections": "selected values per dataset x run (long format) with grid and grid-edge flag",
     "T3_module_screening": "explore modules by new-item Recall@10, repeat modules by repeat Recall@10; diff and 95% CI vs the comparator named in the row",
-    "T4_final_lists": "Recall@10 and NDCG@10 over all users for the combinations C0-C3, C3b, the reference E4 + R1 and the baselines (medium); C0, E4 + R1 and baselines on the holdout; C4 not run",
+    "T4_final_lists": "Recall@10 and NDCG@10 over all users for the combinations C0-C3, C3b, the reference E4 + R1 and the baselines (holdout2 and medium); C0, E4 + R1 and baselines on the holdout (v1.2); C4 not run",
     "T5_history_length": "per history-length bin: diff and 95% CI of H1, H3, H6, H7, H8, H9, H10",
     "T6_module_catalog": "module and combination status catalogue (adopted / evaluated-not-adopted / not-examined / not run) with basis hypotheses",
     "T7_datasets_eda": "dataset summary (eval history) copied from the EDA branch feat/w5a-eda",
@@ -900,10 +974,11 @@ TABLE_NOTES = {
 FIGURE_NOTES = {
     "F1_holdout_forest": "holdout confirmatory H1-H5 forest plot, Instacart and Complete Journey refit side by side (95% thick, 99.375% thin)",
     "F2_dev_forest": "development (medium) H6-H10 forest plot, same format",
-    "F3_module_screening": "module means: explore (new-item Recall@10) and repeat (repeat Recall@10), holdout vs medium",
+    "F3_module_screening": "module means: explore (new-item Recall@10) and repeat (repeat Recall@10), holdout2 and holdout vs medium",
     "F4_r_grid": "NDCG@10 by r (0-10) for C2, C3, C3b on the fit split, one panel per dataset",
     "F5_history_length": "per-bin differences with 95% CIs for H3, H7, H8, one panel per dataset",
     "F6_overdue_effect": "W9 R3 log-odds effect per overdue bin (from the W9 CSV), one panel per dataset",
+    "F7_holdout2_forest": "holdout2 confirmatory forest plot (PREREG v1.3): primary H6, H7' (NDCG, Recall), H8 and the H1-H5 replication; Instacart holdout2, Complete Journey refit and transfer side by side (95% thick, 99.375% thin)",
 }
 
 
@@ -912,20 +987,28 @@ def write_results_md(out: Path, registry: Registry, tables: list[dict[str, Any]]
     """Write <out>/RESULTS.md: header flags (``w8b_used``, ``dev_run``, combination labels of ``cfg``), the ``tables`` and
     ``figures`` records, the inputs of ``registry`` and the ``checks``.
     """
-    lines = ["# Consolidated results (W11)", ""]
+    lines = ["# Consolidated results (W11; updated in W11b with the PREREG v1.3 run on holdout2)", ""]
     lines.append(f"- W8b outputs reflected: **{'yes' if w8b_used else 'no'}**"
                  + ("" if w8b_used else " (W8b not complete at generation time; development figures use run "
                     f"{dev_run}; re-run `python scripts/make_results.py` after W8b finishes)"))
-    lines.append("- holdout2 results: **not included** (holdout2 has not been run; the holdout2 data folder was not opened)")
-    lines.append("- Stage wording: `confirmatory holdout` = PREREG v1.2 final run (Instacart holdout; Complete Journey refit on medium data); "
-                 "`development medium` = development runs, not confirmatory.")
+    holdout2_used = any(source.run == "holdout2" for source in registry.sources.values())
+    lines.append("- holdout2 results: **included** (stage `confirmatory holdout2`, PREREG v1.3 final run, reports/final2; T1 columns "
+                 "`prereg` and `tier` carry the pre-registered classification, see `classification` in results_sources.yaml)"
+                 if holdout2_used else "- holdout2 results: **not included** (reports/final2 not registered)")
+    lines.append("- Stage wording: `confirmatory holdout2` = PREREG v1.3 final run (Instacart holdout2; Complete Journey refit on medium data, "
+                 "not independent of development); `confirmatory holdout` = PREREG v1.2 final run (Instacart holdout; Complete Journey refit "
+                 "on medium data); `development medium` = development runs, not confirmatory.")
+    lines.append("- Tier (T1 `tier`): primary = pre-registered primary test of that stage (v1.3: H6, H7' NDCG, H7' Recall, H8 on Instacart "
+                 "holdout2; v1.2: H1-H4 on Instacart holdout and the Complete Journey refit); secondary-confirmatory = H5 (v1.2); secondary = every "
+                 "other confirmatory-stage row (H9, H7, the H1-H5 replication, transfer, CI-only comparisons); development = development rows.")
     lines.append(f"- Development integration run used for T3-T5, F2-F5: `{dev_run}`; W9 provides R3/H10 in every case.")
     lines.append("- Combination labels (fixed by the team): C0 = E1 + R1, r = 10 (`final`); C1 = E1 + R2, r = 10 (`final_lr`); "
                  "C2 = E1 + R2, r re-selected (`final_lr_r`); C3 = E2 + R2, r re-selected (`final_lr_ucf`; H9 = C3 vs C1); "
                  "C3b = E2 + R1, r re-selected (`final_star_ucf`); C4 = E3 + R2 (not run); reference E4 + R1, r = 10 (`final_cf`). "
                  "Module codes and statuses are listed in T6 (`scripts/results_sources.yaml`).")
     lines.append("- **For the slides and the report use only T1 rows with `current = true`.** A row is current when it comes from the "
-                 "newest run for the same stage, dataset, comparator, model and metric (holdout confirmatory > W8b > W9 > W8 > W7, W6 > W4a); "
+                 "newest run for the same stage, dataset, comparator, model and metric (holdout2 and holdout are separate confirmatory stages; "
+                 "development: W8b > W9 > W8 > W7, W6 > W4a); "
                  "`superseded_reason` explains every other row.")
     lines += ["", "## Tables (reports/results/tables)", "", "| table | rows | description |", "| --- | --- | --- |"]
     for t in tables:
@@ -985,7 +1068,8 @@ def generate(cfg: dict[str, Any], out: Path) -> dict[str, Any]:
         write_table(t6, tables_dir, "T6_module_catalog", "T6 module catalogue", TABLE_NOTES["T6_module_catalog"]),
         write_table(t7, tables_dir, "T7_datasets_eda", "T7 datasets (EDA, feat/w5a-eda)", TABLE_NOTES["T7_datasets_eda"]),
     ]
-    figures = [figure_f1(t1, figures_dir, cfg), figure_f2(t1, figures_dir, cfg, dev_run), figure_f3(t3, figures_dir, cfg)]
+    figures = [figure_f1(t1, figures_dir, cfg), figure_f7(t1, figures_dir, cfg), figure_f2(t1, figures_dir, cfg, dev_run),
+               figure_f3(t3, figures_dir, cfg)]
     f4 = figure_f4(registry, figures_dir, cfg, dev_run)
     if f4:
         figures.append(f4)
