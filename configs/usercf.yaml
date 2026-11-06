@@ -1,0 +1,8 @@
+usercf:
+  k: [20, 50, 100]
+  weighting: [binary, log1p]
+  block_size: 256
+selection_source:
+  # Read-only W4a selections for auxiliary comparisons and final_ucf.
+  tuning_dir: C:/dev_ML-wt-w4/reports/metrics
+bootstrap: {n: 1000, seed: 42, levels: [0.95, 0.99375]}
