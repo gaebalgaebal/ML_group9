@@ -1,0 +1,40 @@
+---
+title: "Final system C3 = R2 (LR repeat) + E2 (user-CF explore) — selected on development data, confirmed on Instacart holdout2 (PREREG v1.3)"
+config:
+  flowchart:
+    wrappingWidth: 360
+---
+flowchart TB
+  H["Instacart user history H_u<br/>(previous baskets)"]
+
+  subgraph REP["Repeat branch: items already bought (i ∈ H_u)"]
+    direction TB
+    R1["Step 1. Repeat candidates<br/>all items in H_u"]
+    R2["Step 2. Features per (u, i)<br/>decayed counts (γ = 0.5, 0.8, 1.0) · recency<br/>mean purchase gap · once · overdue = recency / gap<br/>share · log history length<br/>item repeat rate · user repeat rate · log popularity"]
+    R3["Step 3. L2 logistic regression (R2)<br/>score = P(i ∈ next basket | features)<br/>C selected on validation users of the fit split<br/><b>[Supervised learned ranker:<br/>personal + all-user item statistics · not CF]</b>"]
+    R4["Repeat list (ranked)"]
+    R1 --> R2 --> R3 --> R4
+  end
+
+  subgraph EXP["Explore branch: new items (i ∉ H_u)"]
+    direction TB
+    E1["Step 1. User vectors<br/>user × item matrix<br/>x(u,i) = 1 or log(1 + basket count)<br/>weighting selected on fit split"]
+    E2["Step 2. Neighbours<br/>top-k users by cosine similarity sim(u,v)<br/>k ∈ {10, 20, 50, 100, 200, 400}, selected on fit split"]
+    E3["Step 3. Item scores (E2)<br/>s_exp(u,i) = Σ over v ∈ N_k(u) of sim(u,v) · x(v,i), i ∉ H_u<br/>padded with popularity if fewer than 10 items<br/><b>[Memory-based CF: user-based]</b>"]
+    E4["Explore list (ranked)"]
+    E1 --> E2 --> E3 --> E4
+  end
+
+  H --> REP
+  H --> EXP
+  C["Final combination (C3)<br/>top r repeat + top (10 − r) explore → Top-10<br/>r ∈ {0, …, 10} selected on fit split by NDCG@10<br/>r* = 10 (medium and holdout2 fit splits) → explore fills only users with &lt; 10 repeat candidates<br/><b>[Hybrid: slot-based combination]</b>"]
+  R4 --> C
+  E4 --> C
+
+  N["Holdout2 primary tests (PREREG v1.3; 99.375 % CI)<br/>H6: R2 vs R1 decayed frequency, repeat Recall@10 +.0119 [.0088, .0149]<br/>H7′: C3 vs C0 = v1.2 final (hierarchical explore + R1), NDCG@10 +.0063 [.0051, .0076]<br/>H8: E2 vs flat popularity excluding history, new-item Recall@10 +.0189 [.0165, .0217]"]
+  C ~~~ N
+
+  classDef final fill:#e6f4ff,stroke:#1677ff
+  classDef note stroke-dasharray: 3 3,fill:#f5f5f5,stroke:#8c8c8c
+  class R3,E3,C final
+  class N note
