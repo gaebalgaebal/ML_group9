@@ -386,6 +386,7 @@ def make_figure(entries: dict[str, dict[str, Any]], out_dir: Path) -> dict[str, 
                 ax.annotate(f"gamma* = {gamma:g} (~{x:.0f} d)", (x, y), xytext=(-12, -2), textcoords="offset points",
                             ha="right", va="center", fontsize=9, color=INK["primary"])
         ax.set_xscale("log")
+        ax.margins(y=0.18)   # headroom so the h* / gamma* annotations stay clear of the panel title
         ax.set_title(f"{NAMES[dataset]} (median gap {entry['gaps']['median_days']:g} d)", fontsize=11, color=INK["primary"])
         ax.set_xlabel("half-life in days (log scale)")
         ax.set_ylabel("fit repeat Recall@10")
@@ -402,8 +403,8 @@ def make_figure(entries: dict[str, dict[str, Any]], out_dir: Path) -> dict[str, 
             ax.set_xticks(ticks)
             ax.set_xticklabels([str(t) for t in ticks])
         ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-    fig.suptitle("Fit repeat Recall@10 vs half-life: day decay (solid) and basket decay converted with the median "
-                 "inter-basket gap (dashed); y axes differ per panel. Post-hoc, development data, not confirmatory.",
+    fig.suptitle("Fit repeat Recall@10 vs half-life in days: day decay (solid), basket decay converted with the median "
+                 "inter-basket gap (dashed)\ny axes differ per panel; post-hoc, development data, not confirmatory",
                  fontsize=9.5, color=INK["secondary"])
     png_path = out_dir / "fig_recall_vs_halflife.png"
     fig.savefig(png_path, dpi=200)
