@@ -58,3 +58,8 @@ Decision: lower bound > 0 -> "improvement observed"; CI contains 0 -> "no differ
   5. Secondary (no confirmatory claim): H9 = C3 vs C1 (NDCG@10; any difference can only come from users with fewer than 10 repeat candidates); replication of H1-H5 on holdout2; C3 vs personal frequency; E2 vs flat item-CF; history-length bins; Complete Journey refit of all analyses (same data as development, not independent) and transfer.
   6. Not carried forward: R3 binned cycle features (H10: no difference on medium); explore_L3 is not computed (`--skip-l3`; the L3 exclusion was confirmed under v1.2).
   7. k = 10 is added to the user-CF grid because Complete Journey selected the lower edge (k = 20) on medium.
+- v1.3 run notes (2026-11-06, after the holdout2 run; details in reports/final2/RUN.md).
+  1. Before command 1, commit 535b490 added a reporting-only comparison (C3 vs C0, Recall@10) and decision wording for the two C3-vs-C0 entries; no list, selection or metric computation changed, and the sample smoke outputs were identical apart from the added keys.
+  2. The check that `evaluate --profile holdout2 --dataset instacart` without `--final` stops at the holdout guard could be reached only after command 1, because the command loads the tuning selections first; it was recorded between commands 1 and 2, and no eval file was opened on that path.
+  3. The pipeline output still labels H7 (C1 vs C0) and H9 (C3 vs C1) as "primary" and the C3-vs-C0 entries as "integration.secondary"; the consolidated tables classify hypotheses by the explicit v1.3 table in scripts/results_sources.yaml (primary: H6, H7', H8; all others secondary).
+  4. The holdout2 Instacart eval split was read exactly once (command 2) and no command was re-run.
