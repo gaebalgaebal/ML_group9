@@ -1,17 +1,17 @@
 # Consolidated results (W11)
 
-- W8b outputs reflected: **no** (W8b not complete at generation time; development figures use run W8; re-run `python scripts/make_results.py` after W8b finishes)
+- W8b outputs reflected: **yes**
 - holdout2 results: **not included** (holdout2 has not been run; the holdout2 data folder was not opened)
 - Stage wording: `confirmatory holdout` = PREREG v1.2 final run (Instacart holdout; Complete Journey refit on medium data); `development medium` = development runs, not confirmatory.
-- Development integration run used for T3-T5, F2-F5: `W8`; W9 provides R3/H10 in every case.
+- Development integration run used for T3-T5, F2-F5: `W8b`; W9 provides R3/H10 in every case.
 - Combination labels C0-C4/C3b and the module catalogue E1-E8/R1-R6 are defined in `scripts/results_sources.yaml` (mapping assumed by W11; confirm with the team). Modules without an implementation are `not-examined`.
 
 ## Tables (reports/results/tables)
 
 | table | rows | description |
 | --- | --- | --- |
-| T1_master_hypotheses | 199 | one row per hypothesis or secondary/auxiliary comparison; diff = mean_model - mean_comparator; decision as recorded in the source |
-| T2_selections | 64 | selected values per dataset x run (long format) with grid and grid-edge flag |
+| T1_master_hypotheses | 253 | one row per hypothesis or secondary/auxiliary comparison; diff = mean_model - mean_comparator; decision as recorded in the source |
+| T2_selections | 84 | selected values per dataset x run (long format) with grid and grid-edge flag |
 | T3_module_screening | 30 | explore modules by new-item Recall@10, repeat modules by repeat Recall@10; diff and 95% CI vs the comparator named in the row |
 | T4_final_lists | 22 | Recall@10 and NDCG@10 over all users for the combinations C0-C4, C3b and the baselines (medium); C0 and baselines on the holdout |
 | T5_history_length | 117 | per history-length bin: diff and 95% CI of H1, H3, H6, H7, H8, H9, H10 |
@@ -55,6 +55,10 @@
 | w8/instacart_eval | W8 | development medium | C:\dev_ML-wt-w8\reports\metrics\_w8_backup\medium_instacart_eval.json | 24ce85f65f8904eb76c42f1a77f8dbd1fa7ae694 | dd0b0d0d9832ea0c8f630049caeeb016f3652feb6a64b3b72f5f1f4369733e22 |
 | w8/complete_journey_tuning | W8 | development medium | C:\dev_ML-wt-w8\reports\metrics\_w8_backup\medium_complete_journey_tuning.json | 24ce85f65f8904eb76c42f1a77f8dbd1fa7ae694 | 1acc4755ce047113e4a076c6409cdc943639bd08f017c2d01910295ca69aba70 |
 | w8/complete_journey_eval | W8 | development medium | C:\dev_ML-wt-w8\reports\metrics\_w8_backup\medium_complete_journey_eval.json | 24ce85f65f8904eb76c42f1a77f8dbd1fa7ae694 | 73715dca71304404c406b12771ae77e8e8ed5565228f6ae3902c3053ccc07571 |
+| w8b/instacart_tuning | W8b | development medium | C:\dev_ML-wt-w8\reports\metrics\medium_instacart_tuning.json | 6936873dd9b541a3a177643e97700182b8d729d8 | 87c84ea24f1d2953c272148c87ce15fd6f05ca231f79f2f0a4ad2aa71c04b25f |
+| w8b/instacart_eval | W8b | development medium | C:\dev_ML-wt-w8\reports\metrics\medium_instacart_eval.json | 6936873dd9b541a3a177643e97700182b8d729d8 | 4e29f0d65d86947b5bd558fd8c3402708192f1571d73c2623b675bab4100582b |
+| w8b/complete_journey_tuning | W8b | development medium | C:\dev_ML-wt-w8\reports\metrics\medium_complete_journey_tuning.json | 6936873dd9b541a3a177643e97700182b8d729d8 | 0a215302c9e4778e0459a5ff52b19243fca04443f0f7108f708812e0467cdfec |
+| w8b/complete_journey_eval | W8b | development medium | C:\dev_ML-wt-w8\reports\metrics\medium_complete_journey_eval.json | 6936873dd9b541a3a177643e97700182b8d729d8 | 01ec2b6f03bc97364af4f9e41d045eb878a54ea5059e98ebaf1a7bb0cc199b1c |
 | w9/instacart_r3 | W9 | development medium | C:\dev_ML-wt-w9\reports\metrics\medium_instacart_r3.json | 037f37ef3b6ce082653e285d7eec3149f5b21d32 | a3f9376b8837f9fcec998c6fa5279501f5ead84c9342fabc8facce1b6184c5be |
 | w9/complete_journey_r3 | W9 | development medium | C:\dev_ML-wt-w9\reports\metrics\medium_complete_journey_r3.json | 037f37ef3b6ce082653e285d7eec3149f5b21d32 | d29c57c95fe1a97218bee35c25c72af26709bb4aba188fd0a849c07b539d8102 |
 | w9/instacart_overdue_csv | W9 | development medium | C:\dev_ML-wt-w9\reports\tables\medium_instacart_r3_overdue_coef.csv |  | 1ca70c87085ac136756d035b08f3d7f8b997e97c6d3ea4815e091a9143953295 |
@@ -67,13 +71,9 @@
 | eda/fig_new_item_level | W5a | development medium | feat\w5a-eda:reports\eda\fig_new_item_level.csv | 5ce3e7ed007b3584ba5bbb905175058b63604c80 | 84600d285dc888db5514e6eade4f78ea90dcb9713396546864be8f2464ec2105 |
 | eda/eda_summary | W5a | development medium | feat\w5a-eda:reports\eda\eda_summary.md | 5ce3e7ed007b3584ba5bbb905175058b63604c80 | f25323b9e611c09af74de601172ea6670af185c93a6879cd09fe5b287155f1ae |
 
-### Skipped inputs
-
-- W8b: not complete: meta.git_commit still 24ce85f in instacart_tuning, instacart_eval
-
 ## Verification
 
-- T1 diff identity: 199 rows, max |diff - (mean_model - mean_comparator)| = 1.041e-16 (tolerance 1e-12).
+- T1 diff identity: 253 rows, max |diff - (mean_model - mean_comparator)| = 1.041e-16 (tolerance 1e-12).
 - Every figure is drawn from its own CSV (written first, then read back).
 - Determinism (`--verify`): 26 files regenerated, 0 digest mismatches.
 
