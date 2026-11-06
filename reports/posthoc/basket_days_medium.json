@@ -1,0 +1,121 @@
+{
+  "meta": {
+    "git_commit": "fc4ac27be6d6676e39b8debc70d1258180a60087",
+    "utc_time": "2026-11-06T09:39:10.469954+00:00",
+    "profile": "medium",
+    "python_version": "3.12.16",
+    "numpy_version": "1.26.4",
+    "pandas_version": "2.2.3"
+  },
+  "label": "post-hoc, development data, not confirmatory",
+  "task": "W14 basket days",
+  "profile": "medium",
+  "data_dir": "C:\\dev_ML\\data\\processed",
+  "raw_dir": "C:\\dev\\ML_group9\\data\\raw",
+  "command": "python scripts/make_basket_days.py --raw-dir C:/dev/ML_group9/data/raw --profile medium",
+  "git_commit": "fc4ac27be6d6676e39b8debc70d1258180a60087",
+  "utc_time": "2026-11-06T09:39:10.413519+00:00",
+  "datasets": {
+    "instacart": {
+      "archive": "instacart.zip",
+      "raw_member": "orders.csv",
+      "processed_frames": {
+        "fit_history": 293281,
+        "fit_target": 20000,
+        "eval_history": 313281,
+        "eval_target": 20000,
+        "distinct": 333281
+      },
+      "raw": {
+        "orders": 333281,
+        "users": 20000,
+        "non_first_orders": 313281,
+        "gap_cap_days": 30,
+        "gaps_equal_cap": 35516,
+        "share_gaps_equal_cap": 0.11336787101675493,
+        "gap_mean_days": 11.03486965376132,
+        "gap_median_days": 7.0
+      },
+      "raw_all_users": {
+        "orders": 3421083,
+        "users": 206209,
+        "non_first_orders": 3214874,
+        "gap_cap_days": 30,
+        "gaps_equal_cap": 369323,
+        "share_gaps_equal_cap": 0.11487946339421079,
+        "gap_mean_days": 11.114836226863012,
+        "gap_median_days": 7.0
+      },
+      "mapping_check": {
+        "processed_baskets": 333281,
+        "processed_users": 20000,
+        "matched_raw_baskets": 333281,
+        "unmatched_baskets": 0,
+        "basket_seq_equals_order_number": 333281,
+        "day_decreasing_steps": 0,
+        "mapping": "basket_id == str(order_id), user_id == str(user_id), basket_seq == order_number",
+        "day_min": 0,
+        "day_max": 365
+      },
+      "output": "C:\\dev_ML\\data\\processed\\medium\\instacart\\basket_days.parquet",
+      "rows": 333281,
+      "users": 20000,
+      "sha256": "982e8d025bfc92786d0ba59bc9a2b38edb3766a1b28509d3f7f8a1908fe2dfdd",
+      "manifest_path": "processed/medium/instacart/basket_days.parquet"
+    },
+    "complete_journey": {
+      "archive": "archive.zip",
+      "raw_member": "transaction_data.csv",
+      "processed_frames": {
+        "fit_history": 180368,
+        "fit_target": 2069,
+        "eval_history": 206682,
+        "eval_target": 2069,
+        "distinct": 208751
+      },
+      "raw": {
+        "baskets": 261005,
+        "households": 2069,
+        "baskets_with_several_days": 0,
+        "day_min": 1,
+        "day_max": 711
+      },
+      "raw_all_users": {
+        "baskets": 276484,
+        "households": 2500,
+        "baskets_with_several_days": 0,
+        "day_min": 1,
+        "day_max": 711
+      },
+      "mapping_check": {
+        "processed_baskets": 208751,
+        "processed_users": 2069,
+        "matched_raw_baskets": 208751,
+        "unmatched_baskets": 0,
+        "day_decreasing_steps": 0,
+        "mapping": "basket_id == str(BASKET_ID), user_id == str(household_key)",
+        "day_min": 1,
+        "day_max": 711
+      },
+      "output": "C:\\dev_ML\\data\\processed\\medium\\complete_journey\\basket_days.parquet",
+      "rows": 208751,
+      "users": 2069,
+      "sha256": "6804ce2ebcf4514ef041c12fb8ad4928611568a504c1aadffad8efd3a45af773",
+      "manifest_path": "processed/medium/complete_journey/basket_days.parquet"
+    }
+  },
+  "report_path": "reports/posthoc/basket_days_medium.json",
+  "environment": {
+    "python": "Python 3.12.16 (Windows)",
+    "pandas": "2.2.3",
+    "numpy": "1.26.4",
+    "pyarrow": "17.0.0"
+  },
+  "runtime_seconds": 15.963786599997547,
+  "peak_memory_mib": 1265.09765625,
+  "manifest_lines_added": [
+    "982e8d025bfc92786d0ba59bc9a2b38edb3766a1b28509d3f7f8a1908fe2dfdd  processed/medium/instacart/basket_days.parquet",
+    "6804ce2ebcf4514ef041c12fb8ad4928611568a504c1aadffad8efd3a45af773  processed/medium/complete_journey/basket_days.parquet"
+  ],
+  "source_md_appended": true
+}
