@@ -2,7 +2,7 @@
 
 Pre-registration: docs/PREREG.md v1.4 (main tag `prereg-v1.4`, commit 5427b0a; the v1.4 amendment is commit 614209f,
 the base of this branch `feat/w17-policy`). The sections "Pre-specified output keys", "Pre-checks" and "Selections"
-are committed before the holdout3 Instacart eval split is read; the remaining sections are written after command 5.
+were committed before the holdout3 Instacart eval split was read (commits `271da53`, `fececaa`, `4a88bc0`); the sections from "Guard check after command 1" on were written after command 5.
 Same procedure and failure policy as reports/final2/RUN.md: five commands, each executed exactly once, chained;
 a failure in command 2 stops everything (no partial output is opened, no re-run); other commands admit technical
 fixes only, recorded here.
@@ -136,3 +136,88 @@ r_short = 9 for users with history_len <= 4; S is the usercf list with k = 100, 
 Command 1 record (runner log `logs/commands.json`): start 2026-11-07T07:18:02.960Z, end 07:31:52.102Z, wall
 829.1 s, exit 0, peak working set 2490.8 MiB (process tree sampled every 0.5 s; the JSON `peak_memory_mib.integration`
 is 2490.8 MiB), HEAD `fececaa`, working tree clean.
+
+## Guard check after command 1 (before command 2)
+
+`python -m nbr evaluate --profile holdout3 --dataset instacart --skip-l3 --policy` WITHOUT `--final`, run after the selections
+commit `4a88bc0` and before command 2 (`logs/guard_after_command1.log`; start 2026-11-07T07:32:29.661Z, end 2026-11-07T07:32:31.219Z,
+1.6 s, exit 1, working tree clean): the tuning selections, the LR artifact and the integration
+selections load, then `nbr.data.load_split` raises `PermissionError: profile role is 'final': the Instacart eval split is read
+once, after all selections are fixed; pass allow_holdout_eval=True explicitly` before any eval Parquet file is opened.
+Command 2 was started only after this message was found in the log (the launch step checked for it).
+
+## Commands (fixed order, each executed exactly once)
+
+Runner: `NBR_DATA_DIR=C:\dev_ML\data\processed`, `PYTHONPATH=src`, working directory `C:\dev_ML-wt-w17`,
+Python `C:\dev_ML\.venv\Scripts\python.exe` (3.12.16). Peak memory = largest per-process peak working set in the
+launched process tree, sampled every 0.5 s (the venv `python.exe` is a launcher; the interpreter is its child).
+The in-JSON figure is the largest `peak_memory_mib` value the pipeline recorded in-process.
+
+| # | Command | Start (UTC) | End (UTC) | Wall time | Exit | Peak working set (runner / in-JSON) | HEAD |
+|---|---|---|---|---|---|---|---|
+| 1 | `python -m nbr tune --profile holdout3 --dataset instacart` | 2026-11-07T07:18:02.960Z | 07:31:52.102Z | 829.1 s | 0 | 2490.8 / 2490.8 MiB | `fececaa` |
+| - | selections written to this file and committed (`4a88bc0`); guard check (above) | 07:31:52 | 07:32:41 | - | - | - | - |
+| 2 | `python -m nbr evaluate --profile holdout3 --dataset instacart --final --skip-l3 --policy` | 2026-11-07T07:32:41.958Z | 07:37:46.155Z | 304.2 s | 0 | 3986.8 / 3986.8 MiB | `4a88bc0` |
+| 3 | `python -m nbr tune --profile holdout3 --dataset complete_journey` | 2026-11-07T07:37:46.186Z | 07:49:08.288Z | 680.2 s | 0 | 2551.9 / 2551.9 MiB | `4a88bc0` |
+| 4 | `python -m nbr evaluate --profile holdout3 --dataset complete_journey --skip-l3 --policy` | 2026-11-07T07:49:08.321Z | 07:52:32.058Z | 203.7 s | 0 | 3297.1 / 3297.1 MiB | `4a88bc0` |
+| 5 | `python -m nbr evaluate --profile holdout3 --dataset complete_journey --transfer-from instacart --skip-l3 --policy` | 2026-11-07T07:52:32.087Z | 07:56:34.729Z | 242.6 s | 0 | 3302.3 / 3302.3 MiB | `4a88bc0` |
+
+Total wall time: 2259.8 s (37 min 40 s).
+
+Total wall time of the five commands: 2259.8 s (37 min 40 s); commands 2-5 were chained so that a
+failure would have stopped the chain (`--stop-on-failure`), and the chain was started only after the guard check passed.
+
+## Re-run of command 2
+
+None. Command 2 finished with exit code 0 on its first execution; the Instacart holdout3 eval split
+(`holdout3/instacart/eval_history.parquet`, `eval_target.parquet`) was read exactly once, by command 2.
+No command was re-run for any reason, and no technical fix was needed for commands 1, 3, 4 or 5.
+
+## Complete Journey reproducibility check
+
+Commands 3 and 4 use the same `medium` Complete Journey data as the W8b development run and the holdout2 run, so every key
+of the two documents was compared with (a) the W8b medium files (`C:\dev_ML-wt-w8\reports\metrics\medium_complete_journey_{tuning,eval}.json`,
+commit 6936873, user-CF k grid 20-400, `--skip-l3`; the comparison of reports/final2/RUN.md) and (b) the holdout2 run files
+(`reports/final2/holdout2_complete_journey_{tuning,eval}.json`, same k grid as this run, no policy block). Differing paths are
+listed by category: volatile = `meta`, `label`, `profile`, timing, peak memory, artifact and source paths; content = everything else.
+
+- tuning vs W8b medium (`medium_complete_journey_tuning.json` -> `holdout3_complete_journey_tuning.json`): 37 differing paths, of which 31 volatile (meta/timing/memory/paths), 2 label/profile, 4 other content; 0 removed; 0 added.
+    - `integration.at_grid_edge.k`: True -> False
+    - `integration.label`: 'development (medium)' -> 'final (holdout3)'
+    - `integration.usercf.at_grid_edge.k`: True -> False
+    - `integration.usercf.grid`: 'len 10' -> 'len 12'
+- evaluation vs W8b medium (`medium_complete_journey_eval.json` -> `holdout3_complete_journey_eval.json`): 53 differing paths, of which 49 volatile (meta/timing/memory/paths), 2 label/profile, 2 other content; 0 removed; 5 added (integration.secondary.final_lr_ucf_vs_final_ndcg.decision, integration.secondary.final_lr_ucf_vs_final_recall, peak_memory_mib.policy, policy, timing_seconds.policy_metrics).
+    - `integration.label`: 'development (medium)' -> 'final (holdout3)'
+    - `lr_repeat.label`: 'development (medium)' -> 'final (holdout3)'
+- tuning vs holdout2 (reports/final2) (`holdout2_complete_journey_tuning.json` -> `holdout3_complete_journey_tuning.json`): 46 differing paths, of which 43 volatile (meta/timing/memory/paths), 2 label/profile, 1 other content; 0 removed; 0 added.
+    - `integration.label`: 'final (holdout2)' -> 'final (holdout3)'
+- evaluation vs holdout2 (reports/final2) (`holdout2_complete_journey_eval.json` -> `holdout3_complete_journey_eval.json`): 53 differing paths, of which 49 volatile (meta/timing/memory/paths), 2 label/profile, 2 other content; 0 removed; 3 added (peak_memory_mib.policy, policy, timing_seconds.policy_metrics).
+    - `integration.label`: 'final (holdout2)' -> 'final (holdout3)'
+    - `lr_repeat.label`: 'final (holdout2)' -> 'final (holdout3)'
+
+- Transfer evaluation (command 5) applies the Instacart holdout3 selections (gamma = 0.8, gamma_c = 0.9,
+  alpha = 100, r = 10; LR C = 0.1; user-CF k = 100 binary; r = 10, 10, 10 for the three combinations) and the same policy to the CJ data.
+
+## Primary results as written by the code (Instacart holdout3, `holdout3_instacart_eval.json`)
+
+20,000 users; 18,738 with a repeat target item; 16,340 with a new target item; 4,252 users with history_len <= 4 (T = 6: 7,155; T = 10: 10,837). diff = model - comparator; the 98.33 % interval is the pre-registered one (PREREG v1.4 item 4); r* = 10, r_short = 9, delta = 0.003.
+
+| PREREG v1.4 | key | n_users | comparator mean | model mean | diff | 95 % CI | 98.33 % CI | decision 95 % / 98.33 % |
+|---|---|---|---|---|---|---|---|---|
+| H11 (P_T vs C3, NDCG@10; non-inferior if the 98.33 % lower bound > -0.003) | `policy.primary.H11_ndcg` | 20,000 | 0.427448 | 0.426121 | -0.001327 | [-0.001519, -0.001141] | [-0.001552, -0.001100] | non-inferior / non-inferior |
+| H12 (P_T vs C3, new-item hit share@10, all users) | `policy.primary.H12_new_hit_share` | 20,000 | 0.004150 | 0.014250 | +0.010100 | [0.008749, 0.011500] | [0.008450, 0.011783] | improvement observed / improvement observed |
+| H13 (S = E2 vs flat popularity, new-item hit share@10, users with a new target item) | `policy.primary.H13_new_hit_share` | 16,340 | 0.168115 | 0.215116 | +0.047001 | [0.042043, 0.052020] | [0.041331, 0.052794] | improvement observed / improvement observed |
+
+Secondary entries (P_T-vs-C3 Recall@10 / new-item Recall@10 / repeat Recall@10, history-length bins, the r_short = 8 variant,
+T = 6 / 10, the H6, H7', H8 and H1-H5 replication, CJ refit and transfer) are read from the JSON files listed below; they carry
+no confirmatory claim. The consolidated tables (`reports/results/`, T1 column `tier`) classify every row by the explicit
+PREREG v1.4 table in scripts/results_sources.yaml.
+
+## Files
+
+`holdout3_*.json` are byte-identical copies of `reports/metrics/holdout3_*.json` written by the commands above
+(verified with `cmp`); `SHA256SUMS` lists their SHA-256 digests (`sha256sum -c SHA256SUMS` from this directory).
+`logs/` holds the runner records: `commands.json` (commands 1-5: UTC start/end, wall time, exit code, peak
+memory), `cmd1.log` ... `cmd5.log` (stdout+stderr of each command), `prechecks.json`, `cmdcheck.log`,
+`cmdguard_direct.log`, `cmdguard.log` (pre-checks), `guard_after_command1.json` and `guard_after_command1.log`.
+

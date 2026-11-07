@@ -1,0 +1,3 @@
+# 2026-11-07T07:49:08.321Z cwd=C:/dev_ML-wt-w17 commit=4a88bc01f17d8ce85280bb66d69366914c8abe04 dirty=False
+# C:/dev_ML/.venv/Scripts/python.exe -m nbr evaluate --profile holdout3 --dataset complete_journey --skip-l3 --policy
+evaluate holdout3/complete_journey: wrote C:\dev_ML-wt-w17\reports\metrics\holdout3_complete_journey_eval.json in 202.3s

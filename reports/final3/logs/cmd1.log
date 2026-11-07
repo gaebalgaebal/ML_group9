@@ -1,0 +1,15 @@
+# 2026-11-07T07:18:02.960Z cwd=C:/dev_ML-wt-w17 commit=fececaab45da83498cc0dd5f9b5e98e491e0edaf dirty=False
+# C:/dev_ML/.venv/Scripts/python.exe -m nbr tune --profile holdout3 --dataset instacart
+fit k=10 weighting=binary recall=0.045078522 seconds=5.61
+fit k=20 weighting=binary recall=0.053142454 seconds=8.56
+fit k=50 weighting=binary recall=0.059080427 seconds=18.50
+fit k=100 weighting=binary recall=0.060823990 seconds=33.42
+fit k=200 weighting=binary recall=0.060388443 seconds=62.41
+fit k=400 weighting=binary recall=0.059359031 seconds=108.24
+fit k=10 weighting=log1p recall=0.043251143 seconds=5.99
+fit k=20 weighting=log1p recall=0.052196145 seconds=10.07
+fit k=50 weighting=log1p recall=0.059104339 seconds=21.01
+fit k=100 weighting=log1p recall=0.060767595 seconds=37.92
+fit k=200 weighting=log1p recall=0.060686833 seconds=72.84
+fit k=400 weighting=log1p recall=0.060090069 seconds=121.29
+tune holdout3/instacart: wrote C:\dev_ML-wt-w17\reports\metrics\holdout3_instacart_tuning.json in 827.7s
