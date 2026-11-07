@@ -86,6 +86,8 @@ python scripts/make_holdout.py --raw-dir <ML_group9/data/raw> --size 20000 --see
 python scripts/make_holdout.py --raw-dir <ML_group9/data/raw> --name holdout2 --exclude sample,medium,holdout --size 20000 --seed 42 --expect-remaining 89936
 # holdout3 (PREREG v1.4, 2026-11-07): 20,000 Instacart users disjoint from sample, medium, holdout and holdout2
 python scripts/make_holdout.py --raw-dir <ML_group9/data/raw> --name holdout3 --exclude sample,medium,holdout,holdout2 --size 20000 --seed 42 --expect-remaining 69936
+# holdout4 (PREREG v1.5, 2026-11-07): 20,000 Instacart users disjoint from sample, medium, holdout, holdout2 and holdout3
+python scripts/make_holdout.py --raw-dir <ML_group9/data/raw> --name holdout4 --exclude sample,medium,holdout,holdout2,holdout3 --size 20000 --seed 42 --expect-remaining 49936
 ```
 
 All three draw the users with the vendored preprocessing code and write

@@ -84,3 +84,17 @@ def test_resolve_data_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("NBR_DATA_DIR", str(tmp_path))
     assert resolve_data_dir() == Path(tmp_path)
     assert resolve_data_dir({"data_dir": "elsewhere"}) == Path(tmp_path)
+
+
+def test_holdout4_profile_overrides_blocks_in_full(monkeypatch):
+    """PREREG v1.5: holdout4 = holdout3 plus lr_repeat.itemcf_feature and the 97.5 % level; the shallow merge keeps every other key."""
+    monkeypatch.delenv("NBR_DATA_DIR", raising=False)
+    config, previous = load_config("holdout4"), load_config("holdout3")
+    assert config["role"] == "final" and config["datasets"] == ["instacart"] and config["complete_journey_profile"] == "medium"
+    assert config["lr_repeat"] == {**previous["lr_repeat"], "itemcf_feature": True}
+    assert previous["lr_repeat"]["itemcf_feature"] is False
+    assert config["bootstrap"] == {"n": 1000, "seed": 42, "levels": [0.95, 0.975]}
+    assert previous["bootstrap"]["levels"] == [0.95, 0.99375]
+    for key in set(previous) - {"profile", "lr_repeat", "bootstrap"}:
+        assert config[key] == previous[key], key
+    assert config["explore"]["itemcf"]["neighbors"] == 20 and config["usercf"]["k"] == [10, 20, 50, 100, 200, 400]
