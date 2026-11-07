@@ -23,9 +23,11 @@ T1_PATH = REPO_ROOT / "reports" / "results" / "tables" / "T1_master_hypotheses.c
 README_PATH = REPO_ROOT / "README.md"
 MARKER = "<!-- results-table: {name} -->"
 
+H4 = "confirmatory holdout4"
 H3 = "confirmatory holdout3"
 H2 = "confirmatory holdout2"
 H1 = "confirmatory holdout"
+INSTACART4 = "Instacart holdout4"
 INSTACART3 = "Instacart holdout3"
 INSTACART2 = "Instacart holdout2"
 CJ_REFIT = "Complete Journey refit"
@@ -36,9 +38,43 @@ def row(label: str, dataset_text: str, stage: str, id_: str, dataset: str = "ins
     return {"label": label, "dataset_text": dataset_text, "stage": stage, "id": id_, "dataset": dataset, "transfer_from": transfer}
 
 
-# Table name -> (format, rows). Format "v14": 95 % and 98.33 % CIs with both decisions (PREREG v1.4 policy rows);
+# Table name -> (format, rows). Format "v15": 95 % and 97.5 % CIs with both decisions (PREREG v1.5 holdout4 rows; every block of
+# that run carries the 97.5 % level); "v14": 95 % and 98.33 % CIs with both decisions (PREREG v1.4 policy rows);
 # "v13": 95 % and 99.375 % CIs with both decisions; "v12": 95 % CI and its decision.
 TABLES: dict[str, tuple[str, list[dict]]] = {
+    "holdout4_primary": ("v15", [
+        row("H14 (NDCG@10, non-inferiority): C4 vs C3", INSTACART4, H4, "H14_ndcg"),
+        row("H15 (NDCG@10): C4 vs personal frequency", INSTACART4, H4, "H15_ndcg"),
+    ]),
+    "holdout4_secondary": ("v15", [
+        row("R2' vs R2 (repeat Recall@10)", INSTACART4, H4, "v15:repeat_lri_vs_repeat_lr_repeat_recall"),
+        row("R2' vs R1 (repeat Recall@10)", INSTACART4, H4, "v15:repeat_lri_vs_repeat_star_repeat_recall"),
+        row("C4 vs C3 (Recall@10)", INSTACART4, H4, "v15:final_lri_ucf_vs_final_lr_ucf_recall"),
+    ]),
+    "holdout4_replication": ("v15", [
+        row("H6 (repeat Recall@10)", INSTACART4, H4, "H6_repeat_recall"),
+        row("H7' (NDCG@10)", INSTACART4, H4, "H7prime_ndcg"),
+        row("H7' (Recall@10, reported)", INSTACART4, H4, "H7prime_recall"),
+        row("H8 (new-item Recall@10)", INSTACART4, H4, "H8_new_recall"),
+    ]),
+    "holdout4_complete_journey": ("v15", [
+        row("H14 (NDCG@10, non-inferiority): C4 vs C3", CJ_REFIT, H4, "H14_ndcg", "complete_journey"),
+        row("H15 (NDCG@10): C4 vs personal frequency", CJ_REFIT, H4, "H15_ndcg", "complete_journey"),
+        row("R2' vs R2 (repeat Recall@10)", CJ_REFIT, H4, "v15:repeat_lri_vs_repeat_lr_repeat_recall", "complete_journey"),
+        row("H14 (NDCG@10, non-inferiority): C4 vs C3", CJ_TRANSFER, H4, "H14_ndcg", "complete_journey", "instacart"),
+        row("H15 (NDCG@10): C4 vs personal frequency", CJ_TRANSFER, H4, "H15_ndcg", "complete_journey", "instacart"),
+        row("R2' vs R2 (repeat Recall@10)", CJ_TRANSFER, H4, "v15:repeat_lri_vs_repeat_lr_repeat_recall", "complete_journey", "instacart"),
+    ]),
+    "holdout4_policy": ("v14", [
+        row("H11 (NDCG@10, non-inferiority): P_T vs C3", INSTACART3, H3, "H11_ndcg"),
+        row("H12 (new-item hit share@10): P_T vs C3", INSTACART3, H3, "H12_new_hit_share"),
+        row("H13 (new-item hit share@10): S vs flat popularity", INSTACART3, H3, "H13_new_hit_share"),
+        row("as H11 (NDCG@10): P_T(C4) vs C4", INSTACART4, H4, "policy_c4:H11_ndcg"),
+        row("as H12 (new-item hit share@10): P_T(C4) vs C4", INSTACART4, H4, "policy_c4:H12_new_hit_share"),
+        row("as H13 (new-item hit share@10): S vs flat popularity", INSTACART4, H4, "policy_c4:H13_new_hit_share"),
+        row("reference: P_T vs C3 (NDCG@10)", INSTACART4, H4, "H11_ndcg"),
+        row("reference: P_T vs C3 (new-item hit share@10)", INSTACART4, H4, "H12_new_hit_share"),
+    ]),
     "holdout3_primary": ("v14", [
         row("H11 (NDCG@10, non-inferiority)", INSTACART3, H3, "H11_ndcg"),
         row("H12 (new-item hit share@10)", INSTACART3, H3, "H12_new_hit_share"),
@@ -114,6 +150,8 @@ TABLES: dict[str, tuple[str, list[dict]]] = {
     ]),
 }
 HEADERS = {
+    "v15": ["Hypothesis (metric)", "Dataset", "Users (n)", "Comparator -> model", "diff", "95 % CI", "97.5 % CI",
+            "Decision (95 % / 97.5 %)"],
     "v14": ["Hypothesis (metric)", "Dataset", "Users (n)", "Comparator -> model", "diff", "95 % CI", "98.33 % CI",
             "Decision (95 % / 98.33 %)"],
     "v13": ["Hypothesis (metric)", "Dataset", "Users (n)", "Comparator -> model", "diff", "95 % CI", "99.375 % CI",
@@ -147,6 +185,10 @@ def render_cells(spec: dict, entry: pd.Series, fmt: str) -> list[str]:
     decision95 = str(entry["decision"]) if isinstance(entry["decision"], str) and entry["decision"] else ""
     if fmt == "v12":
         cells.append(decision95 or "(CI only)")
+    elif fmt == "v15":
+        decision975 = str(entry["decision_975"]) if isinstance(entry["decision_975"], str) and entry["decision_975"] else ""
+        cells.append(fmt_ci(entry["ci975_lo"], entry["ci975_hi"]))
+        cells.append(f"{decision95} / {decision975}" if decision95 else "(CI only)")
     elif fmt == "v14":
         decision98 = str(entry["decision_9833"]) if isinstance(entry["decision_9833"], str) and entry["decision_9833"] else ""
         cells.append(fmt_ci(entry["ci9833_lo"], entry["ci9833_hi"]))

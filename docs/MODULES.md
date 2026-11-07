@@ -6,8 +6,10 @@ Codes used in the report, the slides and `reports/results/` (`scripts/results_so
 C0 = R1 + E1, evaluated on `holdout` and the comparator of H7' on `holdout2`; **evaluated-not-adopted** =
 evaluated on development data (`medium`) only, or as a secondary comparison on a holdout; **not-examined** =
 no implementation or evaluation in this project; **not run** = planned, not implemented. Hypothesis ids
-follow `docs/PREREG.md` (H1-H5 of v1.2; H6, H7', H8 of v1.3) and the development tasks (H6-H10; see
-section 3). Numbers are in `reports/results/RESULTS.md`, not here.
+follow `docs/PREREG.md` (H1-H5 of v1.2; H6, H7', H8 of v1.3; H11-H13 of v1.4; H14, H15 of v1.5) and the development tasks
+(H6-H10; see section 3). PREREG v1.5 (W19) added the two-CF final system C4 = R2' + E2 tested on `holdout4`
+(`reports/final4/RUN.md`): R2' = R2 with the item-CF similarity feature; the label C4 had denoted a planned, never
+evaluated combination E3 + R2 before v1.5. Numbers are in `reports/results/RESULTS.md`, not here.
 
 ## 1. Explore modules (candidates = items the user never bought)
 
@@ -30,6 +32,7 @@ section 3). Numbers are in `reports/results/RESULTS.md`, not here.
 |---|---|---|---|---|---|
 | R1 | decayed purchase frequency `s_rep(u,i) = sum over baskets b containing i of gamma^age(b)` | `src/nbr/repeat.py`: `repeat_scores`, `repeat_list` (list `repeat_star`) | `gamma` by repeat Recall@10 (fit split) | previous final (PREREG v1.2) | H1 (holdout); comparator of H6 (holdout2) |
 | R2 | L2-regularised logistic regression over 12 per-pair history features (decayed counts for gamma 0.5/0.8/1.0, recency, mean gap, once, overdue, item repeat rate, log pop, user repeat rate, log history length, share); label = pair occurs in the next basket of the fit split | `src/nbr/features.py:repeat_features`; `src/nbr/lr_repeat.py`: `build_training`, `fit_select`, `lr_repeat_list` (list `repeat_lr`); `pipeline.tune_lr_repeat` | `C` on validation users (20 %) | adopted (final system, PREREG v1.3) | H6 (holdout2); H6, H7 (medium) |
+| R2' | R2's 12 features plus `icf(u, i) = log(1 + sum over the user's other items j of sim(j, i))`, sim from the top-20 cosine item-neighbour lists of the scored history (E3's neighbours, self excluded); 13 features | `src/nbr/features_icf.py:icf_feature`; `src/nbr/lr_repeat.py` (`icf_neighbors`), `pipeline.tune_lr_repeat` (list `repeat_lri`; artifact `<dataset>_lr_repeat_icf.joblib`) | `C` on the validation users of R2 (selected separately) | final system (PREREG v1.5, tested on holdout4) | H14, H15 (holdout4); secondary repeat Recall@10 vs R2 and R1 |
 | R3 | R2 features + binned cycle features (item cadence, cadence ratio, one-hot bins of overdue / recency / cadence ratio; 30 features) | `src/nbr/features_cycle.py:cycle_features`, `src/nbr/r3_eval.py` (list `repeat_r3`; stand-alone runner) | `C` as R2, same user split | evaluated-not-adopted (module screening only) | H10 (medium) |
 | R4 | decision-tree repeat ranker | - | - | not-examined | - |
 | R5 | personal purchase frequency (`gamma = 1`); as a full list, padded with popularity outside the history | `src/nbr/repeat.py:repeat_list(gamma=1.0)` (list `repeat_pf`); `src/nbr/baselines.py:personal_frequency_list` (list `personal_frequency`) | - | comparator | H1 (repeat component), H3 (full list) |
@@ -44,7 +47,8 @@ section 3). Numbers are in `reports/results/RESULTS.md`, not here.
 | C2 | R2 | E1 | re-selected on the fit split (LR validation users, grid 0-10) | `final_lr_r` | `pipeline.INTEGRATION_COMBOS`, `tune_integration` | evaluated-not-adopted | secondary `final_lr_r_vs_final_lr` (medium) |
 | C3 | R2 | E2 | re-selected (LR validation users) | `final_lr_ucf` | same | adopted (final system, PREREG v1.3) | H7' = C3 vs C0 (holdout2); H9 = C3 vs C1 (medium; holdout2 secondary) |
 | C3b | R1 | E2 | re-selected (all fit users) | `final_star_ucf` (W7 stand-alone: `final_ucf` with the C0 `r*`) | same; `usercf_eval.evaluate` | evaluated-not-adopted | secondary `final_star_ucf_vs_final` (medium) |
-| C4 | R2 | E3 | - | - | not implemented | not run | - |
+| C4 | R2' | E2 | re-selected (LR validation users, train-only R2' bundle; `pipeline.tune_v15`) | `final_lri_ucf` | `pipeline.V15_COMBOS`, `tune_v15`, `build_lists` (`icf_bundle`, `v15`); eval block `v15` (`src/nbr/v15.py`) | final system (PREREG v1.5, tested on holdout4; two CF methods) | H14 = C4 vs C3 (non-inferiority), H15 = C4 vs personal frequency (holdout4). Before v1.5 the label C4 denoted a planned E3 + R2 combination that was never run |
+| P_T(C4) | R2' | E2 | r_u = 9 for users with at most T = 4 history baskets, r of C4 otherwise | `P_T` of the eval block `policy_c4` | `nbr.policy.evaluate_policy(base="C4")` | secondary replication (PREREG v1.5.1, holdout4) | as H11-H13 with C4 as the base; the confirmatory policy result remains H11-H13 on holdout3 |
 | E4+R1 | R1 | E4 | `r*` of stage 3 | `final_cf` | `pipeline.build_lists` (`include_itemcf`) | evaluated-not-adopted | secondary `final_cf_vs_final` (holdout v1.2 auxiliary) |
 | final_r10 | R1 | E1 | 10 (forced) | `final_r10` | `pipeline.build_lists` | diagnostic | secondary `final_r10_vs_final` |
 
@@ -63,6 +67,9 @@ Hypothesis map:
 | H8 | E2 vs flat_pop | new-item Recall@10 | medium (W7, W8, W8b); holdout2 (PREREG v1.3 primary) |
 | H9 | C3 vs C1 | NDCG@10 (Recall@10 reported) | medium (W8, W8b); holdout2 (secondary) |
 | H10 | R3 vs R2 | repeat Recall@10 | medium (W9) |
+| H14 | C4 vs C3 (non-inferiority, margin -0.003 at the 97.5 % level) | NDCG@10 | holdout4 (PREREG v1.5 primary; `v15.primary.H14_ndcg`) |
+| H15 | C4 vs R5 padded with popularity | NDCG@10 | holdout4 (PREREG v1.5 primary; `v15.primary.H15_ndcg`) |
+| as H11-H13 | P_T(C4) vs C4; S vs flat_pop | NDCG@10, new-item hit share@10 | holdout4 (PREREG v1.5.1 secondary replication; eval block `policy_c4`, T1 ids `policy_c4:*`) |
 
 ## 4. Filtering-method classification
 

@@ -2,10 +2,21 @@
 # Relative paths are taken from the repository root; ${VAR:-default} is expanded from the environment.
 # The development inputs are untracked run outputs of sibling git worktrees of this repository
 # (<parent>/dev_ML-wt-*); set NBR_WORKTREES to the folder that holds them (default: the parent folder).
-# "stage" wording is fixed: "confirmatory holdout3" (PREREG v1.4 exploration-policy test), "confirmatory holdout2" (PREREG v1.3
-# final run), "confirmatory holdout" (PREREG v1.2 final run) or "development medium".
+# "stage" wording is fixed: "confirmatory holdout4" (PREREG v1.5 two-CF final run), "confirmatory holdout3" (PREREG v1.4
+# exploration-policy test), "confirmatory holdout2" (PREREG v1.3 final run), "confirmatory holdout" (PREREG v1.2 final run) or
+# "development medium".
 
 sources:
+  holdout4:
+    stage: confirmatory holdout4
+    run: holdout4
+    description: confirmatory run of the two-CF final system, PREREG v1.5, reports/final4 (W19); primary H14 (non-inferiority), H15 on Instacart holdout4
+    files:
+      instacart_tuning: reports/final4/holdout4_instacart_tuning.json
+      instacart_eval: reports/final4/holdout4_instacart_eval.json
+      complete_journey_tuning: reports/final4/holdout4_complete_journey_tuning.json
+      complete_journey_eval: reports/final4/holdout4_complete_journey_eval.json
+      complete_journey_eval_transfer: reports/final4/holdout4_complete_journey_eval_transfer.json
   holdout3:
     stage: confirmatory holdout3
     run: holdout3
@@ -113,9 +124,9 @@ eda:
 development_integration_run_preference: [W8b, W8]
 
 # Run priority for the T1 "current" flag: within the same stage, dataset, transfer setting, comparator, model and
-# metric, the row of the highest-priority run is current (holdout3, holdout2 and holdout are separate confirmatory stages, so
-# all of them stay current; development: W8b > W9 > W8 > W7, W6 > W4a).
-run_priority: {holdout3: 0, holdout2: 0, holdout: 0, W8b: 1, W9: 2, W8: 3, W7: 4, W6: 4, W4a: 5}
+# metric, the row of the highest-priority run is current (holdout4, holdout3, holdout2 and holdout are separate confirmatory
+# stages, so all of them stay current; development: W8b > W9 > W8 > W7, W6 > W4a).
+run_priority: {holdout4: 0, holdout3: 0, holdout2: 0, holdout: 0, W8b: 1, W9: 2, W8: 3, W7: 4, W6: 4, W4a: 5}
 
 # Hypothesis classification per stage -> T1 columns `prereg` and `tier`. The classification is explicit here and does not
 # follow the JSON block names (the pipeline still writes H7 and H9 under "primary" and the C3-vs-C0 comparisons under
@@ -125,8 +136,20 @@ run_priority: {holdout3: 0, holdout2: 0, holdout: 0, W8b: 1, W9: 2, W8: 3, W7: 4
 # hypothesis label used for the C3-vs-C0 entries of the v1.3 stage (H7' = C3 vs C0, PREREG v1.3 item 4) and of the H7'
 # replication on holdout3. The v1.4 stage: primary H11 (non-inferiority, delta = 0.003), H12, H13 on Instacart holdout3 (the
 # "policy" block of the eval JSON, 98.33 % intervals); every other row of that stage (the policy secondary metrics and variants,
-# the H6/H7'/H8 and H1-H5 replication, Complete Journey refit and transfer) is secondary.
+# the H6/H7'/H8 and H1-H5 replication, Complete Journey refit and transfer) is secondary. The v1.5 stage: primary H14
+# (non-inferiority, delta = 0.003) and H15 on Instacart holdout4 (the "v15" block of the eval JSON, 97.5 % intervals; the profile's
+# bootstrap levels are 0.95 and 0.975, so every block of that run carries the 97.5 % level); every other row of that stage (the
+# R2'-vs-R2 / R2'-vs-R1 repeat Recall@10 and C4-vs-C3 Recall@10 secondaries, the H6/H7'/H8 and H1-H5 replication, H7, H9,
+# Complete Journey refit and transfer) is secondary.
 classification:
+  confirmatory holdout4:
+    prereg: v1.5
+    default_tier: secondary
+    rename:
+      "integration:final_lr_ucf_vs_final_ndcg": {id: H7prime_ndcg, hypothesis: "H7'"}
+      "integration:final_lr_ucf_vs_final_recall": {id: H7prime_recall, hypothesis: "H7'"}
+    rules:
+      - {tier: primary, datasets: [instacart], ids: [H14_ndcg, H15_ndcg]}
   confirmatory holdout3:
     prereg: v1.4
     default_tier: secondary
@@ -169,7 +192,8 @@ combinations:
   C3:    {list: final_lr_ucf,   repeat: R2, explore: E2, r_rule: "r re-selected on the fit split (LR validation users)", status: "adopted (final system, PREREG v1.3)", basis: "H7' (holdout2); H9 = C3 vs C1 (medium, holdout2 secondary)", note: "r = 10 selected"}
   C3b:   {list: final_star_ucf, repeat: R1, explore: E2, r_rule: "r re-selected on the fit split (all fit users)", status: evaluated-not-adopted, basis: "secondary final_star_ucf_vs_final (medium)", note: "r = 10 selected"}
   P_T:   {list: P_T,            repeat: R2, explore: E2, r_rule: "r_u = 9 for users with at most T = 4 history baskets, r* otherwise (PREREG v1.4 policy on C3)", status: "confirmatory test on holdout3 (PREREG v1.4)", basis: "H11, H12 (holdout3)", note: "T = 4 and delta = 0.003 fixed from the W15 post-hoc study; S = E2 on its own is H13"}
-  C4:    {list: "",             repeat: R2, explore: E3, r_rule: "", status: not run, basis: "", note: "E3 + R2 not implemented"}
+  "P_T(C4)": {list: P_T,        repeat: "R2'", explore: E2, r_rule: "r_u = 9 for users with at most T = 4 history baskets, r (C4) otherwise (PREREG v1.5.1 policy on C4)", status: "secondary replication on holdout4 (PREREG v1.5.1)", basis: "", note: "the v1.4 policy repeated on the v1.5 final system; no confirmatory claim (H11-H13 on holdout3 remain the confirmatory policy result)"}
+  C4:    {list: final_lri_ucf,  repeat: "R2'", explore: E2, r_rule: "r re-selected on the fit split (LR validation users, train-only R2')", status: "confirmatory test on holdout4 (PREREG v1.5; two CF methods)", basis: "H14, H15 (holdout4)", note: "R2' = R2 + item-CF similarity feature icf (20 item neighbours); E2 = user-based CF; C3 is the H14 comparator. Replaces the earlier plan E3 + R2 (never run)"}
   E4+R1: {list: final_cf,       repeat: R1, explore: E4, r_rule: "r = 10 (stage-3 selection)", status: evaluated-not-adopted, basis: "secondary final_cf_vs_final (holdout v1.2 auxiliary)", note: "reference combination"}
 
 # Module catalog (T6). status: adopted (final system, PREREG v1.3) = module of C3, confirmed on holdout2;
@@ -179,7 +203,7 @@ combinations:
 modules:
   - {id: E1, group: explore, name: "hierarchical explore (theta_u(c), then within-category popularity; L2)", list: explore_star, status: "previous final (PREREG v1.2)", basis: "H2, H4 (holdout)", note: "explore module of C0, the H7' comparator"}
   - {id: E2, group: explore, name: "user-based CF (cosine neighbours, k, binary/log1p weighting)", list: usercf, status: "adopted (final system, PREREG v1.3)", basis: "H8 (holdout2); H8, H9 (medium)", note: "explore module of C3"}
-  - {id: E3, group: explore, name: "flat item-CF (item cosine, 20 neighbours)", list: itemcf_flat, status: evaluated-not-adopted, basis: "H5 (holdout, secondary confirmatory)", note: ""}
+  - {id: E3, group: explore, name: "flat item-CF (item cosine, 20 neighbours)", list: itemcf_flat, status: evaluated-not-adopted, basis: "H5 (holdout, secondary confirmatory)", note: "its neighbour lists feed the icf feature of R2' (PREREG v1.5)"}
   - {id: E4, group: explore, name: "theta x item-CF within category", list: explore_cf, status: evaluated-not-adopted, basis: "secondary explore_cf_vs_explore_star (holdout, medium)", note: ""}
   - {id: E5, group: explore, name: "matrix factorisation (MF)", list: "", status: not-examined, basis: "", note: ""}
   - {id: E6, group: explore, name: "product-name tf-idf similarity", list: "", status: not-examined, basis: "", note: ""}
@@ -187,7 +211,8 @@ modules:
   - {id: E8, group: explore, name: "recent-basket item-CF", list: "", status: not-examined, basis: "", note: ""}
   - {id: flat_pop, group: explore, name: "flat popularity excluding history items (comparator)", list: flat_explore, status: evaluated-not-adopted, basis: "comparator of H2, H5, H8", note: "baseline"}
   - {id: R1, group: repeat, name: "decayed purchase frequency s_rep(gamma*)", list: repeat_star, status: "previous final (PREREG v1.2)", basis: "H1 (holdout)", note: "repeat module of C0; comparator of H6 on holdout2"}
-  - {id: R2, group: repeat, name: "L2 logistic-regression repeat ranker (12 features)", list: repeat_lr, status: "adopted (final system, PREREG v1.3)", basis: "H6 (holdout2); H6, H7 (medium)", note: "repeat module of C3"}
+  - {id: R2, group: repeat, name: "L2 logistic-regression repeat ranker (12 features)", list: repeat_lr, status: "adopted (final system, PREREG v1.3)", basis: "H6 (holdout2); H6, H7 (medium)", note: "repeat module of C3; comparator of the R2' secondary on holdout4"}
+  - {id: "R2'", group: repeat, name: "L2 logistic-regression repeat ranker + item-CF similarity feature icf (13 features; 20 item neighbours)", list: repeat_lri, status: "confirmatory test on holdout4 (PREREG v1.5)", basis: "H14, H15 (holdout4)", note: "repeat module of C4; item-CF enters as a feature (PREREG v1.5 item 2b)"}
   - {id: R3, group: repeat, name: "logistic ranker with binned cycle features (30 features)", list: repeat_r3, status: evaluated-not-adopted, basis: "H10 (medium)", note: ""}
   - {id: R4, group: repeat, name: "decision tree repeat ranker", list: "", status: not-examined, basis: "", note: ""}
   - {id: R5, group: repeat, name: "personal purchase frequency (gamma = 1; comparator)", list: repeat_pf, status: evaluated-not-adopted, basis: "comparator of H1", note: "baseline"}
@@ -212,6 +237,8 @@ hypothesis_labels:
   H11_ndcg: "H11 NDCG@10 (P_T vs C3; non-inferiority, margin -0.003)"
   H12_new_hit_share: "H12 new-item hit share@10 (P_T vs C3)"
   H13_new_hit_share: "H13 new-item hit share@10 (S = E2 vs flat popularity)"
+  H14_ndcg: "H14 NDCG@10 (C4 vs C3; non-inferiority, margin -0.003)"
+  H15_ndcg: "H15 NDCG@10 (C4 vs personal frequency)"
 
 dataset_labels:
   instacart: Instacart

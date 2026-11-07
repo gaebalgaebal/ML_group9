@@ -5,8 +5,8 @@ two lists into one Top-10 list per user. The repeat branch scores items the user
 the explore branch scores items the user has never bought, with a hierarchical model that goes through
 the category hierarchy (user's category profile -> within-category popularity). Everything is
 pre-registered (`docs/PREREG.md`): hypotheses, selection rules and the single read of each holdout
-split were fixed before the three final runs (v1.2 on `holdout`, v1.3 on `holdout2`, v1.4 exploration
-policy on `holdout3`).
+split were fixed before the four final runs (v1.2 on `holdout`, v1.3 on `holdout2`, v1.4 exploration
+policy on `holdout3`, v1.5 two-CF final system on `holdout4` with the v1.5.1 policy replication).
 
 ## Task
 
@@ -21,30 +21,34 @@ next-basket Top-10 recommendation over personal purchase frequency?
 
 | Dataset | Source | Role |
 |---|---|---|
-| Instacart (orders, products, aisles, departments) | public Instacart release (Kaggle mirror); see `docs/CITATIONS.md` | development (`medium`: 20,000 users), confirmatory (`holdout`: 20,000 unused users, PREREG v1.2; `holdout2`: 20,000 further unused users, PREREG v1.3; `holdout3`: 20,000 further unused users, PREREG v1.4), smoke (`sample`: 1,500 users) |
+| Instacart (orders, products, aisles, departments) | public Instacart release (Kaggle mirror); see `docs/CITATIONS.md` | development (`medium`: 20,000 users), confirmatory (`holdout`: 20,000 unused users, PREREG v1.2; `holdout2`: 20,000 further unused users, PREREG v1.3; `holdout3`: 20,000 further unused users, PREREG v1.4; `holdout4`: 20,000 further unused users, PREREG v1.5), smoke (`sample`: 1,500 users) |
 | dunnhumby The Complete Journey (transaction_data, product) | dunnhumby source files (Kaggle mirror); see `docs/CITATIONS.md` | development and refit evaluation (`medium`: 2,069 households; no unused households, limitation recorded in PREREG v1.2) |
 
 Processed Parquet files (`items`, `fit_history`, `fit_target`, `eval_history`, `eval_target` per
-profile and dataset; profiles `sample`, `medium`, `holdout`, `holdout2`, `holdout3`) are produced by the
+profile and dataset; profiles `sample`, `medium`, `holdout`, `holdout2`, `holdout3`, `holdout4`) are produced by the
 unmodified ML_group9 preprocessing snapshot in `vendor/ml_group9_e11b365` and are **not tracked** by git.
 Provenance and checksums: `data/SOURCE.md`, `data/MANIFEST.sha256`. Hierarchy: Instacart department ->
 aisle (L2) -> ingredient type -> item; Complete Journey DEPARTMENT -> commodity (L2) -> sub-commodity -> item.
 
 ## Structure (summary)
 
-Final system (PREREG v1.3, confirmed on `holdout2`): C3 = R2 + E2. Repeat branch: R2 L2 logistic
-regression on 12 history features (adopted; R1 decayed purchase frequency is the previous final
-repeat module of PREREG v1.2 and the H6 comparator). Explore branch: E2 user-based CF (adopted; E1
-hierarchical category-profile x within-category popularity is the previous final explore module
-and, as part of C0, the H7' comparator), E3 flat item-CF (secondary). Slot combination: the first
-`r` slots from the repeat list, the rest from the explore list (`r* = 10` on both fit splits, T2, so
+Final system (PREREG v1.5, tested on `holdout4`): C4 = R2' + E2, two collaborative-filtering methods.
+Repeat branch: R2' = the R2 L2 logistic regression on 12 history features plus the item-CF similarity
+feature `icf` (`src/nbr/features_icf.py`; 20 item neighbours, fixed); R2 without the feature is the
+PREREG v1.3 final repeat module (C3 = R2 + E2, confirmed on `holdout2`, is the H14 comparator), and R1
+decayed purchase frequency is the previous final repeat module of PREREG v1.2 and the H6 comparator.
+Explore branch: E2 user-based CF (adopted; E1 hierarchical category-profile x within-category
+popularity is the previous final explore module and, as part of C0, the H7' comparator), E3 flat
+item-CF (secondary; its neighbour lists feed the `icf` feature). Slot combination: the first `r`
+slots from the repeat list, the rest from the explore list (`r* = 10` on every fit split, T2, so
 the explore list fills only the users with fewer than 10 repeat candidates). Exploration policy
 (PREREG v1.4, tested on `holdout3`; `src/nbr/policy.py`): P_T = C3 with one exploration slot
 (r_u = 9) for users with at most T = 4 history baskets and r* otherwise; S = the E2 list on its own as a
-separate 10-item exploration list. Diagram of the final
-system: `docs/figures/nbr_architecture_final.png` (Mermaid source `.mmd` next to it). Full
-description with the branch diagram, profiles, commands, selection procedure and leakage rules:
-**`docs/ARCHITECTURE.md`**. Module codes (E1-E8, R1-R6, C0-C4, C3b) and their status: **`docs/MODULES.md`**.
+separate 10-item exploration list; repeated on `holdout4` with C4 as the base (PREREG v1.5.1, secondary).
+Diagram of the PREREG v1.3 final system: `docs/figures/nbr_architecture_final.png` (Mermaid source `.mmd`
+next to it; C4 adds the `icf` feature to its repeat ranker). Full description with the branch diagram,
+profiles, commands, selection procedure and leakage rules: **`docs/ARCHITECTURE.md`**. Module codes
+(E1-E8, R1-R6, R2', C0-C4, C3b) and their status: **`docs/MODULES.md`**.
 
 ## How to run
 
@@ -90,8 +94,8 @@ python scripts/make_holdout.py --raw-dir <ML_group9/data/raw> --name holdout3 --
 python scripts/make_holdout.py --raw-dir <ML_group9/data/raw> --name holdout4 --exclude sample,medium,holdout,holdout2,holdout3 --size 20000 --seed 42 --expect-remaining 49936
 ```
 
-All three draw the users with the vendored preprocessing code and write
-`reports/holdout_prep/<name>_selection.json`. With `--exclude holdout` (or `holdout2`) those user ids are
+All four draw the users with the vendored preprocessing code and write
+`reports/holdout_prep/<name>_selection.json`. With `--exclude holdout` (or `holdout2`, `holdout3`) those user ids are
 not read from their files: the earlier draws are re-run and checked against the digests recorded in
 their selection reports; `--expect-remaining` stops before the draw unless exactly that many users
 remain. Peak memory is `ru_maxrss` on POSIX and the peak working set on Windows. None of the commands is
@@ -124,6 +128,13 @@ python -m nbr evaluate --profile holdout3 --dataset instacart --final --skip-l3 
 python -m nbr tune --profile holdout3 --dataset complete_journey
 python -m nbr evaluate --profile holdout3 --dataset complete_journey --skip-l3 --policy
 python -m nbr evaluate --profile holdout3 --dataset complete_journey --transfer-from instacart --skip-l3 --policy
+# confirmatory (holdout4, PREREG v1.5 two-CF final system + v1.5.1 policy replication): the five commands of
+# reports/final4/RUN.md, each run once; configs/holdout4.yaml sets lr_repeat.itemcf_feature: true (R2', C4, "v15" block)
+python -m nbr tune --profile holdout4 --dataset instacart
+python -m nbr evaluate --profile holdout4 --dataset instacart --final --skip-l3 --policy
+python -m nbr tune --profile holdout4 --dataset complete_journey
+python -m nbr evaluate --profile holdout4 --dataset complete_journey --skip-l3 --policy
+python -m nbr evaluate --profile holdout4 --dataset complete_journey --transfer-from instacart --skip-l3 --policy
 ```
 
 `tune` writes `reports/metrics/<profile>_<dataset>_tuning.json` and
@@ -182,6 +193,89 @@ by `python scripts/check_readme_results.py`. diff = model - comparator, paired b
 (n = 1000, seed 42); decision wording as pre-registered: "improvement observed" when the lower bound
 is above 0, "lower" when the upper bound is below 0, otherwise "no difference established". The
 classification of every row (`prereg`, `tier`) is explicit in `scripts/results_sources.yaml`.
+
+### Final system with two CF methods (PREREG v1.5, holdout4)
+
+Instacart `holdout4`: 20,000 users not in `sample`, `medium`, `holdout`, `holdout2` or `holdout3`; eval split read
+once (command 2 of `reports/final4/RUN.md`). PREREG v1.5 fixes the final system with two collaborative-filtering
+methods: C4 (PREREG v1.5) = R2' + E2, where R2' (`repeat_lri`) is the logistic-regression repeat ranker R2 with
+one extra feature, the item-CF similarity `icf(u, i) = log(1 + sum over the user's other items j of sim(j, i))`
+taken from the top-20 cosine item-neighbour lists of the scored history (self excluded; neighbours computed on the
+fit history for training rows and on the eval history for lists), and E2 is the user-based CF explore list. The
+C of R2' is selected separately from R2 on the same validation users (holdout4: C = 0.01 for R2', 0.01 for
+R2); r of C4 is re-selected like r of C3 (train-only R2' bundle, LR validation users, NDCG@10; holdout4: r = 10
+for C4, 10 for C3; user-CF k = 100, log1p). The label C4 had denoted a planned, never evaluated
+combination E3 + R2 in the consolidated tables before v1.5; that placeholder was never run. Primary family of 2; the
+97.5 % interval (1 - 0.05/2) is the pre-registered one, and the profile's bootstrap levels are 0.95 and 0.975, so
+every row of this stage carries it. H14: NDCG@10 of C4 minus C3 over all users, "non-inferior" when the 97.5 % lower
+bound is above -0.003 (the v1.4 margin), otherwise "non-inferiority not established". H15: NDCG@10 of C4 minus
+personal frequency (padded with popularity) over all users, with the improvement wording above. Decisions at the
+97.5 % level: H14 non-inferior, H15 improvement observed.
+
+<!-- results-table: holdout4_primary -->
+| Hypothesis (metric) | Dataset | Users (n) | Comparator -> model | diff | 95 % CI | 97.5 % CI | Decision (95 % / 97.5 %) |
+|---|---|---|---|---|---|---|---|
+| H14 (NDCG@10, non-inferiority): C4 vs C3 | Instacart holdout4 | 20,000 | 0.4258 -> 0.4258 | 0.0000 | [-0.0001, 0.0001] | [-0.0001, 0.0001] | non-inferior / non-inferior |
+| H15 (NDCG@10): C4 vs personal frequency | Instacart holdout4 | 20,000 | 0.3934 -> 0.4258 | +0.0324 | [0.0307, 0.0340] | [0.0305, 0.0343] | improvement observed / improvement observed |
+
+Deviation PREREG v1.5.2: the first execution of command 2 was terminated by the host tool after it had loaded the eval
+split and before any output; the authorised single re-run (started outside the host tool) produced the result, so the
+holdout4 Instacart eval split was loaded twice and the first load produced no output (`reports/final4/RUN.md`).
+
+Secondary (no confirmatory claim; CI only): repeat Recall@10 of R2' against R2 and against R1 (18,701 users
+with a repeat target item), Recall@10 of C4 against C3, the standardized coefficients of R2' (icf coefficient
+-0.002 on Instacart, -0.012 on Complete Journey; `v15.lr_repeat_icf` of the eval JSON) and the
+history-length bins of H14 (T5, figure F9). The replication of H6, H7' and H8 on holdout4 follows (CI levels 95 % and
+97.5 % as written by the code; secondary under v1.5). The development check of the v1.5 code on `medium` is
+`reports/posthoc/icf_dev_medium.md`.
+
+<!-- results-table: holdout4_secondary -->
+| Hypothesis (metric) | Dataset | Users (n) | Comparator -> model | diff | 95 % CI | 97.5 % CI | Decision (95 % / 97.5 %) |
+|---|---|---|---|---|---|---|---|
+| R2' vs R2 (repeat Recall@10) | Instacart holdout4 | 18,701 | 0.5750 -> 0.5749 | -0.0002 | [-0.0004, 0.0000] | [-0.0004, 0.0001] | (CI only) |
+| R2' vs R1 (repeat Recall@10) | Instacart holdout4 | 18,701 | 0.5628 -> 0.5749 | +0.0121 | [0.0102, 0.0141] | [0.0099, 0.0144] | (CI only) |
+| C4 vs C3 (Recall@10) | Instacart holdout4 | 20,000 | 0.3522 -> 0.3521 | -0.0001 | [-0.0002, 0.0000] | [-0.0002, 0.0000] | (CI only) |
+
+<!-- results-table: holdout4_replication -->
+| Hypothesis (metric) | Dataset | Users (n) | Comparator -> model | diff | 95 % CI | 97.5 % CI | Decision (95 % / 97.5 %) |
+|---|---|---|---|---|---|---|---|
+| H6 (repeat Recall@10) | Instacart holdout4 | 18,701 | 0.5628 -> 0.5750 | +0.0122 | [0.0103, 0.0143] | [0.0100, 0.0146] | improvement observed / improvement observed |
+| H7' (NDCG@10) | Instacart holdout4 | 20,000 | 0.4197 -> 0.4258 | +0.0061 | [0.0051, 0.0070] | [0.0050, 0.0072] | improvement observed / improvement observed |
+| H7' (Recall@10, reported) | Instacart holdout4 | 20,000 | 0.3466 -> 0.3522 | +0.0056 | [0.0044, 0.0068] | [0.0042, 0.0071] | improvement observed / improvement observed |
+| H8 (new-item Recall@10) | Instacart holdout4 | 16,335 | 0.0408 -> 0.0590 | +0.0181 | [0.0162, 0.0200] | [0.0158, 0.0202] | improvement observed / improvement observed |
+
+Complete Journey refit (same `medium` data as development, not independent; C = 1 for R2', r = 10
+for C4) and transfer of the Instacart holdout4 selections and artifacts, secondary under PREREG v1.5.
+
+<!-- results-table: holdout4_complete_journey -->
+| Hypothesis (metric) | Dataset | Users (n) | Comparator -> model | diff | 95 % CI | 97.5 % CI | Decision (95 % / 97.5 %) |
+|---|---|---|---|---|---|---|---|
+| H14 (NDCG@10, non-inferiority): C4 vs C3 | Complete Journey refit | 2,069 | 0.2046 -> 0.2048 | +0.0002 | [-0.0004, 0.0007] | [-0.0005, 0.0008] | non-inferior / non-inferior |
+| H15 (NDCG@10): C4 vs personal frequency | Complete Journey refit | 2,069 | 0.1859 -> 0.2048 | +0.0189 | [0.0147, 0.0231] | [0.0138, 0.0235] | improvement observed / improvement observed |
+| R2' vs R2 (repeat Recall@10) | Complete Journey refit | 1,867 | 0.2740 -> 0.2739 | -0.0001 | [-0.0012, 0.0009] | [-0.0013, 0.0010] | (CI only) |
+| H14 (NDCG@10, non-inferiority): C4 vs C3 | Complete Journey, Instacart selections transferred | 2,069 | 0.1992 -> 0.1993 | +0.0001 | [-0.0003, 0.0006] | [-0.0004, 0.0006] | non-inferior / non-inferior |
+| H15 (NDCG@10): C4 vs personal frequency | Complete Journey, Instacart selections transferred | 2,069 | 0.1859 -> 0.1993 | +0.0134 | [0.0084, 0.0182] | [0.0078, 0.0189] | improvement observed / improvement observed |
+| R2' vs R2 (repeat Recall@10) | Complete Journey, Instacart selections transferred | 1,867 | 0.2686 -> 0.2683 | -0.0003 | [-0.0010, 0.0005] | [-0.0011, 0.0006] | (CI only) |
+
+Exploration policy on the final system (secondary replication, holdout4; PREREG v1.5.1): the v1.4 policy is
+repeated with C4 as the base, P_T(C4) = C4 with r_u = 9 for users with at most T = 4 history baskets (4,316 of
+the 20,000 users; 1 of the 2,069 Complete Journey households) and r of C4 otherwise; S = E2 on its own.
+T = 4 and delta = 0.003 are unchanged, the intervals are 95 % and 98.33 % with the v1.4 decision wording, and no
+confirmatory claim is made: the confirmatory policy result remains H11-H13 on `holdout3` (first three rows of the
+table). The v1.4 policy on C3 is repeated on holdout4 as a reference (last two rows); the Complete Journey values are
+in T1 (`policy_c4:*` rows of stage `confirmatory holdout4`).
+
+<!-- results-table: holdout4_policy -->
+| Hypothesis (metric) | Dataset | Users (n) | Comparator -> model | diff | 95 % CI | 98.33 % CI | Decision (95 % / 98.33 %) |
+|---|---|---|---|---|---|---|---|
+| H11 (NDCG@10, non-inferiority): P_T vs C3 | Instacart holdout3 | 20,000 | 0.4274 -> 0.4261 | -0.0013 | [-0.0015, -0.0011] | [-0.0016, -0.0011] | non-inferior / non-inferior |
+| H12 (new-item hit share@10): P_T vs C3 | Instacart holdout3 | 20,000 | 0.0042 -> 0.0143 | +0.0101 | [0.0087, 0.0115] | [0.0084, 0.0118] | improvement observed / improvement observed |
+| H13 (new-item hit share@10): S vs flat popularity | Instacart holdout3 | 16,340 | 0.1681 -> 0.2151 | +0.0470 | [0.0420, 0.0520] | [0.0413, 0.0528] | improvement observed / improvement observed |
+| as H11 (NDCG@10): P_T(C4) vs C4 | Instacart holdout4 | 20,000 | 0.4258 -> 0.4243 | -0.0015 | [-0.0017, -0.0012] | [-0.0017, -0.0012] | non-inferior / non-inferior |
+| as H12 (new-item hit share@10): P_T(C4) vs C4 | Instacart holdout4 | 20,000 | 0.0049 -> 0.0163 | +0.0115 | [0.0101, 0.0129] | [0.0097, 0.0132] | improvement observed / improvement observed |
+| as H13 (new-item hit share@10): S vs flat popularity | Instacart holdout4 | 16,335 | 0.1726 -> 0.2243 | +0.0517 | [0.0467, 0.0565] | [0.0457, 0.0575] | improvement observed / improvement observed |
+| reference: P_T vs C3 (NDCG@10) | Instacart holdout4 | 20,000 | 0.4258 -> 0.4243 | -0.0015 | [-0.0017, -0.0013] | [-0.0017, -0.0012] | non-inferior / non-inferior |
+| reference: P_T vs C3 (new-item hit share@10) | Instacart holdout4 | 20,000 | 0.0049 -> 0.0163 | +0.0115 | [0.0101, 0.0129] | [0.0097, 0.0132] | improvement observed / improvement observed |
 
 ### Exploration policy (PREREG v1.4, holdout3)
 
@@ -331,11 +425,12 @@ confirmatory; they are the basis on which C3 was selected before the holdout2 ru
 ## Folder structure
 
 ```
-configs/     common.yaml (grids, bootstrap, category levels), sample/medium/holdout/holdout2/holdout3.yaml, usercf.yaml, r3.yaml
+configs/     common.yaml (grids, bootstrap, category levels, lr_repeat.itemcf_feature), sample/medium/holdout/holdout2/holdout3/holdout4.yaml, usercf.yaml, r3.yaml
 data/        SOURCE.md, MANIFEST.sha256 (processed Parquet untracked)
 docs/        PREREG.md, ARCHITECTURE.md, MODULES.md, LIBRARIES.md, CITATIONS.md, CODE_AUDIT.md, figures/ (final-system diagram)
 reports/     final/ (holdout JSONs, RUN.md, SHA256SUMS; PREREG v1.2), final2/ (holdout2 JSONs, RUN.md, SHA256SUMS, logs; PREREG v1.3),
              final3/ (holdout3 JSONs, RUN.md, SHA256SUMS, logs; PREREG v1.4 exploration policy),
+             final4/ (holdout4 JSONs, RUN.md, SHA256SUMS, logs; PREREG v1.5 two-CF final system, v1.5.1 policy replication),
              results/ (tables T1-T7, figures F1-F8, RESULTS.md), posthoc/ (development case studies), eda/, data_check/, holdout_prep/;
              metrics/, figures/, tables/ (untracked run outputs)
 scripts/     make_holdout.py, check_data.py, make_eda.py, make_results.py (+ results_sources.yaml), check_readme_results.py, audit_code.py,
@@ -350,7 +445,7 @@ vendor/      ml_group9_e11b365 (unmodified preprocessing snapshot, release/term-
 
 | Document | Content |
 |---|---|
-| `docs/PREREG.md` | pre-registration v1.4 (question, model, selection, hypotheses, deviations v1.1-v1.4; v1.4 = the exploration-policy test on holdout3) |
+| `docs/PREREG.md` | pre-registration v1.5.1 (question, model, selection, hypotheses, deviations v1.1-v1.5.1; v1.5 = the two-CF final system C4 tested on holdout4, v1.5.1 = the policy replication on C4) |
 | `docs/ARCHITECTURE.md` | system structure (diagram), profiles, commands and files, selection procedure, leakage rules |
 | `docs/MODULES.md` | module and combination catalogue with status, hypothesis basis and filtering-method classification |
 | `docs/LIBRARIES.md` | third-party modules and functions used, with parameters and the related course module |
@@ -359,6 +454,7 @@ vendor/      ml_group9_e11b365 (unmodified preprocessing snapshot, release/term-
 | `reports/final/RUN.md` | final run log (PREREG v1.2, holdout) |
 | `reports/final2/RUN.md` | final run log (PREREG v1.3, holdout2: pre-checks, selections fixed before the eval read, commands, CJ reproducibility check) |
 | `reports/final3/RUN.md` | run log of the exploration-policy test (PREREG v1.4, holdout3: pre-specified keys, pre-checks, selections fixed before the eval read, commands, CJ reproducibility check) |
+| `reports/final4/RUN.md` | run log of the two-CF final run (PREREG v1.5 / v1.5.1, holdout4: pre-specified keys, pre-checks, selections fixed before the eval read, commands, CJ reproducibility check) |
 | `reports/posthoc/policy_dev_medium.md` | development check of the policy code on medium against the W8b selections and the W15 numbers (not confirmatory) |
 | `reports/results/RESULTS.md` | consolidated result tables and figures with source files and digests |
 | `reports/eda/eda_summary.md` | exploratory data analysis of the development data (Korean) |
