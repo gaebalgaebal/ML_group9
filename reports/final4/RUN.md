@@ -194,3 +194,23 @@ Commands 2-5 (chained, `--stop-on-failure`) were started only after this message
 - Per the failure policy of this run (same as reports/final3/RUN.md: a failure in command 2 stops everything, no partial output
   is opened, no re-run), the run stops here. A continuation would be a second read of the holdout4 Instacart eval split and is
   not executed on the executor's own initiative; it requires a decision recorded as a PREREG deviation before it is run.
+
+## Deviation PREREG v1.5.2: one re-run of command 2 (written before the re-run)
+
+- docs/PREREG.md v1.5.2 (main commit `0708061`, tag `prereg-v1.5.2`, merged into this branch as `5e24d2f`; `git diff --stat 6fba95a HEAD`
+  lists only docs/PREREG.md and files under reports/final4/) authorises exactly one re-run of command 2 and the first runs of commands 3
+  to 5, unchanged (code, configs, selections `6fba95a`, seeds, hypotheses, delta and CI levels), outside the host tool. If the re-run of
+  command 2 fails before `reports/metrics/holdout4_instacart_eval.json` is written, no further run is made and H14, H15 and policy_c4
+  are reported as not obtained. Every report states that the holdout4 Instacart eval split was loaded twice and that the first load
+  produced no output.
+- Evidence that the first command 2 produced no output: `logs/cmd2_interrupted.log` has 2 lines (the two runner header lines,
+  no program output); `reports/metrics/` holds ['holdout4_instacart_tuning.json'] and no file matching `holdout4_*eval*` (0 eval outputs);
+  `artifacts/holdout4/` holds only the two Instacart artifacts of command 1; `logs/commands.json` holds the command 1 record only.
+  No holdout4 eval JSON was ever opened by the executor.
+- Re-run plan: commands 2-5 of the pre-specified list, unchanged, chained with `--stop-on-failure` by the same runner
+  (`run_cmds.py`, copied with `cmd2to5.json` to the git-ignored folder `artifacts/w19_runner/` so that the working tree stays clean),
+  started by the project owner in a standalone PowerShell window (not a Claude Code shell), recording UTC start/end, wall time, exit
+  code, peak working set and HEAD into `logs/commands.json` (appended after the command 1 record) and `logs/cmd2.log` ... `logs/cmd5.log`.
+  HEAD at the re-run: the commit of this section (clean working tree). Expected outputs: `reports/metrics/holdout4_instacart_eval.json`,
+  `holdout4_complete_journey_tuning.json`, `holdout4_complete_journey_eval.json`, `holdout4_complete_journey_eval_transfer.json`,
+  `artifacts/holdout4/complete_journey_lr_repeat.joblib` and `complete_journey_lr_repeat_icf.joblib`.
