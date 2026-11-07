@@ -1,0 +1,5 @@
+profile: holdout3
+role: final                 # Instacart eval split is read once, after selections are fixed on fit splits (PREREG v1.4)
+datasets: [instacart]
+# Complete Journey has no unused households; the final CJ run uses the medium CJ data (limitation).
+complete_journey_profile: medium

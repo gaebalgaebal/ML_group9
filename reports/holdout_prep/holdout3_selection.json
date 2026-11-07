@@ -1,0 +1,83 @@
+{
+  "name": "holdout3",
+  "data_dir": "C:\\dev_ML\\data\\processed",
+  "excluded_profiles": [
+    "sample",
+    "medium",
+    "holdout",
+    "holdout2"
+  ],
+  "medium_draw_reproduced": true,
+  "eligible_train_users": 131209,
+  "excluded_users": 61273,
+  "remaining_users": 69936,
+  "exclusion_sources": {
+    "sample": {
+      "source": "eval_target_user_ids",
+      "users": 1500,
+      "sha256": "6d5e65c4862f89e00615f857dd9fe6f855cda17ec652334451868011410e17df"
+    },
+    "medium": {
+      "source": "eval_target_user_ids",
+      "users": 20000,
+      "sha256": "cebd6a40063b745f54f375281645be3846f3719383849a799cb3ec08912cfd4d"
+    },
+    "holdout": {
+      "source": "reconstructed_from_report",
+      "users": 20000,
+      "sha256": "43a1578613b2e1bd7f04db87ed3e6b078fe9537e944d650bf7872bbce13f7a06"
+    },
+    "holdout2": {
+      "source": "reconstructed_from_report",
+      "users": 20000,
+      "sha256": "359eba2005a3b0e69aee7fbe3179c6ee5a1d466c54c14094e8911bfc8bedb2cc"
+    }
+  },
+  "vendor_commit": "e11b3652c5fc92aa5d22d4309a2c6368ed8a464d",
+  "seed": 42,
+  "size": 20000,
+  "selected_users": 20000,
+  "overlap_with_used_profiles": 0,
+  "overlap_by_profile": {
+    "sample": 0,
+    "medium": 0,
+    "holdout": 0,
+    "holdout2": 0
+  },
+  "selected_users_sha256": "fd7a8157f9588fdb758eb69d0cd23a69962e1a252c0efa5be8a0db6e0fce1879",
+  "items_equal_medium": true,
+  "attribute_categories_equal_medium": true,
+  "mapping": {
+    "columns": {
+      "product_id": "int64",
+      "mapping_status": "object",
+      "matched_key": "object",
+      "ingredient_id": "object",
+      "match_rule": "object",
+      "review_reason": "object",
+      "dropped_tokens": "object",
+      "mapping_note": "object",
+      "is_auto": "bool",
+      "v1_mapping_status": "object",
+      "v1_matched_key": "object",
+      "mapping_version": "object"
+    },
+    "rows": 49688,
+    "mapping_version": [
+      "2026-11-02.v2.1"
+    ],
+    "version_matches": true
+  },
+  "prepare_summary": {
+    "users": 20000,
+    "fit_interactions": 2971602,
+    "eval_interactions": 3178119,
+    "items": 49688
+  },
+  "runtime_s": 27.1,
+  "peak_rss_mb": 1518.0,
+  "peak_memory_source": "PeakWorkingSetSize",
+  "python": "3.12.16",
+  "pandas": "2.2.3",
+  "numpy": "1.26.4"
+}
