@@ -834,7 +834,7 @@ def figure_rank_hits(entries: dict[str, dict[str, Any]], out_dir: Path) -> dict[
         r10 = float(rep.loc[rep["rank"] == 10, "p_hit"].iloc[0])
         e1 = float(exp.loc[exp["rank"] == 1, "p_hit"].iloc[0])
         ax.annotate(f"R2 rank 10: {r10:.3f}", (10, r10), xytext=(0, 12), textcoords="offset points", ha="center", fontsize=9)
-        ax.annotate(f"E2 rank 1: {e1:.3f}", (1, e1), xytext=(10, -14), textcoords="offset points", ha="left", fontsize=9)
+        ax.annotate(f"E2 rank 1: {e1:.3f}", (1, e1), xytext=(12, 6), textcoords="offset points", ha="left", va="bottom", fontsize=9)
         ax.set_xticks(range(1, REPEAT_RANKS + 1))
         ax.set_xlabel("rank in the list")
         ax.set_ylabel("P(item at the rank is in the target basket)")
@@ -871,7 +871,7 @@ def figure_slot_effects(entries: dict[str, dict[str, Any]], out_dir: Path) -> di
     frame.to_csv(csv_path, index=False)
     _style()
     n = len(entries)
-    metrics = (("ndcg", "change in NDCG@10"), ("new_hit_share", "change in the share of users with >= 1 new-item hit"))
+    metrics = (("ndcg", "change in NDCG@10"), ("new_hit_share", "change in share with a new-item hit"))
     fig, axes = plt.subplots(len(metrics), n, figsize=(6.0 * n, 3.3 * len(metrics)), layout="constrained", squeeze=False)
     styles = {9: ("slot1", "o", "full", "r = 9 (one exploration slot)"), 8: ("slot2", "s", "none", "r = 8 (two exploration slots)")}
     for col, dataset in enumerate(entries):
@@ -897,8 +897,8 @@ def figure_slot_effects(entries: dict[str, dict[str, Any]], out_dir: Path) -> di
             ax.grid(False, axis="y")
             for side in ("top", "right"):
                 ax.spines[side].set_visible(False)
-            if row_index == 0 and col == 0:
-                ax.legend(frameon=False, fontsize=8.5, loc="best")
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="outside lower center", ncol=2, frameon=False, fontsize=9)
     fig.suptitle("Forced exploration slots: metric change of r = 9 and r = 8 against r = 10 per repeat module (eval split, paired bootstrap); "
                  f"x axes differ per panel\n{LABEL}", fontsize=9.5, color=INK["secondary"])
     png_path = out_dir / f"{FIGURES['slots']}.png"
@@ -1017,7 +1017,7 @@ def render_rank_hits(entries: dict[str, dict[str, Any]]) -> list[str]:
                          _f(e["p_hit"]) if e else "-", _f(e["share_present"]) if e else "-", _f(e["p_hit_given_present"]) if e else "-"])
         lines += [f"{NAMES[dataset]} ({hits['n_users']:,} users); expected hits per user: R2 ranks 1-10 {hits['expected_hits_top10']['repeat_R2_ranks_1_10']:.3f}, "
                   f"E2 ranks 1-3 {hits['expected_hits_top10']['explore_E2_ranks_1_3']:.3f}:", ""]
-        lines += _table(["rank", "R2 P(hit)", "R2 present", "R2 P(hit | present)", "E2 P(hit)", "E2 present", "E2 P(hit | present)"], rows)
+        lines += _table(["rank", "R2 P(hit)", "R2 present", "R2 P(hit given present)", "E2 P(hit)", "E2 present", "E2 P(hit given present)"], rows)
     lines += ["Slot comparisons (paired bootstrap over all users; diff = explore hits minus repeat hits in the slots that change):", ""]
     rows = []
     for dataset, entry in entries.items():
