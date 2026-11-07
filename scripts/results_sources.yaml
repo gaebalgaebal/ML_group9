@@ -2,10 +2,20 @@
 # Relative paths are taken from the repository root; ${VAR:-default} is expanded from the environment.
 # The development inputs are untracked run outputs of sibling git worktrees of this repository
 # (<parent>/dev_ML-wt-*); set NBR_WORKTREES to the folder that holds them (default: the parent folder).
-# "stage" wording is fixed: "confirmatory holdout2" (PREREG v1.3 final run), "confirmatory holdout" (PREREG v1.2 final run)
-# or "development medium".
+# "stage" wording is fixed: "confirmatory holdout3" (PREREG v1.4 exploration-policy test), "confirmatory holdout2" (PREREG v1.3
+# final run), "confirmatory holdout" (PREREG v1.2 final run) or "development medium".
 
 sources:
+  holdout3:
+    stage: confirmatory holdout3
+    run: holdout3
+    description: confirmatory test of the exploration policy, PREREG v1.4, reports/final3 (W17); primary H11, H12, H13 on Instacart holdout3
+    files:
+      instacart_tuning: reports/final3/holdout3_instacart_tuning.json
+      instacart_eval: reports/final3/holdout3_instacart_eval.json
+      complete_journey_tuning: reports/final3/holdout3_complete_journey_tuning.json
+      complete_journey_eval: reports/final3/holdout3_complete_journey_eval.json
+      complete_journey_eval_transfer: reports/final3/holdout3_complete_journey_eval_transfer.json
   holdout2:
     stage: confirmatory holdout2
     run: holdout2
@@ -103,17 +113,28 @@ eda:
 development_integration_run_preference: [W8b, W8]
 
 # Run priority for the T1 "current" flag: within the same stage, dataset, transfer setting, comparator, model and
-# metric, the row of the highest-priority run is current (holdout2 and holdout are separate confirmatory stages, so
-# both stay current; development: W8b > W9 > W8 > W7, W6 > W4a).
-run_priority: {holdout2: 0, holdout: 0, W8b: 1, W9: 2, W8: 3, W7: 4, W6: 4, W4a: 5}
+# metric, the row of the highest-priority run is current (holdout3, holdout2 and holdout are separate confirmatory stages, so
+# all of them stay current; development: W8b > W9 > W8 > W7, W6 > W4a).
+run_priority: {holdout3: 0, holdout2: 0, holdout: 0, W8b: 1, W9: 2, W8: 3, W7: 4, W6: 4, W4a: 5}
 
 # Hypothesis classification per stage -> T1 columns `prereg` and `tier`. The classification is explicit here and does not
 # follow the JSON block names (the pipeline still writes H7 and H9 under "primary" and the C3-vs-C0 comparisons under
 # "integration.secondary"). A rule applies to the rows of its stage whose T1 id is in `ids` (the JSON entry key; secondary
 # entries of the lr_repeat / integration blocks carry the "lr_repeat:" / "integration:" prefix), whose dataset is in
 # `datasets` and which are not transfer rows; rows matched by no rule get `default_tier`. `rename` gives the T1 id and
-# hypothesis label used for the C3-vs-C0 entries of the v1.3 stage (H7' = C3 vs C0, PREREG v1.3 item 4).
+# hypothesis label used for the C3-vs-C0 entries of the v1.3 stage (H7' = C3 vs C0, PREREG v1.3 item 4) and of the H7'
+# replication on holdout3. The v1.4 stage: primary H11 (non-inferiority, delta = 0.003), H12, H13 on Instacart holdout3 (the
+# "policy" block of the eval JSON, 98.33 % intervals); every other row of that stage (the policy secondary metrics and variants,
+# the H6/H7'/H8 and H1-H5 replication, Complete Journey refit and transfer) is secondary.
 classification:
+  confirmatory holdout3:
+    prereg: v1.4
+    default_tier: secondary
+    rename:
+      "integration:final_lr_ucf_vs_final_ndcg": {id: H7prime_ndcg, hypothesis: "H7'"}
+      "integration:final_lr_ucf_vs_final_recall": {id: H7prime_recall, hypothesis: "H7'"}
+    rules:
+      - {tier: primary, datasets: [instacart], ids: [H11_ndcg, H12_new_hit_share, H13_new_hit_share]}
   confirmatory holdout2:
     prereg: v1.3
     default_tier: secondary
@@ -147,6 +168,7 @@ combinations:
   C2:    {list: final_lr_r,     repeat: R2, explore: E1, r_rule: "r re-selected on the fit split (LR validation users)", status: evaluated-not-adopted, basis: "secondary final_lr_r_vs_final_lr (medium)", note: "r = 10 selected"}
   C3:    {list: final_lr_ucf,   repeat: R2, explore: E2, r_rule: "r re-selected on the fit split (LR validation users)", status: "adopted (final system, PREREG v1.3)", basis: "H7' (holdout2); H9 = C3 vs C1 (medium, holdout2 secondary)", note: "r = 10 selected"}
   C3b:   {list: final_star_ucf, repeat: R1, explore: E2, r_rule: "r re-selected on the fit split (all fit users)", status: evaluated-not-adopted, basis: "secondary final_star_ucf_vs_final (medium)", note: "r = 10 selected"}
+  P_T:   {list: P_T,            repeat: R2, explore: E2, r_rule: "r_u = 9 for users with at most T = 4 history baskets, r* otherwise (PREREG v1.4 policy on C3)", status: "confirmatory test on holdout3 (PREREG v1.4)", basis: "H11, H12 (holdout3)", note: "T = 4 and delta = 0.003 fixed from the W15 post-hoc study; S = E2 on its own is H13"}
   C4:    {list: "",             repeat: R2, explore: E3, r_rule: "", status: not run, basis: "", note: "E3 + R2 not implemented"}
   E4+R1: {list: final_cf,       repeat: R1, explore: E4, r_rule: "r = 10 (stage-3 selection)", status: evaluated-not-adopted, basis: "secondary final_cf_vs_final (holdout v1.2 auxiliary)", note: "reference combination"}
 
@@ -187,6 +209,9 @@ hypothesis_labels:
   H9_ndcg: "H9 NDCG@10 (C3 vs C1)"
   H9_recall: "H9 Recall@10 (C3 vs C1)"
   H10_repeat_recall: "H10 repeat Recall@10 (R3 vs R2)"
+  H11_ndcg: "H11 NDCG@10 (P_T vs C3; non-inferiority, margin -0.003)"
+  H12_new_hit_share: "H12 new-item hit share@10 (P_T vs C3)"
+  H13_new_hit_share: "H13 new-item hit share@10 (S = E2 vs flat popularity)"
 
 dataset_labels:
   instacart: Instacart
