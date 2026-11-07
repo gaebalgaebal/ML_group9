@@ -63,3 +63,13 @@ Decision: lower bound > 0 -> "improvement observed"; CI contains 0 -> "no differ
   2. The check that `evaluate --profile holdout2 --dataset instacart` without `--final` stops at the holdout guard could be reached only after command 1, because the command loads the tuning selections first; it was recorded between commands 1 and 2, and no eval file was opened on that path.
   3. The pipeline output still labels H7 (C1 vs C0) and H9 (C3 vs C1) as "primary" and the C3-vs-C0 entries as "integration.secondary"; the consolidated tables classify hypotheses by the explicit v1.3 table in scripts/results_sources.yaml (primary: H6, H7', H8; all others secondary).
   4. The holdout2 Instacart eval split was read exactly once (command 2) and no command was re-run.
+- v1.4 (2026-11-07, after the post-hoc W15 study on medium, before holdout3 is created or read).
+  1. Confirmatory sample: `holdout3` = 20,000 Instacart users with a public final order, drawn with seed 42 from the users not in `sample`, `medium`, `holdout` or `holdout2` (69,936 remaining). Its Instacart eval split is read once, after this amendment is committed.
+  2. Systems: C3 = the final system of v1.3 (R2 + E2, r selected on the fit split). P_T = C3 with r_u = 9 for users with at most T distinct history baskets and r_u = r* otherwise (one exploration slot for short histories; explore items fill the last 10 - r_u slots). S = the separate exploration list: the top 10 of E2 evaluated on its own. T = 4 baskets and delta = 0.003 are fixed here from the W15 post-hoc study on medium (development data) and are not re-selected.
+  3. Selection (fit split only): as v1.3 (gamma, gamma_c, alpha, LR C, user-CF k and weighting, r). The policy does not change any selection.
+  4. Primary hypotheses (Instacart holdout3, family of 3, two-sided 98.33 % CI = 1 - 0.05/3):
+     H11 (non-inferiority): NDCG@10 of P_T minus C3 over all users; non-inferior if the CI lower bound > -0.003.
+     H12: share of users with >= 1 new-item hit in the top-10, P_T minus C3 over all users; improvement if the CI lower bound > 0.
+     H13: share of users with >= 1 new-item hit in a 10-item exploration list, S (E2) minus flat popularity excluding history items, over users with >= 1 new target item; improvement if the CI lower bound > 0.
+  5. Secondary (no confirmatory claim): Recall@10, new-item Recall@10 and repeat Recall@10 of P_T vs C3; history-length bins; the r_u = 8 variant for short histories; T in {6, 10} as sensitivity; replication of H6, H7' and H8; Complete Journey refit and transfer with the same policy (same data as development, not independent).
+  6. Inference: paired bootstrap over users, 1,000 resamples, seed 42; 95 % CIs reported alongside.
