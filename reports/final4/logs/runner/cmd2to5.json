@@ -1,0 +1,4 @@
+[{"id": "2", "args": ["-m", "nbr", "evaluate", "--profile", "holdout4", "--dataset", "instacart", "--final", "--skip-l3", "--policy"]},
+ {"id": "3", "args": ["-m", "nbr", "tune", "--profile", "holdout4", "--dataset", "complete_journey"]},
+ {"id": "4", "args": ["-m", "nbr", "evaluate", "--profile", "holdout4", "--dataset", "complete_journey", "--skip-l3", "--policy"]},
+ {"id": "5", "args": ["-m", "nbr", "evaluate", "--profile", "holdout4", "--dataset", "complete_journey", "--transfer-from", "instacart", "--skip-l3", "--policy"]}]

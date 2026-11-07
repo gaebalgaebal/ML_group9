@@ -1,0 +1,3 @@
+# 2026-11-07T15:17:54.019Z cwd=C:/dev_ML-wt-w19 commit=5c40aab2a4c8aca08a93eaa90b0ae100dececd5c dirty=False
+# C:\dev_ML\.venv\Scripts\python.exe -m nbr evaluate --profile holdout4 --dataset instacart --final --skip-l3 --policy
+evaluate holdout4/instacart: wrote C:\dev_ML-wt-w19\reports\metrics\holdout4_instacart_eval.json in 478.6s
