@@ -1,0 +1,17 @@
+# 2026-11-07T07:17:18.731Z cwd=C:/dev_ML-wt-w17 commit=df49c9662f3b1653a10eae2394e6d0c2f0543d89 dirty=False
+# C:/dev_ML/.venv/Scripts/python.exe -m nbr evaluate --profile holdout3 --dataset instacart --skip-l3 --policy
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\dev_ML-wt-w17\src\nbr\__main__.py", line 95, in <module>
+    main()
+  File "C:\dev_ML-wt-w17\src\nbr\__main__.py", line 86, in main
+    path = run_evaluate(
+           ^^^^^^^^^^^^^
+  File "C:\dev_ML-wt-w17\src\nbr\pipeline.py", line 829, in run_evaluate
+    selections = load_selections(config, source)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\dev_ML-wt-w17\src\nbr\pipeline.py", line 392, in load_selections
+    with open(path, encoding="utf-8") as handle:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\dev_ML-wt-w17\\reports\\metrics\\holdout3_instacart_tuning.json'

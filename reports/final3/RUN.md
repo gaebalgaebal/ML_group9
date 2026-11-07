@@ -71,9 +71,40 @@ and `at_grid_edge.{gamma, gamma_c, alpha, r}`; `integration.selections.{k, weigh
 and `integration.at_grid_edge.{k, C, r.*}`; `lr_repeat.C` (grid of `integration.lr.C_grid`). The policy changes no
 selection (PREREG v1.4 item 3): r* of `final_lr_ucf` is the `r_default` of P_T.
 
-## Pre-checks
+## Pre-checks (2026-11-07, commit `df49c96`, working tree clean, `NBR_DATA_DIR=C:\dev_ML\data\processed`)
 
-(to be recorded before command 1)
+Code commit used for the commands: HEAD of this branch at command time (recorded per command in the commands
+table); `src/` was last changed in `0c7aa89` (src/nbr/policy.py, pipeline.py, __main__.py) and `configs/` in
+`583675d` (configs/holdout3.yaml). Runner records: `logs/prechecks.json` (UTC start/end, wall time, exit code,
+peak working set of the process tree sampled every 0.5 s, HEAD, dirty flag), `logs/cmdcheck.log`,
+`logs/cmdguard_direct.log`, `logs/cmdguard.log`.
+
+1. `python -m nbr check --profile holdout3` (exit 0, 2.6 s, peak working set 1302.0 MiB; reads the fit split only):
+
+```
+profile=holdout3 role=final data_dir=C:\dev_ML\data\processed
+instacart/fit: users=20000 history_rows=2971602 target_rows=206517 users_with_repeat_target=18619 users_with_new_target=16304
+instacart/eval: skipped (holdout guard)
+```
+
+2. Holdout guard on the holdout3 config, direct call (`load_split(load_config('holdout3'), 'instacart', 'eval')`
+   without `allow_holdout_eval`), exit 1 before any Parquet file is opened:
+
+```
+role final data_dir C:\dev_ML\data\processed
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\dev_ML-wt-w17\src\nbr\data.py", line 49, in load_split
+    raise PermissionError(
+PermissionError: profile role is 'final': the Instacart eval split is read once, after all selections are fixed; pass allow_holdout_eval=True explicitly
+```
+
+3. `python -m nbr evaluate --profile holdout3 --dataset instacart --skip-l3 --policy` WITHOUT `--final`, run before
+   command 1 (exit 1): the command stops in `load_selections` with
+   `FileNotFoundError: ... reports\metrics\holdout3_instacart_tuning.json` because `run_evaluate` loads the
+   tuning selections before `load_split`; the guard itself is therefore reached only once the tuning file
+   exists (as in the holdout2 run, PREREG v1.3 run note 2). The same command is repeated after command 1 and
+   before command 2 (see "Guard check after command 1" below); the eval split is never opened on this path.
 
 ## Selections (written after command 1, before command 2)
 
