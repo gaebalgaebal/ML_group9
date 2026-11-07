@@ -1,0 +1,17 @@
+[
+  {
+    "id": "1",
+    "command": "python -m nbr tune --profile holdout4 --dataset instacart",
+    "commit": "ba0f38745560575d5e15c3a8f0abd3948ff28354",
+    "worktree_dirty": false,
+    "start_utc": "2026-11-07T13:20:32.200Z",
+    "end_utc": "2026-11-07T13:45:01.768Z",
+    "wall_seconds": 1469.6,
+    "exit_code": 0,
+    "peak_working_set_mib": 2561.5,
+    "peak_tree_working_set_sum_mib": 2547.9,
+    "memory_samples": 2844,
+    "max_processes_in_tree": 2,
+    "log": "logs/cmd1.log"
+  }
+]

@@ -166,3 +166,31 @@ S is the usercf list with k = 100, log1p weighting.
 Command 1 record (runner log `logs/commands.json`): start 2026-11-07T13:20:32.200Z, end 2026-11-07T13:45:01.768Z, wall
 1469.6 s, exit 0, peak working set 2561.5 MiB (process tree sampled every 0.5 s; the JSON
 `peak_memory_mib.v15` is 2561.5 MiB), HEAD `ba0f387`, working tree clean.
+
+## Guard check after command 1 (before command 2)
+
+`python -m nbr evaluate --profile holdout4 --dataset instacart --skip-l3 --policy` WITHOUT `--final`, run after the selections
+commit `6fba95a` and before command 2 (`logs/guard_after_command1.log`; start 2026-11-07T13:45:44.971Z, end 2026-11-07T13:45:51.172Z,
+6.2 s, exit 1, working tree clean): the tuning selections, the R2 and R2' artifacts, the integration and
+v15 selections load, then `nbr.data.load_split` raises `PermissionError: profile role is 'final': the Instacart eval split is read
+once, after all selections are fixed; pass allow_holdout_eval=True explicitly` before any eval Parquet file is opened.
+Commands 2-5 (chained, `--stop-on-failure`) were started only after this message was found in the log.
+
+## Incident: command 2 interrupted by the host (2026-11-07; written before any decision on a continuation)
+
+- Command 2, `python -m nbr evaluate --profile holdout4 --dataset instacart --final --skip-l3 --policy`, started at
+  2026-11-07T13:45:51.399Z at HEAD `6fba95a` with a clean working tree (`logs/cmd2_interrupted.log`, header lines only).
+- At about 13:48:59Z (the time the harness wrote its kill marker; about 188 s after the start) the process and its runner were
+  killed by the Claude Code harness because the machine was low on memory ("stopped because the system is running low on
+  memory"); this was a host-level action, not an error of the command (free physical memory measured right afterwards: 6.8 GB of
+  32 GB; the largest other process on the machine was Notion with 7.1 GB; command 2 of the holdout3 run had needed 3.99 GB
+  peak). No exit code was recorded (`logs/commands.json` holds the command 1 record only); no
+  `reports/metrics/holdout4_instacart_eval.json` exists, so there is no partial output and nothing was opened. Commands 3-5
+  were never started.
+- load_split was reached: NTFS last-access updates are enabled on the data volume, and the holdout4 eval files show
+  `eval_history.parquet` accessed at 13:45:52.66Z and `eval_target.parquet` at 13:45:53.35Z, 1.3-2.0 s after the start of
+  command 2. The holdout4 Instacart eval split was therefore read once into the memory of the command-2 process, which was
+  then killed without writing any result.
+- Per the failure policy of this run (same as reports/final3/RUN.md: a failure in command 2 stops everything, no partial output
+  is opened, no re-run), the run stops here. A continuation would be a second read of the holdout4 Instacart eval split and is
+  not executed on the executor's own initiative; it requires a decision recorded as a PREREG deviation before it is run.

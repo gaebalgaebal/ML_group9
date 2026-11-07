@@ -1,0 +1,2 @@
+# 2026-11-07T13:45:51.399Z cwd=C:/dev_ML-wt-w19 commit=6fba95a6b1b756392e5f86c8bd4b262954509f94 dirty=False
+# C:\dev_ML\.venv\Scripts\python.exe -m nbr evaluate --profile holdout4 --dataset instacart --final --skip-l3 --policy

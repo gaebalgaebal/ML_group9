@@ -1,0 +1,17 @@
+[
+  {
+    "id": "guard",
+    "command": "python -m nbr evaluate --profile holdout4 --dataset instacart --skip-l3 --policy",
+    "commit": "6fba95a6b1b756392e5f86c8bd4b262954509f94",
+    "worktree_dirty": false,
+    "start_utc": "2026-11-07T13:45:44.971Z",
+    "end_utc": "2026-11-07T13:45:51.172Z",
+    "wall_seconds": 6.2,
+    "exit_code": 1,
+    "peak_working_set_mib": 135.0,
+    "peak_tree_working_set_sum_mib": 139.3,
+    "memory_samples": 13,
+    "max_processes_in_tree": 2,
+    "log": "logs/guard_after_command1.log"
+  }
+]
