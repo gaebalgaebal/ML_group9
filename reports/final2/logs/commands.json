@@ -12,7 +12,7 @@
     "peak_tree_working_set_sum_mib": 2393.0,
     "memory_samples": 2453,
     "max_processes_in_tree": 2,
-    "log": "C:\\Users\\kimju\\AppData\\Local\\Temp\\claude\\9d1dee1fab5569e8\\49d2fa0c-df18-4d21-a3e8-9c8231709d18\\scratchpad\\w10b_run\\cmd1.log"
+    "log": "logs/cmd1.log"
   },
   {
     "id": "2",
@@ -27,7 +27,7 @@
     "peak_tree_working_set_sum_mib": 3892.1,
     "memory_samples": 563,
     "max_processes_in_tree": 2,
-    "log": "C:\\Users\\kimju\\AppData\\Local\\Temp\\claude\\9d1dee1fab5569e8\\49d2fa0c-df18-4d21-a3e8-9c8231709d18\\scratchpad\\w10b_run\\cmd2.log"
+    "log": "logs/cmd2.log"
   },
   {
     "id": "3",
@@ -42,7 +42,7 @@
     "peak_tree_working_set_sum_mib": 2514.9,
     "memory_samples": 1363,
     "max_processes_in_tree": 2,
-    "log": "C:\\Users\\kimju\\AppData\\Local\\Temp\\claude\\9d1dee1fab5569e8\\49d2fa0c-df18-4d21-a3e8-9c8231709d18\\scratchpad\\w10b_run\\cmd3.log"
+    "log": "logs/cmd3.log"
   },
   {
     "id": "4",
@@ -57,7 +57,7 @@
     "peak_tree_working_set_sum_mib": 3141.6,
     "memory_samples": 600,
     "max_processes_in_tree": 2,
-    "log": "C:\\Users\\kimju\\AppData\\Local\\Temp\\claude\\9d1dee1fab5569e8\\49d2fa0c-df18-4d21-a3e8-9c8231709d18\\scratchpad\\w10b_run\\cmd4.log"
+    "log": "logs/cmd4.log"
   },
   {
     "id": "5",
@@ -72,6 +72,6 @@
     "peak_tree_working_set_sum_mib": 3139.6,
     "memory_samples": 708,
     "max_processes_in_tree": 2,
-    "log": "C:\\Users\\kimju\\AppData\\Local\\Temp\\claude\\9d1dee1fab5569e8\\49d2fa0c-df18-4d21-a3e8-9c8231709d18\\scratchpad\\w10b_run\\cmd5.log"
+    "log": "logs/cmd5.log"
   }
 ]

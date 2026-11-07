@@ -12,6 +12,6 @@
     "peak_tree_working_set_sum_mib": 139.0,
     "memory_samples": 4,
     "max_processes_in_tree": 2,
-    "log": "C:\\Users\\kimju\\AppData\\Local\\Temp\\claude\\9d1dee1fab5569e8\\49d2fa0c-df18-4d21-a3e8-9c8231709d18\\scratchpad\\w10b_guard_after1\\cmdguard.log"
+    "log": "logs/cmdguard.log"
   }
 ]
