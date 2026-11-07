@@ -91,3 +91,15 @@ Decision: lower bound > 0 -> "improvement observed"; CI contains 0 -> "no differ
   2. Reported with 95 % and 98.33 % CIs and the v1.4 decision wording, labelled "secondary replication on holdout4". The confirmatory result for the policy remains H11-H13 on holdout3 (base C3). H14, H15 and their 97.5 % family are unchanged.
   3. Complete Journey: the same policy on C4, refit and transfer (same data as development, not independent).
   4. Reason: v1.5 changed the final system from C3 to C4; the policy is re-run so that the reported policy analysis refers to the final system.
+- v1.5.2 (2026-11-08) Deviation, committed before any holdout4 result was produced or seen.
+  Command 2 of reports/final4/RUN.md (evaluate --profile holdout4 --dataset instacart --final --skip-l3 --policy),
+  started 2026-11-07T13:45:51Z at 6fba95a, was terminated at about 13:48:59Z by the host tool
+  (Claude Code background-shell reaping under system memory pressure); no error was raised by the pipeline.
+  load_split had read the holdout4 Instacart eval split (eval_history, eval_target); no metric, output file
+  or result log line was produced, and no result was seen.
+  Authorised: exactly one re-run of command 2 and the first runs of commands 3 to 5, with code, configs,
+  selections (6fba95a), seeds, hypotheses, delta and CI levels unchanged; only the execution environment
+  changes (the chain runs outside the host tool).
+  If the re-run of command 2 fails before reports/metrics/holdout4_instacart_eval.json is written,
+  no further run is made and H14, H15 and policy_c4 are reported as not obtained.
+  All reports state that the holdout4 Instacart eval split was loaded twice and that the first load produced no output.
