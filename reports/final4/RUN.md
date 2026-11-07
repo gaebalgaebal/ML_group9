@@ -215,15 +215,6 @@ Commands 2-5 (chained, `--stop-on-failure`) were started only after this message
   `holdout4_complete_journey_tuning.json`, `holdout4_complete_journey_eval.json`, `holdout4_complete_journey_eval_transfer.json`,
   `artifacts/holdout4/complete_journey_lr_repeat.joblib` and `complete_journey_lr_repeat_icf.joblib`.
 
-## Guard check after command 1 (before command 2)
-
-`python -m nbr evaluate --profile holdout4 --dataset instacart --skip-l3 --policy` WITHOUT `--final`, run after the selections
-commit `6fba95a` and before command 2 (`logs/guard_after_command1.log`; start 2026-11-07T13:45:44.971Z, end 2026-11-07T13:45:51.172Z,
-6.2 s, exit 1, working tree clean): the tuning selections, the R2 and R2' artifacts, the integration
-and v15 selections load, then `nbr.data.load_split` raises `PermissionError: profile role is 'final': the Instacart eval split is read
-once, after all selections are fixed; pass allow_holdout_eval=True explicitly` before any eval Parquet file is opened.
-Command 2 was started only after this message was found in the log (the launch step checked for it).
-
 ## Commands (fixed order, each executed exactly once)
 
 Runner: `NBR_DATA_DIR=C:\dev_ML\data\processed`, `PYTHONPATH=src`, working directory `C:\dev_ML-wt-w19`,
@@ -264,7 +255,7 @@ twice and the first load produced no output. Commands 3, 4 and 5 ran once, and n
   `logs/runner/cmd2to5.json` (SHA-256 c6dfd16bcc67d953056fbf6f3291c76ba2307341c544a6a56a912514c4f524f3), byte-identical copies of
   `artifacts/w19_runner/run_cmds.py` and `cmd2to5.json` used for the chain (the same runner, with the command list of commands 1
   and of the pre-checks, ran command 1 and the pre-checks from this session). Command line:
-  `python artifacts/w19_runner/run_cmds.py --cwd C:\dev_ML-wt-w19 --out-dir C:\dev_ML-wt-w19eportsinal4\logs --python
+  `python artifacts/w19_runner/run_cmds.py --cwd C:\dev_ML-wt-w19 --out-dir C:\dev_ML-wt-w19\reports\final4\logs --python
   C:\dev_ML\.venv\Scripts\python.exe --commands artifacts/w19_runner/cmd2to5.json --stop-on-failure`.
 - `worktree_dirty` in the records: false for commands 1 and 2, true for commands 3-5. The runner writes its records into the
   tracked folder `reports/final4/logs/` (`commands.json` is tracked and gains a record after every command; `cmd<id>.log` files are
@@ -481,12 +472,17 @@ policy_c4 (Instacart holdout4): 20,000 users, 4,316 with history_len <= 4 (by T:
 | `2fbfcd3` | docs(final4): guard check after command 1 and the incident record: command 2 killed by the host (low memory) after the eval split was read; run stopped, no re-run |
 | `5e24d2f` | Merge main into feat/w19-icf-final: docs/PREREG.md v1.5.2 (deviation: one re-run of command 2 after the host kill) |
 | `5c40aab` | docs(final4): PREREG v1.5.2 deviation record before the re-run of command 2 (evidence of no output from the first attempt, re-run plan) |
-| (this commit) | post-run sections of this file, the five JSON copies, SHA256SUMS, logs |
+| `c7165f4` | post-run sections of this file, the five JSON copies, SHA256SUMS, logs of commands 2-5, runner copies |
+| (this commit) | text fixes of this file: duplicate guard-check section removed, runner command-line path corrected, Files section completed |
 
 ## Files
 
 `holdout4_*.json` are byte-identical copies of `reports/metrics/holdout4_*.json` written by the commands above
 (verified with `cmp`); `SHA256SUMS` lists their SHA-256 digests (`sha256sum -c SHA256SUMS` from this directory).
 `logs/` holds the runner records: `commands.json` (commands 1-5: UTC start/end, wall time, exit code, peak
-memory), `cmd1.log` ... `cmd5.log` (stdout+stderr of each command), `prechecks.json`, `cmdcheck.log`,
-`cmdguard_direct.log`, `cmdguard.log` (pre-checks), `guard_after_command1.json` and `guard_after_command1.log`.
+memory, HEAD, dirty flag), `cmd1.log` ... `cmd5.log` (stdout+stderr of each command), `cmd2_interrupted.log` (the header lines
+of the first, terminated execution of command 2), `prechecks.json`, `cmdcheck.log`, `cmdguard_direct.log`, `cmdguard.log`
+(pre-checks), `guard_after_command1.json`, `guard_after_command1.log`, and `runner/` (byte-identical copies of the runner
+`run_cmds.py` and the command list `cmd2to5.json` used for commands 2-5, digests in the execution-environment section).
+PREREG v1.5.2: the holdout4 Instacart eval split was loaded twice (first execution of command 2 terminated by the host without
+output; the authorised re-run produced the result); every report states this.
