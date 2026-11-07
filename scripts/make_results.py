@@ -6,18 +6,21 @@ Every number is read from the JSON/CSV files registered in results_sources.yaml 
 worktrees of C:\\dev_ML). Each table row and figure point carries its source file, the file's SHA-256 and
 the meta.git_commit recorded in that file. Confirmatory holdout results (PREREG v1.2) and development
 (medium) results are always labelled by the "stage" column / figure title; the PREREG v1.3 run on holdout2
-(reports/final2) is the stage "confirmatory holdout2", and the T1 columns prereg / tier carry the pre-registered
-classification of every row (results_sources.yaml: classification).
+(reports/final2) is the stage "confirmatory holdout2", the PREREG v1.4 exploration-policy test on holdout3 (reports/final3,
+W17) is the stage "confirmatory holdout3", and the T1 columns prereg / tier carry the pre-registered classification of
+every row (results_sources.yaml: classification). The policy block of an eval JSON ("policy": H11-H13 with 95 % and
+98.33 % CIs, secondary comparisons, variants, bins) is read like the other blocks; its intervals fill the T1 columns
+ci9833_lo / ci9833_hi / decision_9833.
 
 Outputs (all under --out):
   tables/T1_master_hypotheses.csv|.md   every primary hypothesis and secondary/auxiliary comparison, one row each (prereg, tier)
   tables/T2_selections.csv|.md          selected values per dataset x run with grid-edge flags
   tables/T3_module_screening.csv|.md    explore modules (new-item Recall@10) and repeat modules (repeat Recall@10)
-  tables/T4_final_lists.csv|.md         combinations C0-C3, C3b, reference E4 + R1 and the baselines: Recall@10, NDCG@10 (C4 not run)
-  tables/T5_history_length.csv|.md      per history-length bin: diff and 95% CI of H1, H3, H6, H7, H8, H9, H10
+  tables/T4_final_lists.csv|.md         combinations C0-C3, C3b, P_T, reference E4 + R1 and the baselines: Recall@10, NDCG@10 (C4 not run)
+  tables/T5_history_length.csv|.md      per history-length bin: diff and 95% CI of H1, H3, H6, H7, H8, H9, H10, H11, H12, H13
   tables/T6_module_catalog.csv|.md      module status catalogue (from results_sources.yaml)
   tables/T7_datasets_eda.csv|.md        dataset summary copied from the EDA branch (feat/w5a-eda)
-  figures/F1..F7 *.png (300 dpi) + *.csv with exactly the plotted numbers (each figure is drawn from its CSV)
+  figures/F1..F8 *.png (300 dpi) + *.csv with exactly the plotted numbers (each figure is drawn from its CSV)
   RESULTS.md                            index, input provenance, verification summary
 
 Checks: for every T1 row |diff - (mean_model - mean_comparator)| <= 1e-12 against the source values;
@@ -53,7 +56,8 @@ DPI = 300
 # Palette (one hue per role; stage is also carried by labels/hatching, never by colour alone).
 COLOR_HOLDOUT, COLOR_DEV, COLOR_THIRD, COLOR_INK, COLOR_MUTED, COLOR_GRID = "#2a78d6", "#eb6834", "#1baf7a", "#0b0b0b", "#52514e", "#e2e1dc"
 DATASET_ORDER = {"instacart": 0, "complete_journey": 1}
-STAGE_ORDER = {"confirmatory holdout2": 0, "confirmatory holdout": 1, "development medium": 2}
+STAGE_ORDER = {"confirmatory holdout3": 0, "confirmatory holdout2": 1, "confirmatory holdout": 2, "development medium": 3}
+POLICY_C3 = "final_lr_ucf"   # comparator list of the policy comparisons (C3)
 PRIMARY_USERS = {"H1": "users with repeat target", "H2": "users with new target", "H3": "all users",
                  "H4": "users with new target", "H5": "users with new target"}
 
@@ -202,6 +206,7 @@ def entry_row(entry: dict[str, Any], *, id_: str, hypothesis: str, source: Sourc
     ci = entry.get("ci", {})
     ci95 = ci.get("0.95", ci.get(0.95, [np.nan, np.nan]))
     ci99 = ci.get("0.99375", ci.get(0.99375, [np.nan, np.nan]))
+    ci98 = ci.get("0.9833", ci.get(0.9833, [np.nan, np.nan]))
     decision = entry.get("decision", {}) or {}
     return {
         "id": id_, "hypothesis": hypothesis, "stage": source.stage, "run": source.run, "dataset": dataset,
@@ -209,7 +214,9 @@ def entry_row(entry: dict[str, Any], *, id_: str, hypothesis: str, source: Sourc
         "users_n": int(entry["n_users"]), "comparator": entry["comparator"], "model": entry["model"],
         "mean_comparator": float(entry["comparator_mean"]), "mean_model": float(entry["model_mean"]), "diff": float(entry["diff"]),
         "ci95_lo": float(ci95[0]), "ci95_hi": float(ci95[1]), "ci99375_lo": float(ci99[0]), "ci99375_hi": float(ci99[1]),
-        "decision": decision.get("0.95", ""), "decision_99375": decision.get("0.99375", ""), **prov(source),
+        "ci9833_lo": float(ci98[0]), "ci9833_hi": float(ci98[1]),
+        "decision": decision.get("0.95", ""), "decision_99375": decision.get("0.99375", ""), "decision_9833": decision.get("0.9833", ""),
+        **prov(source),
     }
 
 
@@ -235,6 +242,16 @@ def eval_rows(source: Source) -> list[dict[str, Any]]:
                 rows.append(entry_row(entry, id_=key, hypothesis=hypothesis_of(key), source=source, dataset=dataset, transfer_from=transfer))
             for key, entry in doc[block].get("secondary", {}).items():
                 rows.append(entry_row(entry, id_=f"{block}:{key}", hypothesis="secondary", source=source, dataset=dataset, transfer_from=transfer))
+    if doc.get("policy"):  # W17 layout (PREREG v1.4): primary H11-H13, secondary, variants (r_short = 8, T = 6 / 10)
+        block = doc["policy"]
+        for key, entry in block.get("primary", {}).items():
+            rows.append(entry_row(entry, id_=key, hypothesis=hypothesis_of(key), source=source, dataset=dataset, transfer_from=transfer))
+        for key, entry in block.get("secondary", {}).items():
+            rows.append(entry_row(entry, id_=f"policy:{key}", hypothesis="secondary", source=source, dataset=dataset, transfer_from=transfer))
+        for name, variant in block.get("variants", {}).items():
+            for metric, entry in variant.get("comparisons", {}).items():
+                rows.append(entry_row(entry, id_=f"policy:{name}_vs_{POLICY_C3}_{metric}", hypothesis="secondary", source=source,
+                                      dataset=dataset, transfer_from=transfer))
     if "H8" in doc and "auxiliary" in doc:  # W7 layout
         rows.append(entry_row(doc["H8"], id_="H8_new_recall", hypothesis="H8", source=source, dataset=dataset, transfer_from=None,
                               users="users with new target"))
@@ -263,8 +280,8 @@ def eval_sources(registry: Registry, run: str | None = None) -> list[Source]:
 # tables
 # ---------------------------------------------------------------------------
 T1_COLUMNS = ["id", "hypothesis", "prereg", "tier", "stage", "run", "dataset", "transfer_from", "metric", "users", "users_n", "comparator", "model",
-              "mean_comparator", "mean_model", "diff", "ci95_lo", "ci95_hi", "ci99375_lo", "ci99375_hi", "decision", "decision_99375",
-              "current", "superseded_reason", "source_file", "source_sha256", "git_commit"]
+              "mean_comparator", "mean_model", "diff", "ci95_lo", "ci95_hi", "ci99375_lo", "ci99375_hi", "ci9833_lo", "ci9833_hi",
+              "decision", "decision_99375", "decision_9833", "current", "superseded_reason", "source_file", "source_sha256", "git_commit"]
 
 
 def metric_key(metric: str) -> str:
@@ -272,6 +289,8 @@ def metric_key(metric: str) -> str:
     text = str(metric).lower().replace("@10", "").strip()
     if "category" in text:
         return "category_hit"
+    if "hit share" in text or "hit_share" in text:
+        return "new_hit_share"
     if "new" in text:
         return "new_recall"
     if "repeat" in text:
@@ -520,6 +539,15 @@ def table_t4(registry: Registry, cfg: dict[str, Any], dev_run: str | None) -> pd
                          "r_rule": spec.get("r_rule", ""), "r": r_value if r_value is not None else "", "stage": source.stage, "run": source.run,
                          "dataset": doc["dataset"], "users_n": int(doc["n_users"]["all"]), "recall10": float(metrics["recall"]),
                          "ndcg10": float(metrics["ndcg"]), "note": spec.get("note", ""), **prov(source)})
+        if doc.get("policy") and "P_T" in by_list:  # W17: the policy list P_T (its C3 row is the final_lr_ucf row above)
+            block, (label, spec) = doc["policy"], by_list["P_T"]
+            metrics = block["list_metrics"]["P_T"]
+            rows.append({"combination": label, "list": "P_T", "repeat_module": spec.get("repeat", ""), "explore_module": spec.get("explore", ""),
+                         "r_rule": spec.get("r_rule", ""), "r": int(block["r_default"]), "stage": source.stage, "run": source.run,
+                         "dataset": doc["dataset"], "users_n": int(block["n_users"]["all"]), "recall10": float(metrics["recall"]),
+                         "ndcg10": float(metrics["ndcg"]),
+                         "note": f"{spec.get('note', '')}; r_u = {block['r_short']} for {block['n_users']['short_history']} users with "
+                                 f"history_len <= {block['T']}, r* = {block['r_default']} otherwise", **prov(source)})
         if source.stage == "development medium":  # planned combinations without a list (e.g. C4): one empty row per dataset
             for label, spec in combos.items():
                 if not spec["list"]:
@@ -535,7 +563,7 @@ def table_t4(registry: Registry, cfg: dict[str, Any], dev_run: str | None) -> pd
 
 
 T5_KEYS = ["H1_repeat_recall", "H3_ndcg", "H3_recall", "H6_repeat_recall", "H7_ndcg", "H7_recall", "H8_new_recall", "H9_ndcg", "H9_recall",
-           "H10_repeat_recall"]
+           "H10_repeat_recall", "H11_ndcg", "H12_new_hit_share", "H13_new_hit_share"]
 
 
 def table_t5(registry: Registry, dev_run: str | None) -> pd.DataFrame:
@@ -548,7 +576,7 @@ def table_t5(registry: Registry, dev_run: str | None) -> pd.DataFrame:
         if source.stage == "development medium" and source.run not in (dev_run, "W9"):
             continue
         blocks = [doc.get("by_history_length", [])]
-        for block in ("lr_repeat", "integration"):
+        for block in ("lr_repeat", "integration", "policy"):
             if doc.get(block):
                 blocks.append(doc[block].get("by_history_length", []))
         for block in blocks:
@@ -677,9 +705,12 @@ def _finish(fig, path: Path, plt, footer: str, top: float = 0.94) -> None:
 
 
 def _forest(frame: pd.DataFrame, path: Path, title: str, footer: str, color: str, labels: dict[str, str], datasets: dict[str, str],
-            panel_column: str = "dataset") -> None:
+            panel_column: str = "dataset", thin: tuple[str, str] = ("ci99375_lo", "ci99375_hi"),
+            margins: dict[str, float] | None = None) -> None:
     """Forest plot of ``frame`` (one panel per value of ``panel_column`` listed in ``datasets``: value -> panel title) into
-    ``path``; the numbers are re-read from the CSV next to ``path``."""
+    ``path``; the numbers are re-read from the CSV next to ``path``. ``thin`` names the CSV columns of the thin bar
+    (default: the 99.375 % CI); ``margins`` maps a row id to an x value drawn as a dashed vertical segment on that row
+    (the -delta non-inferiority margin of H11)."""
     plt = _plt()
     frame = pd.read_csv(path.with_suffix(".csv"))  # drawn from the CSV written just before
     panels = [d for d in datasets if d in set(frame[panel_column])]
@@ -694,9 +725,11 @@ def _forest(frame: pd.DataFrame, path: Path, title: str, footer: str, color: str
             if id_ not in part.index:
                 continue
             row = part.loc[id_]
-            if not (isinstance(row.get("ci99375_lo"), float) and math.isnan(row["ci99375_lo"])):
-                ax.plot([row["ci99375_lo"], row["ci99375_hi"]], [y, y], color=color, linewidth=0.8, solid_capstyle="butt", zorder=2)
+            if not (isinstance(row.get(thin[0]), float) and math.isnan(row[thin[0]])):
+                ax.plot([row[thin[0]], row[thin[1]]], [y, y], color=color, linewidth=0.8, solid_capstyle="butt", zorder=2)
             ax.plot([row["ci95_lo"], row["ci95_hi"]], [y, y], color=color, linewidth=3.0, solid_capstyle="butt", zorder=3)
+            if margins and id_ in margins:
+                ax.plot([margins[id_], margins[id_]], [y - 0.42, y + 0.42], color=COLOR_INK, linewidth=1.0, linestyle=(0, (3, 2)), zorder=5)
             marker = "o" if str(row.get("note", "")) == "" or (isinstance(row.get("note"), float) and math.isnan(row.get("note"))) else "D"
             ax.plot(row["diff"], y, marker=marker, markersize=4.5, color="white", markeredgecolor=color, markeredgewidth=1.2, zorder=4)
         ax.axvline(0.0, color=COLOR_INK, linewidth=0.8, zorder=1)
@@ -759,6 +792,57 @@ def figure_f7(t1: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any
             {"instacart": cfg["dataset_labels"]["instacart"], "complete_journey_refit": cfg["dataset_labels"]["complete_journey"],
              "complete_journey_transfer": cfg["dataset_labels"]["complete_journey"]}, panel_column="panel")
     return {"name": "F7_holdout2_forest", "points": int(len(keep)), "png": path, "csv": path.with_suffix(".csv")}
+
+
+def figure_f8(t1: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any] | None:
+    """F8 holdout3 forest plot (F7 style) from ``t1`` into ``out``: PREREG v1.4 primary H11 (non-inferiority, margin -delta drawn on its
+    row), H12, H13, the secondary P_T-vs-C3 metrics and the H6, H7', H8 replication; panels Instacart holdout3, Complete Journey refit
+    and transfer. Thin bar = 98.33 % CI (policy rows) or 99.375 % CI (replication rows). None when the stage is absent."""
+    secondary_policy = [f"policy:P_T_vs_{POLICY_C3}_{m}" for m in ("recall", "new_recall", "repeat_recall")]
+    ids = ["H11_ndcg", "H12_new_hit_share", "H13_new_hit_share", *secondary_policy,
+           "H6_repeat_recall", "H7prime_ndcg", "H7prime_recall", "H8_new_recall"]
+    keep = t1[(t1["stage"] == "confirmatory holdout3") & t1["id"].isin(ids)].copy()
+    if keep.empty:
+        return None
+    transfer = keep["transfer_from"].fillna("") != ""
+    keep["panel"] = np.where(keep["dataset"] == "instacart", "instacart",
+                             np.where(transfer, "complete_journey_transfer", "complete_journey_refit"))
+    keep["stage_label"] = keep["panel"].map({"instacart": "holdout3", "complete_journey_refit": "refit on medium data",
+                                             "complete_journey_transfer": "Instacart holdout3 selections transferred"})
+    keep["note"] = np.where(keep["tier"] == "primary", "", "secondary under PREREG v1.4")
+    has_9833 = keep["ci9833_lo"].notna()
+    keep["ci_adj_lo"] = np.where(has_9833, keep["ci9833_lo"], keep["ci99375_lo"])
+    keep["ci_adj_hi"] = np.where(has_9833, keep["ci9833_hi"], keep["ci99375_hi"])
+    keep["adj_level"] = np.where(has_9833, "0.9833", "0.99375")
+    keep["decision_adj"] = np.where(has_9833, keep["decision_9833"], keep["decision_99375"])
+    keep["_i"] = keep["id"].map({id_: i for i, id_ in enumerate(ids)})
+    keep = keep.sort_values(["_i", "panel"], kind="mergesort").drop(columns="_i")
+    keep = keep[["id", "hypothesis", "prereg", "tier", "panel", "dataset", "transfer_from", "stage", "stage_label", "metric", "users_n", "diff",
+                 "ci95_lo", "ci95_hi", "ci_adj_lo", "ci_adj_hi", "adj_level", "decision", "decision_adj", "note", "source_file",
+                 "source_sha256", "git_commit"]]
+    path = out / "F8_holdout3_forest.png"
+    keep.to_csv(path.with_suffix(".csv"), index=False, lineterminator="\n")
+    n_i = int(keep.loc[keep["panel"] == "instacart", "users_n"].max())
+    n_c = int(keep.loc[keep["panel"] != "instacart", "users_n"].max()) if (keep["panel"] != "instacart").any() else 0
+    labels = {**cfg["hypothesis_labels"],
+              f"policy:P_T_vs_{POLICY_C3}_recall": "P_T vs C3, Recall@10 (secondary)",
+              f"policy:P_T_vs_{POLICY_C3}_new_recall": "P_T vs C3, new-item Recall@10 (secondary)",
+              f"policy:P_T_vs_{POLICY_C3}_repeat_recall": "P_T vs C3, repeat Recall@10 (secondary)"}
+    delta = float(cfg.get("policy_delta", 0.003))  # PREREG v1.4 non-inferiority margin of H11
+    _forest(keep, path, "Exploration policy (holdout3, PREREG v1.4): primary H11 (non-inferiority), H12, H13; secondary P_T-vs-C3 metrics "
+            "and the H6, H7', H8 replication, paired bootstrap CIs",
+            f"Source: Instacart holdout3 (n = {n_i:,}), Complete Journey refit on medium data and Complete Journey with the Instacart holdout3 "
+            f"selections transferred (n = {n_c:,}), PREREG v1.4, code commit {keep['git_commit'].iloc[0][:7]}. Thick bar 95% CI; thin bar "
+            "98.33% CI (= 1 - 0.05/3, the multiplicity-adjusted interval of the family of 3) for the policy rows and 99.375% CI for the "
+            f"H6, H7', H8 replication rows; 1,000 resamples. Dashed tick on the H11 row: the non-inferiority margin -{delta:g} (H11 is "
+            "non-inferior when the 98.33% lower bound lies right of it). Circle: primary (Instacart holdout3: H11, H12, H13). Diamond: "
+            "secondary under PREREG v1.4 (P_T-vs-C3 Recall@10 / new-item Recall@10 / repeat Recall@10, the replication rows, every "
+            "Complete Journey row).",
+            COLOR_HOLDOUT, labels,
+            {"instacart": cfg["dataset_labels"]["instacart"], "complete_journey_refit": cfg["dataset_labels"]["complete_journey"],
+             "complete_journey_transfer": cfg["dataset_labels"]["complete_journey"]}, panel_column="panel",
+            thin=("ci_adj_lo", "ci_adj_hi"), margins={"H11_ndcg": -delta})
+    return {"name": "F8_holdout3_forest", "points": int(len(keep)), "png": path, "csv": path.with_suffix(".csv")}
 
 
 def figure_f2(t1: pd.DataFrame, out: Path, cfg: dict[str, Any], dev_run: str | None) -> dict[str, Any]:
@@ -966,8 +1050,8 @@ TABLE_NOTES = {
     "T1_master_hypotheses": "one row per hypothesis or secondary/auxiliary comparison; diff = mean_model - mean_comparator; decision as recorded in the source; prereg / tier = pre-registered classification (results_sources.yaml); current = newest run for that comparison (use only these rows)",
     "T2_selections": "selected values per dataset x run (long format) with grid and grid-edge flag",
     "T3_module_screening": "explore modules by new-item Recall@10, repeat modules by repeat Recall@10; diff and 95% CI vs the comparator named in the row",
-    "T4_final_lists": "Recall@10 and NDCG@10 over all users for the combinations C0-C3, C3b, the reference E4 + R1 and the baselines (holdout2 and medium); C0, E4 + R1 and baselines on the holdout (v1.2); C4 not run",
-    "T5_history_length": "per history-length bin: diff and 95% CI of H1, H3, H6, H7, H8, H9, H10",
+    "T4_final_lists": "Recall@10 and NDCG@10 over all users for the combinations C0-C3, C3b, the policy list P_T (holdout3), the reference E4 + R1 and the baselines (holdout3, holdout2 and medium); C0, E4 + R1 and baselines on the holdout (v1.2); C4 not run",
+    "T5_history_length": "per history-length bin: diff and 95% CI of H1, H3, H6, H7, H8, H9, H10 and (holdout3, PREREG v1.4) H11, H12, H13",
     "T6_module_catalog": "module and combination status catalogue (adopted / evaluated-not-adopted / not-examined / not run) with basis hypotheses",
     "T7_datasets_eda": "dataset summary (eval history) copied from the EDA branch feat/w5a-eda",
 }
@@ -979,6 +1063,7 @@ FIGURE_NOTES = {
     "F5_history_length": "per-bin differences with 95% CIs for H3, H7, H8, one panel per dataset",
     "F6_overdue_effect": "W9 R3 log-odds effect per overdue bin (from the W9 CSV), one panel per dataset",
     "F7_holdout2_forest": "holdout2 confirmatory forest plot (PREREG v1.3): primary H6, H7' (NDCG, Recall), H8 and the H1-H5 replication; Instacart holdout2, Complete Journey refit and transfer side by side (95% thick, 99.375% thin)",
+    "F8_holdout3_forest": "holdout3 confirmatory forest plot (PREREG v1.4): primary H11 (non-inferiority; dashed tick = margin -0.003), H12, H13, the secondary P_T-vs-C3 metrics and the H6, H7', H8 replication; Instacart holdout3, Complete Journey refit and transfer side by side (95% thick; 98.33% thin for policy rows, 99.375% thin for replication rows)",
 }
 
 
@@ -987,27 +1072,38 @@ def write_results_md(out: Path, registry: Registry, tables: list[dict[str, Any]]
     """Write <out>/RESULTS.md: header flags (``w8b_used``, ``dev_run``, combination labels of ``cfg``), the ``tables`` and
     ``figures`` records, the inputs of ``registry`` and the ``checks``.
     """
-    lines = ["# Consolidated results (W11; updated in W11b with the PREREG v1.3 run on holdout2)", ""]
+    lines = ["# Consolidated results (W11; updated in W11b with the PREREG v1.3 run on holdout2 and in W17 with the PREREG v1.4 "
+             "exploration-policy test on holdout3)", ""]
     lines.append(f"- W8b outputs reflected: **{'yes' if w8b_used else 'no'}**"
                  + ("" if w8b_used else " (W8b not complete at generation time; development figures use run "
                     f"{dev_run}; re-run `python scripts/make_results.py` after W8b finishes)"))
+    holdout3_used = any(source.run == "holdout3" for source in registry.sources.values())
+    lines.append("- holdout3 results: **included** (stage `confirmatory holdout3`, PREREG v1.4 exploration-policy test, reports/final3; "
+                 "primary H11 (non-inferiority, delta = 0.003), H12, H13 on Instacart holdout3 with 98.33 % intervals in the T1 columns "
+                 "`ci9833_lo` / `ci9833_hi` / `decision_9833`; everything else of that stage is secondary)"
+                 if holdout3_used else "- holdout3 results: **not included** (reports/final3 not registered)")
     holdout2_used = any(source.run == "holdout2" for source in registry.sources.values())
     lines.append("- holdout2 results: **included** (stage `confirmatory holdout2`, PREREG v1.3 final run, reports/final2; T1 columns "
                  "`prereg` and `tier` carry the pre-registered classification, see `classification` in results_sources.yaml)"
                  if holdout2_used else "- holdout2 results: **not included** (reports/final2 not registered)")
-    lines.append("- Stage wording: `confirmatory holdout2` = PREREG v1.3 final run (Instacart holdout2; Complete Journey refit on medium data, "
-                 "not independent of development); `confirmatory holdout` = PREREG v1.2 final run (Instacart holdout; Complete Journey refit "
-                 "on medium data); `development medium` = development runs, not confirmatory.")
-    lines.append("- Tier (T1 `tier`): primary = pre-registered primary test of that stage (v1.3: H6, H7' NDCG, H7' Recall, H8 on Instacart "
+    lines.append("- Stage wording: `confirmatory holdout3` = PREREG v1.4 exploration-policy test (Instacart holdout3; Complete Journey refit "
+                 "on medium data with the same policy, not independent of development); `confirmatory holdout2` = PREREG v1.3 final run "
+                 "(Instacart holdout2; Complete Journey refit on medium data, not independent of development); `confirmatory holdout` = "
+                 "PREREG v1.2 final run (Instacart holdout; Complete Journey refit on medium data); `development medium` = development runs, "
+                 "not confirmatory.")
+    lines.append("- Tier (T1 `tier`): primary = pre-registered primary test of that stage (v1.4: H11, H12, H13 on Instacart holdout3; "
+                 "v1.3: H6, H7' NDCG, H7' Recall, H8 on Instacart "
                  "holdout2; v1.2: H1-H4 on Instacart holdout and the Complete Journey refit); secondary-confirmatory = H5 (v1.2); secondary = every "
-                 "other confirmatory-stage row (H9, H7, the H1-H5 replication, transfer, CI-only comparisons); development = development rows.")
+                 "other confirmatory-stage row (H9, H7, the H1-H5 replication, the H6/H7'/H8 replication and the policy variants on holdout3, "
+                 "transfer, CI-only comparisons); development = development rows.")
     lines.append(f"- Development integration run used for T3-T5, F2-F5: `{dev_run}`; W9 provides R3/H10 in every case.")
     lines.append("- Combination labels (fixed by the team): C0 = E1 + R1, r = 10 (`final`); C1 = E1 + R2, r = 10 (`final_lr`); "
                  "C2 = E1 + R2, r re-selected (`final_lr_r`); C3 = E2 + R2, r re-selected (`final_lr_ucf`; H9 = C3 vs C1); "
-                 "C3b = E2 + R1, r re-selected (`final_star_ucf`); C4 = E3 + R2 (not run); reference E4 + R1, r = 10 (`final_cf`). "
+                 "C3b = E2 + R1, r re-selected (`final_star_ucf`); C4 = E3 + R2 (not run); reference E4 + R1, r = 10 (`final_cf`); "
+                 "P_T = C3 with the PREREG v1.4 slot policy, r_u = 9 for users with at most 4 history baskets (`P_T`, holdout3). "
                  "Module codes and statuses are listed in T6 (`scripts/results_sources.yaml`).")
     lines.append("- **For the slides and the report use only T1 rows with `current = true`.** A row is current when it comes from the "
-                 "newest run for the same stage, dataset, comparator, model and metric (holdout2 and holdout are separate confirmatory stages; "
+                 "newest run for the same stage, dataset, comparator, model and metric (holdout3, holdout2 and holdout are separate confirmatory stages; "
                  "development: W8b > W9 > W8 > W7, W6 > W4a); "
                  "`superseded_reason` explains every other row.")
     lines += ["", "## Tables (reports/results/tables)", "", "| table | rows | description |", "| --- | --- | --- |"]
@@ -1068,8 +1164,11 @@ def generate(cfg: dict[str, Any], out: Path) -> dict[str, Any]:
         write_table(t6, tables_dir, "T6_module_catalog", "T6 module catalogue", TABLE_NOTES["T6_module_catalog"]),
         write_table(t7, tables_dir, "T7_datasets_eda", "T7 datasets (EDA, feat/w5a-eda)", TABLE_NOTES["T7_datasets_eda"]),
     ]
-    figures = [figure_f1(t1, figures_dir, cfg), figure_f7(t1, figures_dir, cfg), figure_f2(t1, figures_dir, cfg, dev_run),
-               figure_f3(t3, figures_dir, cfg)]
+    figures = [figure_f1(t1, figures_dir, cfg), figure_f7(t1, figures_dir, cfg)]
+    f8 = figure_f8(t1, figures_dir, cfg)
+    if f8:
+        figures.append(f8)
+    figures += [figure_f2(t1, figures_dir, cfg, dev_run), figure_f3(t3, figures_dir, cfg)]
     f4 = figure_f4(registry, figures_dir, cfg, dev_run)
     if f4:
         figures.append(f4)

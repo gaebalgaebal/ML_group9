@@ -5,7 +5,8 @@ two lists into one Top-10 list per user. The repeat branch scores items the user
 the explore branch scores items the user has never bought, with a hierarchical model that goes through
 the category hierarchy (user's category profile -> within-category popularity). Everything is
 pre-registered (`docs/PREREG.md`): hypotheses, selection rules and the single read of each holdout
-split were fixed before the two final runs (v1.2 on `holdout`, v1.3 on `holdout2`).
+split were fixed before the three final runs (v1.2 on `holdout`, v1.3 on `holdout2`, v1.4 exploration
+policy on `holdout3`).
 
 ## Task
 
@@ -20,14 +21,14 @@ next-basket Top-10 recommendation over personal purchase frequency?
 
 | Dataset | Source | Role |
 |---|---|---|
-| Instacart (orders, products, aisles, departments) | public Instacart release (Kaggle mirror); see `docs/CITATIONS.md` | development (`medium`: 20,000 users), confirmatory (`holdout`: 20,000 unused users, PREREG v1.2; `holdout2`: 20,000 further unused users, PREREG v1.3), smoke (`sample`: 1,500 users) |
+| Instacart (orders, products, aisles, departments) | public Instacart release (Kaggle mirror); see `docs/CITATIONS.md` | development (`medium`: 20,000 users), confirmatory (`holdout`: 20,000 unused users, PREREG v1.2; `holdout2`: 20,000 further unused users, PREREG v1.3; `holdout3`: 20,000 further unused users, PREREG v1.4), smoke (`sample`: 1,500 users) |
 | dunnhumby The Complete Journey (transaction_data, product) | dunnhumby source files (Kaggle mirror); see `docs/CITATIONS.md` | development and refit evaluation (`medium`: 2,069 households; no unused households, limitation recorded in PREREG v1.2) |
 
 Processed Parquet files (`items`, `fit_history`, `fit_target`, `eval_history`, `eval_target` per
-profile and dataset) are produced by the unmodified ML_group9 preprocessing snapshot in
-`vendor/ml_group9_e11b365` and are **not tracked** by git. Provenance and checksums:
-`data/SOURCE.md`, `data/MANIFEST.sha256`. Hierarchy: Instacart department -> aisle (L2) -> ingredient
-type -> item; Complete Journey DEPARTMENT -> commodity (L2) -> sub-commodity -> item.
+profile and dataset; profiles `sample`, `medium`, `holdout`, `holdout2`, `holdout3`) are produced by the
+unmodified ML_group9 preprocessing snapshot in `vendor/ml_group9_e11b365` and are **not tracked** by git.
+Provenance and checksums: `data/SOURCE.md`, `data/MANIFEST.sha256`. Hierarchy: Instacart department ->
+aisle (L2) -> ingredient type -> item; Complete Journey DEPARTMENT -> commodity (L2) -> sub-commodity -> item.
 
 ## Structure (summary)
 
@@ -37,7 +38,10 @@ repeat module of PREREG v1.2 and the H6 comparator). Explore branch: E2 user-bas
 hierarchical category-profile x within-category popularity is the previous final explore module
 and, as part of C0, the H7' comparator), E3 flat item-CF (secondary). Slot combination: the first
 `r` slots from the repeat list, the rest from the explore list (`r* = 10` on both fit splits, T2, so
-the explore list fills only the users with fewer than 10 repeat candidates). Diagram of the final
+the explore list fills only the users with fewer than 10 repeat candidates). Exploration policy
+(PREREG v1.4, tested on `holdout3`; `src/nbr/policy.py`): P_T = C3 with one exploration slot
+(r_u = 9) for users with at most T = 4 history baskets and r* otherwise; S = the E2 list on its own as a
+separate 10-item exploration list. Diagram of the final
 system: `docs/figures/nbr_architecture_final.png` (Mermaid source `.mmd` next to it). Full
 description with the branch diagram, profiles, commands, selection procedure and leakage rules:
 **`docs/ARCHITECTURE.md`**. Module codes (E1-E8, R1-R6, C0-C4, C3b) and their status: **`docs/MODULES.md`**.
@@ -64,7 +68,8 @@ Without installing the package, set `PYTHONPATH=src` (PowerShell: `$env:PYTHONPA
 
 Copy the processed Parquet files to `data/processed/<profile>/<dataset>/` (datasets `instacart`,
 `complete_journey`; profiles `sample`, `medium`, `holdout`, `holdout2`), or point the environment variable
-`NBR_DATA_DIR` at a folder with that layout (`NBR_DATA_DIR` wins over `configs/common.yaml:data_dir`;
+`NBR_DATA_DIR` at a folder with that layout (profiles `sample`, `medium`, `holdout`, `holdout2`,
+`holdout3`; `NBR_DATA_DIR` wins over `configs/common.yaml:data_dir`;
 the git worktrees of this project share one copy). Verify with:
 
 ```bash
@@ -79,13 +84,15 @@ python -m nbr check --profile sample       # split statistics; the holdout eval 
 python scripts/make_holdout.py --raw-dir <ML_group9/data/raw> --size 20000 --seed 42
 # holdout2 (PREREG v1.3, 2026-11-06): 20,000 Instacart users disjoint from sample, medium and holdout
 python scripts/make_holdout.py --raw-dir <ML_group9/data/raw> --name holdout2 --exclude sample,medium,holdout --size 20000 --seed 42 --expect-remaining 89936
+# holdout3 (PREREG v1.4, 2026-11-07): 20,000 Instacart users disjoint from sample, medium, holdout and holdout2
+python scripts/make_holdout.py --raw-dir <ML_group9/data/raw> --name holdout3 --exclude sample,medium,holdout,holdout2 --size 20000 --seed 42 --expect-remaining 69936
 ```
 
-Both draw the users with the vendored preprocessing code and write
-`reports/holdout_prep/<name>_selection.json`. With `--exclude holdout` the holdout user ids are not
-read from its files: the v1.2 draw is re-run and checked against the digest recorded in
-`holdout_selection.json`; `--expect-remaining` stops before the draw unless exactly that many users
-remain. Peak memory is `ru_maxrss` on POSIX and the peak working set on Windows. Neither command is
+All three draw the users with the vendored preprocessing code and write
+`reports/holdout_prep/<name>_selection.json`. With `--exclude holdout` (or `holdout2`) those user ids are
+not read from their files: the earlier draws are re-run and checked against the digests recorded in
+their selection reports; `--expect-remaining` stops before the draw unless exactly that many users
+remain. Peak memory is `ru_maxrss` on POSIX and the peak working set on Windows. None of the commands is
 re-run for a release (they need the raw archives and would rewrite the data).
 
 ### 4. Tune and evaluate
@@ -108,14 +115,25 @@ python -m nbr evaluate --profile holdout2 --dataset instacart --final --skip-l3
 python -m nbr tune --profile holdout2 --dataset complete_journey
 python -m nbr evaluate --profile holdout2 --dataset complete_journey --skip-l3
 python -m nbr evaluate --profile holdout2 --dataset complete_journey --transfer-from instacart --skip-l3
+
+# confirmatory (holdout3, PREREG v1.4 exploration policy): the five commands of reports/final3/RUN.md, each run once
+python -m nbr tune --profile holdout3 --dataset instacart
+python -m nbr evaluate --profile holdout3 --dataset instacart --final --skip-l3 --policy
+python -m nbr tune --profile holdout3 --dataset complete_journey
+python -m nbr evaluate --profile holdout3 --dataset complete_journey --skip-l3 --policy
+python -m nbr evaluate --profile holdout3 --dataset complete_journey --transfer-from instacart --skip-l3 --policy
 ```
 
 `tune` writes `reports/metrics/<profile>_<dataset>_tuning.json` and
 `artifacts/<profile>/<dataset>_lr_repeat.joblib`; `evaluate` writes
 `reports/metrics/<profile>_<dataset>_eval.json` (`_eval_transfer.json` with `--transfer-from`).
-Optional flags: `--no-itemcf`, `--no-lr`, `--no-integration`, `--skip-l3`. The exact command
-sequences of the final runs are in `reports/final/RUN.md` (v1.2) and `reports/final2/RUN.md` (v1.3);
-their JSONs, digests and run logs are in `reports/final/` and `reports/final2/`.
+Optional flags: `--no-itemcf`, `--no-lr`, `--no-integration`, `--skip-l3`, `--policy` (adds the PREREG v1.4
+exploration-policy block `policy` with H11-H13, secondary metrics, history-length bins and the variants;
+needs the LR ranker and the integration selections). The exact command sequences of the final runs are in
+`reports/final/RUN.md` (v1.2), `reports/final2/RUN.md` (v1.3) and `reports/final3/RUN.md` (v1.4); their
+JSONs, digests and run logs are in `reports/final/`, `reports/final2/` and `reports/final3/`. The
+development check of the policy code on `medium` (`python scripts/check_policy_dev.py --reference-tuning-dir <W8b metrics>`)
+is `reports/posthoc/policy_dev_medium.md` (not confirmatory).
 
 Development-only screening runners (module screening entry points; both refuse holdout profiles):
 
@@ -131,15 +149,15 @@ or the flags `--tuning-dir` / `--gamma-dir`.
 ### 5. Tests, code audit, consolidated results
 
 ```bash
-python -m pytest                        # synthetic-data tests (tests/), 181 tests
+python -m pytest                        # synthetic-data tests (tests/), 265 tests
 python scripts/audit_code.py            # static audit -> docs/CODE_AUDIT.md
-python scripts/make_results.py --verify # tables T1-T7 and figures F1-F7 -> reports/results/ (+ determinism check)
+python scripts/make_results.py --verify # tables T1-T7 and figures F1-F8 -> reports/results/ (+ determinism check)
 python scripts/check_readme_results.py  # README result tables vs T1, cell by cell (0 mismatches; --render prints them)
 python scripts/make_eda.py              # EDA tables and figures -> reports/eda/ (reads the medium profile)
 ```
 
-`scripts/make_results.py` reads the final JSONs from `reports/final/` (PREREG v1.2) and `reports/final2/`
-(PREREG v1.3) and the development JSONs from
+`scripts/make_results.py` reads the final JSONs from `reports/final/` (PREREG v1.2), `reports/final2/`
+(PREREG v1.3) and `reports/final3/` (PREREG v1.4) and the development JSONs from
 the sibling git worktrees listed in `scripts/results_sources.yaml` (folder given by `NBR_WORKTREES`,
 default: the parent folder of the repository); those development JSONs are untracked run outputs.
 
@@ -149,9 +167,10 @@ Run in this order from the repository root with `NBR_DATA_DIR` set: `python -m n
 `python scripts/check_data.py sample`, `python -m nbr tune` and `python -m nbr evaluate --skip-l3` for
 both datasets, `python -m nbr.r3_eval` and `python -m nbr.usercf_eval --stage all` for both datasets,
 `python -m pytest`, `python scripts/audit_code.py`, `python scripts/make_results.py --verify`; after the
-holdout2 run: `python -m pytest`, `python scripts/make_results.py --verify`, `python scripts/check_readme_results.py`.
+holdout2 run and again after the holdout3 run: `python -m pytest`, `python scripts/make_results.py --verify`,
+`python scripts/check_readme_results.py`.
 Not run: `pip install -e`, `scripts/make_holdout.py` (needs the raw archives), `scripts/make_eda.py`
-and every `medium` / `holdout` / `holdout2` command (development and confirmatory runs are not repeated).
+and every `medium` / `holdout` / `holdout2` / `holdout3` command (development and confirmatory runs are not repeated).
 
 ## Results
 
@@ -161,6 +180,69 @@ by `python scripts/check_readme_results.py`. diff = model - comparator, paired b
 (n = 1000, seed 42); decision wording as pre-registered: "improvement observed" when the lower bound
 is above 0, "lower" when the upper bound is below 0, otherwise "no difference established". The
 classification of every row (`prereg`, `tier`) is explicit in `scripts/results_sources.yaml`.
+
+### Exploration policy (PREREG v1.4, holdout3)
+
+Instacart `holdout3`: 20,000 users not in `sample`, `medium`, `holdout` or `holdout2`; eval split read
+once (command 2 of `reports/final3/RUN.md`). P_T = C3 (`final_lr_ucf`) with r_u = 9 for users with at
+most T = 4 distinct history baskets (4,252 of the 20,000 users) and r_u = r*
+otherwise; S = E2 (`usercf`) top 10 on its own. T = 4 and delta = 0.003 were fixed in PREREG v1.4 from
+the W15 post-hoc study on `medium` (development data) and were not re-selected. Primary family of 3; the
+98.33 % interval (1 - 0.05/3) is the pre-registered one. H11: NDCG@10 of P_T minus C3 over all users,
+"non-inferior" when the 98.33 % lower bound is above -0.003, otherwise "non-inferiority not established".
+H12: share of users with at least one new-item hit in the top 10, P_T minus C3, all users (a user without
+a new target item counts 0). H13: the same share in the 10-item exploration list, S minus flat popularity
+excluding history items, users with a new target item. H12 and H13 use the improvement wording above.
+
+<!-- results-table: holdout3_primary -->
+| Hypothesis (metric) | Dataset | Users (n) | Comparator -> model | diff | 95 % CI | 98.33 % CI | Decision (95 % / 98.33 %) |
+|---|---|---|---|---|---|---|---|
+| H11 (NDCG@10, non-inferiority) | Instacart holdout3 | 20,000 | 0.4274 -> 0.4261 | -0.0013 | [-0.0015, -0.0011] | [-0.0016, -0.0011] | non-inferior / non-inferior |
+| H12 (new-item hit share@10) | Instacart holdout3 | 20,000 | 0.0042 -> 0.0143 | +0.0101 | [0.0087, 0.0115] | [0.0084, 0.0118] | improvement observed / improvement observed |
+| H13 (new-item hit share@10, S vs flat popularity) | Instacart holdout3 | 16,340 | 0.1681 -> 0.2151 | +0.0470 | [0.0420, 0.0520] | [0.0413, 0.0528] | improvement observed / improvement observed |
+
+Secondary (no confirmatory claim; CI only): Recall@10, new-item Recall@10 and repeat Recall@10 of P_T
+against C3, the r_short = 8 variant (two exploration slots for the same users) and the sensitivity values
+T = 6 and T = 10 (7,155 and 10,837 users
+with one exploration slot). The replication of H6, H7' and H8 on holdout3 follows (CI levels 95 % and
+99.375 % as written by the code; secondary under v1.4). History-length bins are in T5 and figure F8
+(`reports/results/`); the development check of the policy code on `medium` is
+`reports/posthoc/policy_dev_medium.md`.
+
+<!-- results-table: holdout3_secondary -->
+| Hypothesis (metric) | Dataset | Users (n) | Comparator -> model | diff | 95 % CI | 98.33 % CI | Decision (95 % / 98.33 %) |
+|---|---|---|---|---|---|---|---|
+| P_T vs C3 (Recall@10) | Instacart holdout3 | 20,000 | 0.3522 -> 0.3505 | -0.0017 | [-0.0021, -0.0014] | [-0.0022, -0.0013] | (CI only) |
+| P_T vs C3 (new-item Recall@10) | Instacart holdout3 | 16,340 | 0.0026 -> 0.0049 | +0.0023 | [0.0019, 0.0027] | [0.0018, 0.0028] | (CI only) |
+| P_T vs C3 (repeat Recall@10) | Instacart holdout3 | 18,738 | 0.5741 -> 0.5680 | -0.0061 | [-0.0068, -0.0054] | [-0.0069, -0.0052] | (CI only) |
+| r_short = 8, T = 4 vs C3 (NDCG@10) | Instacart holdout3 | 20,000 | 0.4274 -> 0.4244 | -0.0031 | [-0.0034, -0.0028] | [-0.0035, -0.0028] | (CI only) |
+| r_short = 8, T = 4 vs C3 (new-item hit share@10) | Instacart holdout3 | 20,000 | 0.0042 -> 0.0226 | +0.0184 | [0.0166, 0.0203] | [0.0163, 0.0205] | (CI only) |
+| T = 6 vs C3 (NDCG@10) | Instacart holdout3 | 20,000 | 0.4274 -> 0.4250 | -0.0025 | [-0.0027, -0.0022] | [-0.0028, -0.0022] | (CI only) |
+| T = 6 vs C3 (new-item hit share@10) | Instacart holdout3 | 20,000 | 0.0042 -> 0.0211 | +0.0170 | [0.0152, 0.0188] | [0.0148, 0.0191] | (CI only) |
+| T = 10 vs C3 (NDCG@10) | Instacart holdout3 | 20,000 | 0.4274 -> 0.4232 | -0.0043 | [-0.0046, -0.0040] | [-0.0047, -0.0039] | (CI only) |
+| T = 10 vs C3 (new-item hit share@10) | Instacart holdout3 | 20,000 | 0.0042 -> 0.0282 | +0.0240 | [0.0218, 0.0261] | [0.0213, 0.0268] | (CI only) |
+
+<!-- results-table: holdout3_replication -->
+| Hypothesis (metric) | Dataset | Users (n) | Comparator -> model | diff | 95 % CI | 99.375 % CI | Decision (95 % / 99.375 %) |
+|---|---|---|---|---|---|---|---|
+| H6 (repeat Recall@10) | Instacart holdout3 | 18,738 | 0.5611 -> 0.5741 | +0.0129 | [0.0108, 0.0149] | [0.0100, 0.0156] | improvement observed / improvement observed |
+| H7' (NDCG@10) | Instacart holdout3 | 20,000 | 0.4206 -> 0.4274 | +0.0068 | [0.0058, 0.0078] | [0.0055, 0.0082] | improvement observed / improvement observed |
+| H7' (Recall@10, reported) | Instacart holdout3 | 20,000 | 0.3460 -> 0.3522 | +0.0062 | [0.0049, 0.0074] | [0.0046, 0.0078] | improvement observed / improvement observed |
+| H8 (new-item Recall@10) | Instacart holdout3 | 16,340 | 0.0404 -> 0.0577 | +0.0174 | [0.0152, 0.0193] | [0.0147, 0.0200] | improvement observed / improvement observed |
+
+Complete Journey refit (same `medium` data as development, not independent) and transfer with the same
+policy, secondary under PREREG v1.4. Only 1 of the 2,069 households have at most
+4 history baskets, so P_T coincides with C3 for the other households.
+
+<!-- results-table: holdout3_complete_journey -->
+| Hypothesis (metric) | Dataset | Users (n) | Comparator -> model | diff | 95 % CI | 98.33 % CI | Decision (95 % / 98.33 %) |
+|---|---|---|---|---|---|---|---|
+| H11 (NDCG@10, non-inferiority) | Complete Journey refit | 2,069 | 0.2046 -> 0.2046 | 0.0000 | [0.0000, 0.0000] | [0.0000, 0.0000] | non-inferior / non-inferior |
+| H12 (new-item hit share@10) | Complete Journey refit | 2,069 | 0.0000 -> 0.0000 | 0.0000 | [0.0000, 0.0000] | [0.0000, 0.0000] | no difference established / no difference established |
+| H13 (new-item hit share@10, S vs flat popularity) | Complete Journey refit | 1,971 | 0.0791 -> 0.0979 | +0.0188 | [0.0061, 0.0315] | [0.0037, 0.0345] | improvement observed / improvement observed |
+| H11 (NDCG@10, non-inferiority) | Complete Journey, Instacart selections transferred | 2,069 | 0.1996 -> 0.1996 | 0.0000 | [0.0000, 0.0000] | [0.0000, 0.0000] | non-inferior / non-inferior |
+| H12 (new-item hit share@10) | Complete Journey, Instacart selections transferred | 2,069 | 0.0000 -> 0.0000 | 0.0000 | [0.0000, 0.0000] | [0.0000, 0.0000] | no difference established / no difference established |
+| H13 (new-item hit share@10, S vs flat popularity) | Complete Journey, Instacart selections transferred | 1,971 | 0.0791 -> 0.1050 | +0.0259 | [0.0137, 0.0381] | [0.0108, 0.0396] | improvement observed / improvement observed |
 
 ### Final system (PREREG v1.3, confirmed on holdout2)
 
@@ -247,15 +329,17 @@ confirmatory; they are the basis on which C3 was selected before the holdout2 ru
 ## Folder structure
 
 ```
-configs/     common.yaml (grids, bootstrap, category levels), sample/medium/holdout/holdout2.yaml, usercf.yaml, r3.yaml
+configs/     common.yaml (grids, bootstrap, category levels), sample/medium/holdout/holdout2/holdout3.yaml, usercf.yaml, r3.yaml
 data/        SOURCE.md, MANIFEST.sha256 (processed Parquet untracked)
 docs/        PREREG.md, ARCHITECTURE.md, MODULES.md, LIBRARIES.md, CITATIONS.md, CODE_AUDIT.md, figures/ (final-system diagram)
 reports/     final/ (holdout JSONs, RUN.md, SHA256SUMS; PREREG v1.2), final2/ (holdout2 JSONs, RUN.md, SHA256SUMS, logs; PREREG v1.3),
-             results/ (tables T1-T7, figures F1-F7, RESULTS.md), eda/, data_check/, holdout_prep/;
+             final3/ (holdout3 JSONs, RUN.md, SHA256SUMS, logs; PREREG v1.4 exploration policy),
+             results/ (tables T1-T7, figures F1-F8, RESULTS.md), posthoc/ (development case studies), eda/, data_check/, holdout_prep/;
              metrics/, figures/, tables/ (untracked run outputs)
-scripts/     make_holdout.py, check_data.py, make_eda.py, make_results.py (+ results_sources.yaml), check_readme_results.py, audit_code.py
+scripts/     make_holdout.py, check_data.py, make_eda.py, make_results.py (+ results_sources.yaml), check_readme_results.py, audit_code.py,
+             check_policy_dev.py, posthoc_*.py, make_basket_days.py
 src/nbr/     package: config, data, io, baselines, repeat, explore, itemcf, combine, metrics,
-             features, lr_repeat, usercf, usercf_eval, features_cycle, r3_eval, pipeline, __main__
+             features, lr_repeat, usercf, usercf_eval, features_cycle, r3_eval, day_decay, policy, pipeline, __main__
 tests/       pytest suite (synthetic data)
 vendor/      ml_group9_e11b365 (unmodified preprocessing snapshot, release/term-project e11b365)
 ```
@@ -264,7 +348,7 @@ vendor/      ml_group9_e11b365 (unmodified preprocessing snapshot, release/term-
 
 | Document | Content |
 |---|---|
-| `docs/PREREG.md` | pre-registration v1.3 (question, model, selection, hypotheses, deviations v1.1-v1.3) |
+| `docs/PREREG.md` | pre-registration v1.4 (question, model, selection, hypotheses, deviations v1.1-v1.4; v1.4 = the exploration-policy test on holdout3) |
 | `docs/ARCHITECTURE.md` | system structure (diagram), profiles, commands and files, selection procedure, leakage rules |
 | `docs/MODULES.md` | module and combination catalogue with status, hypothesis basis and filtering-method classification |
 | `docs/LIBRARIES.md` | third-party modules and functions used, with parameters and the related course module |
@@ -272,6 +356,8 @@ vendor/      ml_group9_e11b365 (unmodified preprocessing snapshot, release/term-
 | `docs/CODE_AUDIT.md` | generated static audit (docstrings, library calls, attribution comments, observations) |
 | `reports/final/RUN.md` | final run log (PREREG v1.2, holdout) |
 | `reports/final2/RUN.md` | final run log (PREREG v1.3, holdout2: pre-checks, selections fixed before the eval read, commands, CJ reproducibility check) |
+| `reports/final3/RUN.md` | run log of the exploration-policy test (PREREG v1.4, holdout3: pre-specified keys, pre-checks, selections fixed before the eval read, commands, CJ reproducibility check) |
+| `reports/posthoc/policy_dev_medium.md` | development check of the policy code on medium against the W8b selections and the W15 numbers (not confirmatory) |
 | `reports/results/RESULTS.md` | consolidated result tables and figures with source files and digests |
 | `reports/eda/eda_summary.md` | exploratory data analysis of the development data (Korean) |
 

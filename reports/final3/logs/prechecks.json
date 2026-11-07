@@ -1,0 +1,47 @@
+[
+  {
+    "id": "check",
+    "command": "python -m nbr check --profile holdout3",
+    "commit": "df49c9662f3b1653a10eae2394e6d0c2f0543d89",
+    "worktree_dirty": false,
+    "start_utc": "2026-11-07T07:17:15.060Z",
+    "end_utc": "2026-11-07T07:17:17.633Z",
+    "wall_seconds": 2.6,
+    "exit_code": 0,
+    "peak_working_set_mib": 1302.0,
+    "peak_tree_working_set_sum_mib": 1256.9,
+    "memory_samples": 6,
+    "max_processes_in_tree": 2,
+    "log": "C:\\Users\\kimju\\AppData\\Local\\Temp\\claude\\9d1dee1fab5569e8\\0b224e7f-3bce-454f-b42a-d97283c1ee3d\\scratchpad\\w17_run\\prechecks\\cmdcheck.log"
+  },
+  {
+    "id": "guard_direct",
+    "command": "python -c from nbr.config import load_config; from nbr.data import load_split; c = load_config('holdout3'); print('role', c['role'], 'data_dir', c['data_dir']); load_split(c, 'instacart', 'eval')",
+    "commit": "df49c9662f3b1653a10eae2394e6d0c2f0543d89",
+    "worktree_dirty": false,
+    "start_utc": "2026-11-07T07:17:17.665Z",
+    "end_utc": "2026-11-07T07:17:18.702Z",
+    "wall_seconds": 1.0,
+    "exit_code": 1,
+    "peak_working_set_mib": 75.3,
+    "peak_tree_working_set_sum_mib": 70.9,
+    "memory_samples": 3,
+    "max_processes_in_tree": 2,
+    "log": "C:\\Users\\kimju\\AppData\\Local\\Temp\\claude\\9d1dee1fab5569e8\\0b224e7f-3bce-454f-b42a-d97283c1ee3d\\scratchpad\\w17_run\\prechecks\\cmdguard_direct.log"
+  },
+  {
+    "id": "guard",
+    "command": "python -m nbr evaluate --profile holdout3 --dataset instacart --skip-l3 --policy",
+    "commit": "df49c9662f3b1653a10eae2394e6d0c2f0543d89",
+    "worktree_dirty": false,
+    "start_utc": "2026-11-07T07:17:18.731Z",
+    "end_utc": "2026-11-07T07:17:20.275Z",
+    "wall_seconds": 1.5,
+    "exit_code": 1,
+    "peak_working_set_mib": 136.4,
+    "peak_tree_working_set_sum_mib": 85.5,
+    "memory_samples": 4,
+    "max_processes_in_tree": 2,
+    "log": "C:\\Users\\kimju\\AppData\\Local\\Temp\\claude\\9d1dee1fab5569e8\\0b224e7f-3bce-454f-b42a-d97283c1ee3d\\scratchpad\\w17_run\\prechecks\\cmdguard.log"
+  }
+]

@@ -28,6 +28,7 @@ from nbr.io import write_json
 from nbr.itemcf import cf_list, cf_scores, item_neighbors
 from nbr.lr_repeat import build_training, fit_select, lr_repeat_list, train_only_bundle
 from nbr.metrics import paired_bootstrap, per_user_category_hit, per_user_ndcg, per_user_recall
+from nbr.policy import evaluate_policy
 from nbr.repeat import repeat_list
 from nbr.usercf import ucf_list
 from nbr.usercf_eval import peak_memory_mib
@@ -555,6 +556,7 @@ def evaluate(
     lr_bundle: dict[str, Any] | None = None,
     integration: dict[str, Any] | None = None,
     skip_l3: bool = False,
+    include_policy: bool = False,
 ) -> dict[str, Any]:
     """Evaluate all models on the eval split of ``dataset`` under ``config`` with the given (fixed) ``selections``.
 
@@ -569,7 +571,13 @@ def evaluate(
     "lr_repeat" key; the H1-H5 entries do not depend on it. ``integration`` (W8, the
     selections of tune_integration) adds usercf and the combinations with H8, H9 under
     the "integration" key; H1-H7 do not depend on it.
+
+    ``include_policy`` (W17, CLI --policy; requires ``lr_bundle`` and ``integration``) adds the PREREG v1.4
+    exploration-policy block (nbr.policy.evaluate_policy: P_T vs C3, S vs flat popularity; H11-H13) under the
+    "policy" key (None otherwise); no other entry depends on it.
     """
+    if include_policy and (lr_bundle is None or integration is None):
+        raise ValueError("the policy block needs the lr_repeat bundle and the integration selections (no --no-lr / --no-integration)")
     timings: dict[str, float] = {}
     t0 = time.perf_counter()
     data = prepare(config, dataset, "eval", allow_holdout_eval=allow_holdout_eval)
@@ -759,6 +767,16 @@ def evaluate(
             "process_peak_working_set_mib": peak_memory_mib(),
         }
 
+    # W17 (PREREG v1.4): per-user exploration-slot policy P_T vs C3 and the separate list S vs flat popularity
+    # (H11 non-inferiority, H12, H13); secondary metrics, bins and variants. Lists above are unchanged.
+    policy_result = None
+    if include_policy:
+        t0 = time.perf_counter()
+        policy_result = evaluate_policy(lists, data, lengths, HISTORY_BINS[dataset], config,
+                                        int(integration["r"]["final_lr_ucf"]), label=run_label(config))
+        timings["policy_metrics"] = time.perf_counter() - t0
+        peak_memory["policy"] = peak_memory_mib()
+
     return {
         "profile": config["profile"],
         "dataset": dataset,
@@ -781,6 +799,7 @@ def evaluate(
         "by_history_length": breakdown,
         "lr_repeat": lr_repeat,
         "integration": integration_result,
+        "policy": policy_result,
         "skipped": ["explore_L3"] if skip_l3 else [],
         "timing_seconds": timings,
         "peak_memory_mib": {**peak_memory, "end": peak_memory_mib()},
@@ -797,13 +816,14 @@ def run_evaluate(
     include_lr: bool = True,
     include_integration: bool = True,
     skip_l3: bool = False,
+    include_policy: bool = False,
 ) -> Path:
     """Evaluate ``dataset`` with the selections of ``transfer_from or dataset`` and write the eval JSON.
 
     ``config`` is the profile configuration, ``allow_holdout_eval`` the holdout-guard override
     (--final); ``include_itemcf`` / ``include_lr`` / ``include_integration`` add the item-CF lists,
     the lr_repeat artifact (H6, H7) and the W8 selections (H8, H9); ``skip_l3`` leaves out
-    explore_L3. Returns the written path.
+    explore_L3; ``include_policy`` (--policy) adds the PREREG v1.4 policy block. Returns the written path.
     """
     source = transfer_from or dataset
     selections = load_selections(config, source)
@@ -811,5 +831,5 @@ def run_evaluate(
     integration = load_integration_selections(config, source) if include_lr and include_integration else None
     document = evaluate(config, dataset, selections, allow_holdout_eval=allow_holdout_eval,
                         transfer_from=transfer_from, include_itemcf=include_itemcf, lr_bundle=lr_bundle,
-                        integration=integration, skip_l3=skip_l3)
+                        integration=integration, skip_l3=skip_l3, include_policy=include_policy)
     return write_json(eval_path(config, dataset, transfer_from), document, config)
