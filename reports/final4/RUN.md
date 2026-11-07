@@ -93,3 +93,38 @@ Selections to be fixed after command 1 (from `holdout4_instacart_tuning.json`): 
 `at_grid_edge.{gamma, gamma_c, alpha, r}`; `integration.selections.{k, weighting, C, r.{final_lr_ucf, final_star_ucf, final_lr_r}}` and
 `integration.at_grid_edge.{k, C, r.*}`; `lr_repeat.C` (R2, grid of `integration.lr.C_grid`); `v15.selections.{C, r.final_lri_ucf}` (R2' and C4)
 and `v15.at_grid_edge.{C, r.final_lri_ucf}`; `v15.lr.same_validation_users_as_R2` must be true.
+
+## Pre-checks (2026-11-07, commit `b9695db`, working tree clean, `NBR_DATA_DIR=C:\dev_ML\data\processed`)
+
+Code commit used for the commands: HEAD of this branch at command time (recorded per command in the commands
+table); `src/` was last changed in `655bb32` (features_icf.py, lr_repeat.py, v15.py, pipeline.py, policy.py, __main__.py) and `configs/`
+in `d7d23a0` (configs/holdout4.yaml; common.yaml gained `lr_repeat.itemcf_feature: false` in `655bb32`). Runner records:
+`logs/prechecks.json` (UTC start/end, wall time, exit code, peak working set of the process tree sampled every 0.5 s, HEAD, dirty
+flag), `logs/cmdcheck.log`, `logs/cmdguard_direct.log`, `logs/cmdguard.log`.
+
+1. `python -m nbr check --profile holdout4` (exit 0, 2.6 s, peak working set 1279.1 MiB; reads the fit split only):
+
+```
+profile=holdout4 role=final data_dir=C:\dev_ML\data\processed
+instacart/fit: users=20000 history_rows=2921464 target_rows=208185 users_with_repeat_target=18594 users_with_new_target=16351
+instacart/eval: skipped (holdout guard)
+```
+
+2. Holdout guard on the holdout4 config, direct call (`load_split(load_config('holdout4'), 'instacart', 'eval')`
+   without `allow_holdout_eval`), exit 1 before any Parquet file is opened:
+
+```
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\dev_ML-wt-w19\src\nbr\data.py", line 49, in load_split
+    raise PermissionError(
+PermissionError: profile role is 'final': the Instacart eval split is read once, after all selections are fixed; pass allow_holdout_eval=True explicitly
+role final data_dir C:\dev_ML\data\processed
+```
+
+3. `python -m nbr evaluate --profile holdout4 --dataset instacart --skip-l3 --policy` WITHOUT `--final`, run before
+   command 1 (exit 1): the command stops in `load_selections` with
+   `FileNotFoundError: [Errno 2] No such file or directory: 'C:\\dev_ML-wt-w19\\reports\\metrics\\holdout4_instacart_tuning.json'`
+   because `run_evaluate` loads the tuning selections before `load_split`; the guard itself is therefore reached only once the
+   tuning file exists (as in the holdout2 and holdout3 runs). The same command is repeated after command 1 and before command 2
+   (see "Guard check after command 1" below); the eval split is never opened on this path.

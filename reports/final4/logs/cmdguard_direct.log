@@ -1,0 +1,8 @@
+# 2026-11-07T13:20:06.477Z cwd=C:/dev_ML-wt-w19 commit=b9695db4bdcb59289e4c01cf6ae9c1174a64ca6c dirty=False
+# C:\dev_ML\.venv\Scripts\python.exe -c from nbr.config import load_config; from nbr.data import load_split; c = load_config('holdout4'); print('role', c['role'], 'data_dir', c['data_dir']); load_split(c, 'instacart', 'eval')
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\dev_ML-wt-w19\src\nbr\data.py", line 49, in load_split
+    raise PermissionError(
+PermissionError: profile role is 'final': the Instacart eval split is read once, after all selections are fixed; pass allow_holdout_eval=True explicitly
+role final data_dir C:\dev_ML\data\processed

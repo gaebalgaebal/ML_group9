@@ -1,0 +1,5 @@
+# 2026-11-07T13:20:03.887Z cwd=C:/dev_ML-wt-w19 commit=b9695db4bdcb59289e4c01cf6ae9c1174a64ca6c dirty=False
+# C:\dev_ML\.venv\Scripts\python.exe -m nbr check --profile holdout4
+profile=holdout4 role=final data_dir=C:\dev_ML\data\processed
+instacart/fit: users=20000 history_rows=2921464 target_rows=208185 users_with_repeat_target=18594 users_with_new_target=16351
+instacart/eval: skipped (holdout guard)

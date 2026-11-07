@@ -1,0 +1,47 @@
+[
+  {
+    "id": "check",
+    "command": "python -m nbr check --profile holdout4",
+    "commit": "b9695db4bdcb59289e4c01cf6ae9c1174a64ca6c",
+    "worktree_dirty": false,
+    "start_utc": "2026-11-07T13:20:03.887Z",
+    "end_utc": "2026-11-07T13:20:06.449Z",
+    "wall_seconds": 2.6,
+    "exit_code": 0,
+    "peak_working_set_mib": 1279.1,
+    "peak_tree_working_set_sum_mib": 1212.1,
+    "memory_samples": 6,
+    "max_processes_in_tree": 2,
+    "log": "logs/cmdcheck.log"
+  },
+  {
+    "id": "guard_direct",
+    "command": "python -c from nbr.config import load_config; from nbr.data import load_split; c = load_config('holdout4'); print('role', c['role'], 'data_dir', c['data_dir']); load_split(c, 'instacart', 'eval')",
+    "commit": "b9695db4bdcb59289e4c01cf6ae9c1174a64ca6c",
+    "worktree_dirty": false,
+    "start_utc": "2026-11-07T13:20:06.477Z",
+    "end_utc": "2026-11-07T13:20:07.007Z",
+    "wall_seconds": 0.5,
+    "exit_code": 1,
+    "peak_working_set_mib": 4.6,
+    "peak_tree_working_set_sum_mib": 8.0,
+    "memory_samples": 2,
+    "max_processes_in_tree": 2,
+    "log": "logs/cmdguard_direct.log"
+  },
+  {
+    "id": "guard",
+    "command": "python -m nbr evaluate --profile holdout4 --dataset instacart --skip-l3 --policy",
+    "commit": "b9695db4bdcb59289e4c01cf6ae9c1174a64ca6c",
+    "worktree_dirty": false,
+    "start_utc": "2026-11-07T13:20:07.037Z",
+    "end_utc": "2026-11-07T13:20:08.600Z",
+    "wall_seconds": 1.6,
+    "exit_code": 1,
+    "peak_working_set_mib": 126.4,
+    "peak_tree_working_set_sum_mib": 130.6,
+    "memory_samples": 4,
+    "max_processes_in_tree": 2,
+    "log": "logs/cmdguard.log"
+  }
+]
