@@ -413,6 +413,8 @@ def mismatches(predict: pd.DataFrame, level_name: str, dataset: str) -> dict[str
                  "e2_hit_rate": None if pd.isna(r["e2_hit_rate"]) else float(r["e2_hit_rate"])} for r in frame.to_dict("records")]
 
     return {"n_categories": int(len(eligible)),
+            "n_over_served": int((eligible["slot_minus_target_share"] > 0).sum()),
+            "n_under_served": int((eligible["slot_minus_target_share"] < 0).sum()),
             "definition": "difference = E2 slot share - target new-item share; categories passing the support filter on target new items "
                           "or holding >= 1 % of the E2 slots",
             "over_served": rows(eligible.sort_values(["slot_minus_target_share", "category"], ascending=[False, True]).head(TOP_N)),
@@ -699,9 +701,10 @@ def figure_rate_vs_e2(entries: dict[str, dict[str, Any]], out_dir: Path) -> dict
         ax.scatter(sub["rate"], sub["e2_hit_rate"], s=size, color=COLORS[dataset], alpha=0.55, edgecolor=INK["surface"], linewidth=1.0)
         ax.axvline(sub["median_rate"].iloc[0], color=INK["muted"], lw=1, ls="--")
         ax.axhline(sub["median_e2_hit_rate"].iloc[0], color=INK["muted"], lw=1, ls="--")
-        for r in sub.sort_values("n_target_new", ascending=False).head(8).to_dict("records"):
-            ax.annotate(_label(r["category"], r["is_missing"]), (r["rate"], r["e2_hit_rate"]), xytext=(6, 4), textcoords="offset points",
-                        fontsize=7.5, color=INK["primary"])
+        labelled = sub.sort_values("n_target_new", ascending=False).head(8).sort_values(["rate", "e2_hit_rate"])
+        for i, r in enumerate(labelled.to_dict("records")):
+            ax.annotate(_label(r["category"], r["is_missing"]), (r["rate"], r["e2_hit_rate"]), xytext=(6, 4 if i % 2 == 0 else -11),
+                        textcoords="offset points", fontsize=7.5, color=INK["primary"])
         ax.set_xlabel("new-item rate (eval, history + target events)")
         ax.set_ylabel("E2 user-CF top-10 hit rate on target new items")
         ax.set_xlim(left=0)
@@ -808,7 +811,8 @@ def render_dataset(entry: dict[str, Any], dataset: str) -> list[str]:
         lines += _table(["category", "target new items", "share of target new items", "E2 hit rate [95 % CI]", "popularity hit rate", "E2 slot share",
                          "slot share - target share", "ratio"], rows)
         mm = block["mismatch"]
-        lines += [f"Mismatch ({mm['n_categories']} categories considered): E2 slot share above the target new-item share (over-served) and below (under-served):", ""]
+        lines += [f"Mismatch ({mm['n_categories']} categories considered; {mm['n_over_served']} with an E2 slot share above their target new-item share, "
+                  f"{mm['n_under_served']} below): the largest differences in both directions (rows past the counts are the least negative / least positive):", ""]
         rows = []
         for i in range(TOP_N):
             cells = [str(i + 1)]
@@ -833,7 +837,9 @@ def render_dataset(entry: dict[str, Any], dataset: str) -> list[str]:
     for level_name in ("coarse", "fine"):
         s = entry["fit"]["levels"][level_name]["spearman_vs_eval"]
         rows.append([level_name, f"{s['n_categories']}", _f(s["volume"]["spearman"]), _f(s["propensity"]["spearman"])])
-    lines += ["Spearman rank correlation of the fit-split and eval-split category values (history + target events; eligible eval categories present in both):", ""]
+    lines += ["Spearman rank correlation of the fit-split and eval-split category values (history + target events; eligible eval categories present in both). "
+              "The fit split shares most of its events with the eval split (Instacart: every basket but the last; Complete Journey: an earlier cutoff), "
+              "so these correlations check the stability of the category values rather than provide independent evidence:", ""]
     lines += _table(["level", "categories", "volume (new-item events)", "propensity (rate)"], rows)
     bins = ev["coarse_propensity_by_history_bin"]
     categories = sorted({c["category"] for b in bins for c in b["categories"]}, key=lambda name: -next((c["n_new"] for b in bins for c in b["categories"] if c["category"] == name), 0))

@@ -207,6 +207,7 @@ def test_predictability_table_quadrants_and_mismatch():
         assert mm["over_served"][0]["category"] == "cookies" and mm["over_served"][0]["difference"] == pytest.approx(0.3)
         assert mm["under_served"][0]["category"] == "apples" and mm["under_served"][0]["difference"] == pytest.approx(1 / 6 - 2 / 5)   # one E2 slot (A rank 2)
         assert mm["n_categories"] == 4                                                           # chips kept through the 1 % slot-share rule
+        assert mm["n_over_served"] == 2 and mm["n_under_served"] == 2                            # cookies, chips above; yogurt, apples below
     finally:
         pec.SUPPORT_MIN_NEW.update(original)
 
@@ -283,7 +284,8 @@ def _check_document(document, n_users):
             table = block["table"]
             assert sum(r["n_target_new"] for r in table) == pred["n_target_new_items"] and sum(r["e2_slots"] for r in table) == pred["n_e2_slots"]
             assert abs(sum(r["e2_slot_share"] for r in table) - 1.0) < 1e-9
-            assert set(block["mismatch"]) == {"n_categories", "definition", "over_served", "under_served"}
+            assert set(block["mismatch"]) == {"n_categories", "n_over_served", "n_under_served", "definition", "over_served", "under_served"}
+            assert block["mismatch"]["n_over_served"] + block["mismatch"]["n_under_served"] <= block["mismatch"]["n_categories"]
             for r in block["mismatch"]["over_served"]:
                 assert r["difference"] == pytest.approx(r["e2_slot_share"] - r["target_new_share"])
         q = ev["quadrants_fine"]
