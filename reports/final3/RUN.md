@@ -108,4 +108,31 @@ PermissionError: profile role is 'final': the Instacart eval split is read once,
 
 ## Selections (written after command 1, before command 2)
 
-(to be recorded after command 1)
+Source: `reports/metrics/holdout3_instacart_tuning.json` written by command 1 (commit `fececaa`, fit split of
+holdout3 Instacart: 20,000 users, 18,619 with a repeat target item, 16,304 with a new target item). Values as
+written by the code and rendered from the JSON (no number typed by hand); the Instacart eval split has not been
+read at this point. LR C: the validation scores of C = 0.1, 1 and 10 are equal at six decimals and the tie rule
+of the code (smaller C) selects 0.1.
+
+| Selection | Value | Grid | At grid edge | Selection score (fit split) |
+|---|---|---|---|---|
+| gamma* (R1 decay) | 0.8 | {0.5, 0.6, 0.7, 0.8, 0.9, 1} | no | repeat Recall@10 0.585560 (0.5: 0.554945, 0.6: 0.565323, 0.7: 0.577621, 0.9: 0.584469, 1: 0.562341) |
+| gamma_c*, alpha* (E1) | 0.9, 100 | {0.8, 0.9, 1} x {1, 10, 100} | gamma_c no, alpha yes | new-item Recall@10 0.042159 (0.8/100: 0.041914, 1/100: 0.041603) |
+| r* (C0) | 10 | {5, ..., 10} | yes | NDCG@10 0.422763 (r = 9: 0.412196) |
+| LR C* (R2) | 0.1 | {0.001, 0.01, 0.1, 1, 10} | no | selected on 4,000 validation users (16,000 training users), refit on all fit users; validation repeat Recall@10 by C: 0.001: 0.593747, 0.01: 0.594519, 0.1: 0.594644, 1: 0.594644, 10: 0.594644 |
+| user-CF k*, weighting* (E2) | 100, binary | {10, 20, 50, 100, 200, 400} x {binary, log1p} | k no | new-item Recall@10 0.060824 |
+| r (C3 = final_lr_ucf) | 10 | {0, ..., 10} | yes | NDCG@10 0.424872 on the 4,000 LR validation users (train-only model); r = 9: 0.415275 |
+| r (C3b = final_star_ucf) | 10 | {0, ..., 10} | yes | NDCG@10 0.423138 on the 20,000 all fit users; r = 9: 0.413489 |
+| r (C2 = final_lr_r) | 10 | {0, ..., 10} | yes | NDCG@10 0.424612 on the 4,000 LR validation users (train-only model); r = 9: 0.414013 |
+
+User-CF grid (fit new-item Recall@10, 16,304 users): binary k = 10: 0.045079, k = 20: 0.053142, k = 50: 0.059080, k = 100: 0.060824, k = 200: 0.060388, k = 400: 0.059359; log1p k = 10: 0.043251, k = 20: 0.052196, k = 50: 0.059104, k = 100: 0.060768, k = 200: 0.060687, k = 400: 0.060090.
+`at_grid_edge` flags as written: three-stage {"gamma": false, "gamma_c": false, "alpha": true, "r": true}; integration {"k": false, "C": false, "r": {"final_lr_ucf": true, "final_star_ucf": true, "final_lr_r": true}}.
+n_users (fit): all 20,000, repeat_target 18,619, new_target 16,304.
+peak_memory_mib (in-JSON): {"stage1_repeat": 1588.8, "stage2_explore": 2218.5, "stage3_combine": 2224.3, "lr_repeat": 2477.9, "integration": 2490.8}; timing_seconds: {"prepare": 3.9, "stage1_repeat": 24.3, "stage2_explore": 156.3, "stage3_combine": 25.9, "lr_repeat": 12.4, "integration": 604.7}.
+
+The policy (PREREG v1.4 item 3) changes no selection: P_T uses r_default = r (C3 = final_lr_ucf) = 10 and
+r_short = 9 for users with history_len <= 4; S is the usercf list with k = 100, binary weighting.
+
+Command 1 record (runner log `logs/commands.json`): start 2026-11-07T07:18:02.960Z, end 07:31:52.102Z, wall
+829.1 s, exit 0, peak working set 2490.8 MiB (process tree sampled every 0.5 s; the JSON `peak_memory_mib.integration`
+is 2490.8 MiB), HEAD `fececaa`, working tree clean.
