@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import joblib
+import numpy as np
 import pandas as pd
 
 from nbr.baselines import item_popularity, personal_frequency_list, popularity_list
@@ -26,13 +27,14 @@ from nbr.data import attach_levels, load_items, load_split, split_target
 from nbr.explore import category_profile, category_ranking, explore_list, explore_list_cf, population_category_ranking
 from nbr.io import write_json
 from nbr.itemcf import cf_list, cf_scores, item_neighbors
-from nbr.lr_repeat import build_training, fit_select, lr_repeat_list, train_only_bundle
+from nbr.lr_repeat import SOURCE_ICF, build_training, fit_select, lr_repeat_list, train_only_bundle
 from nbr.metrics import paired_bootstrap, per_user_category_hit, per_user_ndcg, per_user_recall
 from nbr.policy import evaluate_policy
 from nbr.repeat import repeat_list
 from nbr.usercf import ucf_list
 from nbr.usercf_eval import peak_memory_mib
 from nbr.usercf_eval import tune_history as tune_usercf
+from nbr.v15 import evaluate_v15
 
 K = 10
 # History-length bins (number of distinct eval-history baskets); upper edges, last bin open.
@@ -59,6 +61,27 @@ INTEGRATION_SECONDARY = {"final_star_ucf_vs_final_ndcg": ("final", "final_star_u
 # PREREG v1.3 primary H7' = C3 (final_lr_ucf) vs C0 (final), NDCG@10 with Recall@10 reported: these two
 # comparisons also carry the decision wording at both CI levels (reporting only; lists and selections unchanged).
 INTEGRATION_DECISION = ("final_lr_ucf_vs_final_ndcg", "final_lr_ucf_vs_final_recall")
+# PREREG v1.5 (W19): R2' = R2 + item-CF feature (artifact suffix) and C4 = combine(R2', E2, r) with r re-selected like C3's.
+ICF_SUFFIX = "_icf"
+V15_COMBOS = {"final_lri_ucf": ("repeat_lri", "usercf")}
+V15_PREREG = "v1.5"
+# PREREG v1.5.1: label of the policy blocks of the holdout4 run (secondary replication of the v1.4 policy, base C3 and base C4).
+POLICY_LABELS = {"holdout4": "secondary replication on holdout4 (PREREG v1.5.1)"}
+
+
+def policy_label(config: dict[str, Any]) -> str:
+    """Label of the "policy" / "policy_c4" blocks: POLICY_LABELS for the holdout4 profile, else run_label(config)."""
+    return POLICY_LABELS.get(str(config.get("profile")), run_label(config))
+
+
+def icf_enabled(config: dict[str, Any]) -> bool:
+    """True when ``config`` sets lr_repeat.itemcf_feature (PREREG v1.5: fit R2' and evaluate C4; default false)."""
+    return bool((config.get("lr_repeat") or {}).get("itemcf_feature", False))
+
+
+def icf_neighbor_count(config: dict[str, Any]) -> int:
+    """Neighbour count of the icf feature: explore.itemcf.neighbors of ``config`` (20, fixed by PREREG v1.5)."""
+    return int(config["explore"]["itemcf"]["neighbors"])
 
 
 def run_label(config: dict[str, Any]) -> str:
@@ -173,13 +196,30 @@ def tune(config: dict[str, Any], dataset: str) -> dict[str, Any]:
     timings["lr_repeat"] = time.perf_counter() - t0
     peak_memory["lr_repeat"] = peak_memory_mib()
 
+    # PREREG v1.5: R2' (same rows, same validation users, C selected separately), only with lr_repeat.itemcf_feature.
+    icf_bundle = icf_document = None
+    if icf_enabled(config):
+        t0 = time.perf_counter()
+        icf_bundle = tune_lr_repeat(history, target, config, icf_neighbors=icf_neighbor_count(config))
+        icf_document = save_lr_repeat(icf_bundle, config, dataset, suffix=ICF_SUFFIX)
+        timings["lr_repeat_icf"] = time.perf_counter() - t0
+        peak_memory["lr_repeat_icf"] = peak_memory_mib()
+
     t0 = time.perf_counter()
+    fit_lists: dict[str, pd.DataFrame] = {}
     integration = tune_integration(history, target, pop, lr_bundle,
-                                   {"repeat_star": repeat_star, "explore_star": explore_star}, config)
+                                   {"repeat_star": repeat_star, "explore_star": explore_star}, config, keep_lists=fit_lists)
     timings["integration"] = time.perf_counter() - t0
     peak_memory["integration"] = peak_memory_mib()
 
-    return {
+    v15 = None
+    if icf_bundle is not None:
+        t0 = time.perf_counter()
+        v15 = tune_v15(history, target, pop, lr_bundle, icf_bundle, fit_lists["usercf"], icf_document, config)
+        timings["v15"] = time.perf_counter() - t0
+        peak_memory["v15"] = peak_memory_mib()
+
+    document = {
         "profile": config["profile"],
         "dataset": dataset,
         "split": "fit",
@@ -208,6 +248,9 @@ def tune(config: dict[str, Any], dataset: str) -> dict[str, Any]:
         "timing_seconds": timings,
         "peak_memory_mib": peak_memory,
     }
+    if v15 is not None:  # added only under lr_repeat.itemcf_feature; every other key is unchanged
+        document["v15"] = v15
+    return document
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +263,7 @@ def tune_integration(
     lr_bundle: dict[str, Any],
     lists: dict[str, pd.DataFrame],
     config: dict[str, Any],
+    keep_lists: dict[str, pd.DataFrame] | None = None,
 ) -> dict[str, Any]:
     """Select (k, weighting) of user-CF by fit new-item Recall@10 and r of each combination by NDCG@10.
 
@@ -229,7 +273,8 @@ def tune_integration(
     combinations that use the LR ranker, repeat_lr is scored with the C* model
     fitted on the LR training users only and r is chosen on the LR validation
     users (same split and seed as fit_select); the other combination uses all
-    fit users. Ties -> larger r (select_r).
+    fit users. Ties -> larger r (select_r). ``keep_lists``, when given, receives the fit-split
+    user-CF list ("usercf") and the validation-user repeat_lr list ("repeat_lr") for reuse (PREREG v1.5).
     """
     timings: dict[str, float] = {}
     t0 = time.perf_counter()
@@ -246,6 +291,10 @@ def tune_integration(
     val_users = pd.Index(lr_bundle["val_users"])
     repeat_lr_val = lr_repeat_list(history, train_only_bundle(lr_bundle), K, pop, users=val_users)
     timings["repeat_lr_validation"] = time.perf_counter() - t0
+
+    if keep_lists is not None:
+        keep_lists["usercf"] = usercf_fit
+        keep_lists["repeat_lr"] = repeat_lr_val
 
     t0 = time.perf_counter()
     inputs = {"repeat_lr": repeat_lr_val, "repeat_star": lists["repeat_star"],
@@ -297,26 +346,102 @@ def load_integration_selections(config: dict[str, Any], dataset: str) -> dict[st
 
 
 # ---------------------------------------------------------------------------
+# PREREG v1.5 (W19): slot re-selection of C4 = combine(R2', E2, r) on the fit split
+# ---------------------------------------------------------------------------
+def tune_v15(
+    history: pd.DataFrame,
+    target: pd.DataFrame,
+    pop: pd.Series,
+    lr_bundle: dict[str, Any],
+    icf_bundle: dict[str, Any],
+    usercf_fit: pd.DataFrame,
+    icf_document: dict[str, Any],
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """The "v15" block of the tuning document: R2' (``icf_bundle``, fitted by tune_lr_repeat with icf_neighbors) and
+    the slot count r of C4 selected exactly like C3's (tune_integration): repeat_lri scored with the C* model of R2'
+    fitted on the LR training users only, NDCG@10 on the LR validation users of ``lr_bundle`` (the same users, checked),
+    explore list = the fit-split user-CF list ``usercf_fit`` restricted to those users; ties -> larger r (select_r).
+    ``icf_document`` is the save_lr_repeat summary of R2'. C3's selection is not touched.
+    """
+    if not np.array_equal(np.asarray(icf_bundle["val_users"]), np.asarray(lr_bundle["val_users"])):
+        raise ValueError("tune_v15: R2' must be selected on the validation users of R2")
+    timings: dict[str, float] = {}
+    t0 = time.perf_counter()
+    val_users = pd.Index(icf_bundle["val_users"])
+    repeat_lri_val = lr_repeat_list(history, train_only_bundle(icf_bundle), K, pop, users=val_users, source=SOURCE_ICF)
+    timings["repeat_lri_validation"] = time.perf_counter() - t0
+
+    t0 = time.perf_counter()
+    explore = usercf_fit[usercf_fit["user_id"].isin(val_users)]
+    val_target = target[target["user_id"].isin(val_users)]
+    r_grid = [int(r) for r in config["integration"]["r"]]
+    r_scores, r_selections, r_users = {}, {}, {}
+    for name in V15_COMBOS:
+        scores = {r: float(per_user_ndcg(combine(repeat_lri_val, explore, r, K), val_target, K).mean()) for r in r_grid}
+        r_selections[name] = select_r(scores)
+        r_scores[name] = [{"r": r, "ndcg": value} for r, value in scores.items()]
+        r_users[name] = {"users": "LR validation users (train-only model)", "n_users": int(val_target["user_id"].nunique())}
+    timings["slot_grid"] = time.perf_counter() - t0
+
+    c_grid = [float(c) for c in config["lr_repeat"]["C"]]
+    return {
+        "label": run_label(config),
+        "prereg": V15_PREREG,
+        "icf_neighbors": int(icf_bundle["icf_neighbors"]),
+        "lr_repeat_icf": icf_document,
+        "lr": {"C": icf_bundle["C"], "C_grid": c_grid, "at_grid_edge": icf_bundle["C"] in (min(c_grid), max(c_grid)),
+               "n_train_users": icf_bundle["n_train_users"], "n_val_users": icf_bundle["n_val_users"],
+               "same_validation_users_as_R2": True},
+        "r_grid": r_grid,
+        "r_scores": r_scores,
+        "r_selection_users": r_users,
+        "selections": {"C": icf_bundle["C"], "r": r_selections},
+        "at_grid_edge": {"C": icf_bundle["C"] in (min(c_grid), max(c_grid)),
+                         "r": {name: r in (min(r_grid), max(r_grid)) for name, r in r_selections.items()}},
+        "timing_seconds": timings,
+        "process_peak_working_set_mib": peak_memory_mib(),
+    }
+
+
+def load_v15_selections(config: dict[str, Any], dataset: str) -> dict[str, Any]:
+    """Read the PREREG v1.5 selections (C of R2', r of C4) of ``dataset`` from the tuning JSON of ``config``'s profile."""
+    path = tuning_path(config, dataset)
+    with open(path, encoding="utf-8") as handle:
+        document = json.load(handle)
+    if not document.get("v15"):
+        raise ValueError(f"{path} has no v15 block; rerun tune with lr_repeat.itemcf_feature: true")
+    selections = dict(document["v15"]["selections"])
+    selections["source"] = str(path)
+    return selections
+
+
+# ---------------------------------------------------------------------------
 # W6: logistic-regression repeat ranker (fit split only)
 # ---------------------------------------------------------------------------
-def tune_lr_repeat(history: pd.DataFrame, target: pd.DataFrame, config: dict[str, Any]) -> dict[str, Any]:
+def tune_lr_repeat(
+    history: pd.DataFrame, target: pd.DataFrame, config: dict[str, Any], icf_neighbors: int | None = None
+) -> dict[str, Any]:
     """Build the training rows from the fit split (``history``, ``target``) and select C / refit
-    (nbr.lr_repeat.fit_select) with the lr_repeat settings of ``config``."""
+    (nbr.lr_repeat.fit_select) with the lr_repeat settings of ``config``. With ``icf_neighbors`` (PREREG v1.5, R2')
+    the icf feature is appended and the bundle records ``icf_neighbors``."""
     settings = config["lr_repeat"]
     gammas = [float(g) for g in settings["decay_gammas"]]
     t0 = time.perf_counter()
-    X, y, groups = build_training(history, target, gammas)
+    X, y, groups = build_training(history, target, gammas, icf_neighbors=icf_neighbors)
     build_seconds = time.perf_counter() - t0
     bundle = fit_select(X, y, groups, [float(c) for c in settings["C"]], float(settings["val_fraction"]),
                         int(settings["seed"]), int(settings["max_iter"]), K)
     bundle["decay_gammas"] = gammas
+    if icf_neighbors is not None:
+        bundle["icf_neighbors"] = int(icf_neighbors)
     bundle["timing_seconds"]["build_training"] = build_seconds
     return bundle
 
 
-def lr_artifact_path(config: dict[str, Any], dataset: str) -> Path:
-    """artifacts/<profile>/<dataset>_lr_repeat.joblib under the repo_root of ``config``."""
-    return Path(config["repo_root"]) / "artifacts" / str(config["profile"]) / f"{dataset}_lr_repeat.joblib"
+def lr_artifact_path(config: dict[str, Any], dataset: str, suffix: str = "") -> Path:
+    """artifacts/<profile>/<dataset>_lr_repeat<suffix>.joblib under the repo_root of ``config`` (``suffix`` "_icf" for R2')."""
+    return Path(config["repo_root"]) / "artifacts" / str(config["profile"]) / f"{dataset}_lr_repeat{suffix}.joblib"
 
 
 def sha256_of(path: Path) -> str:
@@ -328,15 +453,19 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def save_lr_repeat(bundle: dict[str, Any], config: dict[str, Any], dataset: str) -> dict[str, Any]:
+def save_lr_repeat(bundle: dict[str, Any], config: dict[str, Any], dataset: str, suffix: str = "") -> dict[str, Any]:
     """Persist the fitted ``bundle`` of ``dataset`` with joblib.dump (pickle-based) at
-    lr_artifact_path(config, dataset) and return the JSON summary."""
-    path = lr_artifact_path(config, dataset)
+    lr_artifact_path(config, dataset, suffix) and return the JSON summary (R2' bundles also store icf_neighbors)."""
+    path = lr_artifact_path(config, dataset, suffix)
     path.parent.mkdir(parents=True, exist_ok=True)
     stored = {key: bundle[key] for key in ("scaler", "model", "C", "features", "decay_gammas", "coefficients",
                                             "intercept")}
+    if "icf_neighbors" in bundle:
+        stored["icf_neighbors"] = int(bundle["icf_neighbors"])
     joblib.dump(stored, path)
+    summary = {} if "icf_neighbors" not in bundle else {"icf_neighbors": int(bundle["icf_neighbors"])}
     return {
+        **summary,
         "C_grid": [row["C"] for row in bundle["validation"]],
         "validation": bundle["validation"],
         "C": bundle["C"],
@@ -357,10 +486,10 @@ def save_lr_repeat(bundle: dict[str, Any], config: dict[str, Any], dataset: str)
     }
 
 
-def load_lr_repeat(config: dict[str, Any], dataset: str) -> dict[str, Any]:
-    """Load the bundle of ``dataset`` written by save_lr_repeat (artifacts/<profile>/<dataset>_lr_repeat.joblib
-    under the repo_root of ``config``)."""
-    path = lr_artifact_path(config, dataset)
+def load_lr_repeat(config: dict[str, Any], dataset: str, suffix: str = "") -> dict[str, Any]:
+    """Load the bundle of ``dataset`` written by save_lr_repeat (artifacts/<profile>/<dataset>_lr_repeat<suffix>.joblib
+    under the repo_root of ``config``; ``suffix`` "_icf" for R2')."""
+    path = lr_artifact_path(config, dataset, suffix)
     if not path.exists():
         raise FileNotFoundError(f"missing lr_repeat artifact {path}; run tune first")
     bundle = joblib.load(path)
@@ -437,6 +566,8 @@ def build_lists(
     integration: dict[str, Any] | None = None,
     skip_l3: bool = False,
     peak_memory: dict[str, float | None] | None = None,
+    icf_bundle: dict[str, Any] | None = None,
+    v15: dict[str, Any] | None = None,
 ) -> tuple[dict[str, pd.DataFrame], dict[str, float]]:
     """All model lists (k = 10) from the eval ``history``; returns (lists, timings).
 
@@ -450,6 +581,10 @@ def build_lists(
     With ``lr_bundle`` (W6) the lists repeat_lr and final_lr = combine(repeat_lr, explore_star, r*) are added.
     With ``integration`` selections (W8, requires ``lr_bundle``) the user-CF list and the combinations
     final_lr_ucf, final_star_ucf and final_lr_r with their re-selected r are added.
+
+    With ``icf_bundle`` (R2', PREREG v1.5; requires ``integration`` and the ``v15`` tuning selections) the lists
+    repeat_lri and final_lri_ucf = combine(repeat_lri, usercf, v15["r"]["final_lri_ucf"]) are added; the item
+    neighbours of ``history`` computed for the item-CF lists are shared with the icf feature when the counts agree.
     """
     level = config["explore"]["level"]
     gamma, gamma_c, alpha, r = (
@@ -476,8 +611,9 @@ def build_lists(
     timed("final_r10", lambda: combine(lists["repeat_star"], lists["explore_star"], K, K))
     if not skip_l3:
         timed("explore_L3", lambda: explore_list(history, K, gamma_c, alpha, "L3"))
+    neighbors = None
+    n_neighbors = int(config["explore"]["itemcf"]["neighbors"])
     if include_itemcf:
-        n_neighbors = int(config["explore"]["itemcf"]["neighbors"])
         t0 = time.perf_counter()
         neighbors = item_neighbors(history, n_neighbors)
         cf = cf_scores(history, neighbors)
@@ -496,6 +632,14 @@ def build_lists(
                                          block_size=block_size))
         for name, (repeat_name, explore_name, _) in INTEGRATION_COMBOS.items():
             slots = int(integration["r"][name])
+            timed(name, lambda rn=repeat_name, en=explore_name, rr=slots: combine(lists[rn], lists[en], rr, K))
+    if icf_bundle is not None:
+        if integration is None or v15 is None:
+            raise ValueError("the PREREG v1.5 lists need the integration selections and the v15 slot selection")
+        shared = neighbors if neighbors is not None and int(icf_bundle["icf_neighbors"]) == n_neighbors else None
+        timed("repeat_lri", lambda: lr_repeat_list(history, icf_bundle, K, pop, source=SOURCE_ICF, neighbors=shared))
+        for name, (repeat_name, explore_name) in V15_COMBOS.items():
+            slots = int(v15["r"][name])
             timed(name, lambda rn=repeat_name, en=explore_name, rr=slots: combine(lists[rn], lists[en], rr, K))
     return lists, timings
 
@@ -557,6 +701,8 @@ def evaluate(
     integration: dict[str, Any] | None = None,
     skip_l3: bool = False,
     include_policy: bool = False,
+    icf_bundle: dict[str, Any] | None = None,
+    v15: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Evaluate all models on the eval split of ``dataset`` under ``config`` with the given (fixed) ``selections``.
 
@@ -574,10 +720,19 @@ def evaluate(
 
     ``include_policy`` (W17, CLI --policy; requires ``lr_bundle`` and ``integration``) adds the PREREG v1.4
     exploration-policy block (nbr.policy.evaluate_policy: P_T vs C3, S vs flat popularity; H11-H13) under the
-    "policy" key (None otherwise); no other entry depends on it.
+    "policy" key (None otherwise); no other entry depends on it. With the v1.5 lists present it also adds the block
+    "policy_c4" (PREREG v1.5.1: the same policy with C4 as the base, same keys, label policy_label(config)).
+
+    ``icf_bundle`` with ``v15`` (W19, PREREG v1.5; requires ``lr_bundle`` and ``integration``) adds the lists repeat_lri
+    (R2') and final_lri_ucf (C4) and the "v15" block (nbr.v15.evaluate_v15: H14, H15 and the secondary comparisons at
+    the 95 % and 97.5 % levels). Without them the document has no "v15" key and every entry is unchanged.
     """
     if include_policy and (lr_bundle is None or integration is None):
         raise ValueError("the policy block needs the lr_repeat bundle and the integration selections (no --no-lr / --no-integration)")
+    if (icf_bundle is None) != (v15 is None):
+        raise ValueError("the v15 block needs both the R2' bundle and the v15 selections")
+    if icf_bundle is not None and (lr_bundle is None or integration is None):
+        raise ValueError("the v15 block needs the lr_repeat bundle and the integration selections (no --no-lr / --no-integration)")
     timings: dict[str, float] = {}
     t0 = time.perf_counter()
     data = prepare(config, dataset, "eval", allow_holdout_eval=allow_holdout_eval)
@@ -589,7 +744,7 @@ def evaluate(
 
     lists, list_timings = build_lists(history, pop, selections, config, include_itemcf=include_itemcf,
                                       lr_bundle=lr_bundle, integration=integration, skip_l3=skip_l3,
-                                      peak_memory=peak_memory)
+                                      peak_memory=peak_memory, icf_bundle=icf_bundle, v15=v15)
     timings.update({f"list_{name}": seconds for name, seconds in list_timings.items()})
 
     t0 = time.perf_counter()
@@ -769,15 +924,31 @@ def evaluate(
 
     # W17 (PREREG v1.4): per-user exploration-slot policy P_T vs C3 and the separate list S vs flat popularity
     # (H11 non-inferiority, H12, H13); secondary metrics, bins and variants. Lists above are unchanged.
-    policy_result = None
+    policy_result = policy_c4_result = None
     if include_policy:
         t0 = time.perf_counter()
         policy_result = evaluate_policy(lists, data, lengths, HISTORY_BINS[dataset], config,
-                                        int(integration["r"]["final_lr_ucf"]), label=run_label(config))
+                                        int(integration["r"]["final_lr_ucf"]), label=policy_label(config))
         timings["policy_metrics"] = time.perf_counter() - t0
         peak_memory["policy"] = peak_memory_mib()
+        if icf_bundle is not None:  # PREREG v1.5.1: the same policy on C4 (secondary replication)
+            t0 = time.perf_counter()
+            policy_c4_result = evaluate_policy(lists, data, lengths, HISTORY_BINS[dataset], config,
+                                               int(v15["r"]["final_lri_ucf"]), label=policy_label(config), base="C4")
+            timings["policy_c4_metrics"] = time.perf_counter() - t0
+            peak_memory["policy_c4"] = peak_memory_mib()
 
-    return {
+    # W19 (PREREG v1.5): R2' and C4 against C3 / personal frequency (H14 non-inferiority, H15) and the secondary
+    # comparisons; lists above are unchanged and the key is present only when the feature is enabled.
+    v15_result = None
+    if icf_bundle is not None:
+        t0 = time.perf_counter()
+        v15_result = evaluate_v15(lists, data, lengths, HISTORY_BINS[dataset], config, icf_bundle, v15,
+                                  label=run_label(config))
+        timings["v15_metrics"] = time.perf_counter() - t0
+        peak_memory["v15"] = peak_memory_mib()
+
+    document = {
         "profile": config["profile"],
         "dataset": dataset,
         "split": "eval",
@@ -804,6 +975,11 @@ def evaluate(
         "timing_seconds": timings,
         "peak_memory_mib": {**peak_memory, "end": peak_memory_mib()},
     }
+    if v15_result is not None:
+        document["v15"] = v15_result
+    if policy_c4_result is not None:
+        document["policy_c4"] = policy_c4_result
+    return document
 
 
 def run_evaluate(
@@ -823,13 +999,19 @@ def run_evaluate(
     ``config`` is the profile configuration, ``allow_holdout_eval`` the holdout-guard override
     (--final); ``include_itemcf`` / ``include_lr`` / ``include_integration`` add the item-CF lists,
     the lr_repeat artifact (H6, H7) and the W8 selections (H8, H9); ``skip_l3`` leaves out
-    explore_L3; ``include_policy`` (--policy) adds the PREREG v1.4 policy block. Returns the written path.
+    explore_L3; ``include_policy`` (--policy) adds the PREREG v1.4 policy block. With lr_repeat.itemcf_feature
+    in ``config`` (PREREG v1.5) the R2' artifact and the v15 selections of ``source`` are loaded as well and the
+    "v15" block is written. Returns the written path.
     """
     source = transfer_from or dataset
     selections = load_selections(config, source)
     lr_bundle = load_lr_repeat(config, source) if include_lr else None
     integration = load_integration_selections(config, source) if include_lr and include_integration else None
+    with_v15 = integration is not None and icf_enabled(config)
+    icf_bundle = load_lr_repeat(config, source, suffix=ICF_SUFFIX) if with_v15 else None
+    v15 = load_v15_selections(config, source) if with_v15 else None
     document = evaluate(config, dataset, selections, allow_holdout_eval=allow_holdout_eval,
                         transfer_from=transfer_from, include_itemcf=include_itemcf, lr_bundle=lr_bundle,
-                        integration=integration, skip_l3=skip_l3, include_policy=include_policy)
+                        integration=integration, skip_l3=skip_l3, include_policy=include_policy,
+                        icf_bundle=icf_bundle, v15=v15)
     return write_json(eval_path(config, dataset, transfer_from), document, config)

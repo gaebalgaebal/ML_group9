@@ -5,6 +5,11 @@ when the pair occurs in the fit target (a repurchase). C is selected on a
 user-level validation split by repeat Recall@10, the model is refit on all
 training rows, and lists are produced by scoring the pairs of an (eval)
 history. Scoring functions never read targets or files.
+
+PREREG v1.5 (R2'): with ``icf_neighbors`` (config key lr_repeat.itemcf_feature, default false) the
+item-CF similarity feature of nbr.features_icf is appended as a 13th column, computed on the same
+history as the other features (fit history for training rows, eval history for lists); the bundle
+records ``icf_neighbors``. Without it every function behaves exactly as before.
 """
 
 from __future__ import annotations
@@ -20,28 +25,49 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 from nbr.features import DEFAULT_DECAY_GAMMAS, feature_names, repeat_features
+from nbr.features_icf import ICF_COLUMN, icf_feature
 from nbr.metrics import per_user_recall
 from nbr.repeat import PAIR_KEY, rank_scores
 
 SOURCE = "repeat_lr"
+SOURCE_ICF = "repeat_lri"
+
+
+def add_icf(
+    features: pd.DataFrame, history: pd.DataFrame, n_neighbors: int, neighbors: pd.DataFrame | None = None
+) -> pd.DataFrame:
+    """``features`` (one row per (user, item) pair of ``history``, nbr.features.repeat_features) with the column "icf"
+    of nbr.features_icf.icf_feature(history, n_neighbors) appended (``neighbors``: precomputed neighbour frame)."""
+    icf = icf_feature(history, n_neighbors, neighbors=neighbors)
+    out = features.merge(icf, on=PAIR_KEY, how="left", validate="one_to_one")
+    if out[ICF_COLUMN].isna().any():
+        raise ValueError("add_icf: every feature row needs an icf value")
+    return out
 
 
 def build_training(
     fit_history: pd.DataFrame,
     fit_target: pd.DataFrame,
     decay_gammas: Sequence[float] = DEFAULT_DECAY_GAMMAS,
+    icf_neighbors: int | None = None,
 ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     """Features X (float64 columns, MultiIndex (user_id, item_id)), labels y (0/1), groups (user_id).
 
     X rows are exactly the (user, item) pairs of ``fit_history``; y[r] = 1 when
     the pair of row r also occurs in ``fit_target``. Targets only define y,
     never a feature. ``decay_gammas`` are the gammas of the dec_g{gamma} features (must contain 1.0).
+    With ``icf_neighbors`` (PREREG v1.5, R2') the column "icf" of nbr.features_icf computed on
+    ``fit_history`` with that neighbour count is appended as the last feature.
     """
     features = repeat_features(fit_history, decay_gammas)
+    columns = feature_names(decay_gammas)
+    if icf_neighbors is not None:
+        features = add_icf(features, fit_history, int(icf_neighbors))
+        columns = columns + [ICF_COLUMN]
     keys = pd.MultiIndex.from_frame(features[PAIR_KEY])
     positives = pd.MultiIndex.from_frame(fit_target[PAIR_KEY].drop_duplicates())
     y = keys.isin(positives).astype("int64")
-    X = features.set_index(keys)[feature_names(decay_gammas)]
+    X = features.set_index(keys)[columns]
     groups = features["user_id"].to_numpy()
     return X, y, groups
 
@@ -183,28 +209,38 @@ def fit_select(
     }
 
 
-def lr_repeat_scores(history: pd.DataFrame, bundle: dict[str, Any]) -> pd.DataFrame:
-    """Score every (user, item) pair of ``history`` with the fitted bundle -> [user_id, item_id, score]."""
+def lr_repeat_scores(
+    history: pd.DataFrame, bundle: dict[str, Any], neighbors: pd.DataFrame | None = None
+) -> pd.DataFrame:
+    """Score every (user, item) pair of ``history`` with the fitted bundle -> [user_id, item_id, score].
+
+    A bundle with ``icf_neighbors`` (R2') gets the "icf" column computed on ``history`` with that neighbour
+    count (``neighbors``: a precomputed item_neighbors frame of ``history`` to share with the item-CF lists).
+    """
     gammas = bundle.get("decay_gammas")
     if gammas is None:  # recover the gammas from the feature names "dec_g{gamma}"
         gammas = [float(name[len("dec_g"):]) for name in bundle["features"] if name.startswith("dec_g")]
     features = repeat_features(history, gammas)
+    if bundle.get("icf_neighbors") is not None:
+        features = add_icf(features, history, int(bundle["icf_neighbors"]), neighbors=neighbors)
     X = features.set_index(pd.MultiIndex.from_frame(features[PAIR_KEY]))[bundle["features"]]
     return score_frame(X, bundle["scaler"], bundle["model"])
 
 
 def lr_repeat_list(
-    history: pd.DataFrame, bundle: dict[str, Any], k: int, pop: pd.Series, users: Any = None
+    history: pd.DataFrame, bundle: dict[str, Any], k: int, pop: pd.Series, users: Any = None,
+    source: str = SOURCE, neighbors: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Top-k repurchase candidates per user ranked by the logistic model of ``bundle``, ties by ``pop`` (source = "repeat_lr").
+    """Top-k repurchase candidates per user ranked by the logistic model of ``bundle``, ties by ``pop`` (``source`` = "repeat_lr").
 
     Features are always computed on the whole ``history`` (item- and population-level
-    statistics); with ``users`` the returned lists are restricted to those users.
+    statistics); with ``users`` the returned lists are restricted to those users. ``neighbors`` is
+    passed to lr_repeat_scores (R2' bundles only).
     """
-    scores = lr_repeat_scores(history, bundle)
+    scores = lr_repeat_scores(history, bundle, neighbors=neighbors)
     if users is not None:
         scores = scores[scores["user_id"].isin(pd.Index(users))]
-    return rank_scores(scores, pop, k, SOURCE)
+    return rank_scores(scores, pop, k, source)
 
 
 def train_only_bundle(bundle: dict[str, Any]) -> dict[str, Any]:

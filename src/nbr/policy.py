@@ -19,6 +19,11 @@ users with >= 1 new target item, "improvement observed" if the lower bound > 0, 
 otherwise "no difference established". Secondary (no confirmatory claim): Recall@10, new-item Recall@10 and
 repeat Recall@10 of P_T vs C3, history-length bins, the r_short = 8 variant and T in {6, 10}.
 
+PREREG v1.5.1 (W19): the base system is a parameter of evaluate_policy. Base "C3" (default) is the v1.4 policy above;
+base "C4" repeats it on the v1.5 final system C4 = ``final_lri_ucf`` (repeat list ``repeat_lri`` = R2') with r_default = the
+r selected for C4 (secondary replication; the confirmatory result for the policy remains H11-H13 on holdout3). E2 (``usercf``)
+and ``flat_explore`` are shared by both bases. With base "C3" every output is unchanged.
+
 The functions never read files or targets other than the frames they receive.
 """
 
@@ -43,7 +48,9 @@ T_SENSITIVITY = (6, 10)                 # secondary sensitivity values of T
 LEVELS = (0.95, 0.9833)                 # CI levels: 95 % and 1 - 0.05/3 (family of 3), four decimals
 PRIMARY_LEVEL = "0.9833"
 PREREG = "v1.4"
-LIST_SOURCES = {"C3": "final_lr_ucf", "repeat": "repeat_lr", "explore": "usercf", "flat": "flat_explore"}
+BASES = {"C3": {"C3": "final_lr_ucf", "repeat": "repeat_lr", "explore": "usercf", "flat": "flat_explore"},
+         "C4": {"C3": "final_lri_ucf", "repeat": "repeat_lri", "explore": "usercf", "flat": "flat_explore"}}
+LIST_SOURCES = BASES["C3"]              # base system of PREREG v1.4 (the key "C3" names the base list of either base)
 METRICS = {
     "ndcg": ("NDCG@10", "all users"),
     "recall": ("Recall@10", "all users"),
@@ -223,6 +230,7 @@ def evaluate_policy(
     T: int = T,
     delta: float = DELTA,
     r_short: int = R_SHORT,
+    base: str = "C3",
 ) -> dict[str, Any]:
     """The "policy" block of the eval document (PREREG v1.4) from the eval-split ``lists`` of nbr.pipeline.build_lists.
 
@@ -232,10 +240,17 @@ def evaluate_policy(
     settings. P_T is built here with ``T`` / ``r_short`` (defaults: the pre-registered values); every comparison
     carries CIs at LEVELS; decisions only on the three primary entries. The variants (r_short = 8; T in {6, 10})
     and the secondary metrics are CI only.
+
+    ``base`` (PREREG v1.5.1) selects the base system of BASES: "C3" (default, the lists above) or "C4" (final_lri_ucf
+    with repeat_lri and ``r_default`` = the r selected for C4); the block has the same keys for either base, the
+    comparator names and the secondary keys carry the base list name.
     """
+    if base not in BASES:
+        raise ValueError(f"base must be one of {sorted(BASES)}, got {base!r}")
+    sources = BASES[base]
     timings: dict[str, float] = {}
     t0 = time.perf_counter()
-    c3, repeat, explore, flat = (lists[LIST_SOURCES[name]] for name in ("C3", "repeat", "explore", "flat"))
+    c3, repeat, explore, flat = (lists[sources[name]] for name in ("C3", "repeat", "explore", "flat"))
     all_users = pd.Index(data["target"]["user_id"].drop_duplicates().sort_values())
     new_users = pd.Index(data["new_target"]["user_id"].drop_duplicates().sort_values())
     short = lengths.reindex(all_users)
@@ -252,7 +267,7 @@ def evaluate_policy(
     timings["lists_and_metrics"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    c3_name, s_name, flat_name = LIST_SOURCES["C3"], LIST_SOURCES["explore"], LIST_SOURCES["flat"]
+    c3_name, s_name, flat_name = sources["C3"], sources["explore"], sources["flat"]
     primary = {
         "H11_ndcg": {**_entry(c3_name, "P_T", "ndcg", series["C3"]["ndcg"], series["P_T"]["ndcg"], config,
                               lambda ci: noninferiority_decision(ci, delta)),
@@ -313,7 +328,7 @@ def evaluate_policy(
         "k": K,
         "levels": [str(level) for level in LEVELS],
         "primary_level": PRIMARY_LEVEL,
-        "lists": {"P_T": f"combine_policy({LIST_SOURCES['repeat']}, {LIST_SOURCES['explore']}, T={T}, r_short={r_short}, r_default={int(r_default)})",
+        "lists": {"P_T": f"combine_policy({sources['repeat']}, {sources['explore']}, T={T}, r_short={r_short}, r_default={int(r_default)})",
                   "C3": c3_name, "S": s_name, "flat": flat_name},
         "history_length": "distinct history baskets of the evaluated split (nbr.pipeline.history_lengths)",
         "n_users": {

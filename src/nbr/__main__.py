@@ -8,6 +8,9 @@ tune also fits the W6 logistic-regression repeat ranker (stored under
 artifacts/<profile>/<dataset>_lr_repeat.joblib) and runs the W8 user-CF / slot
 selection; evaluate loads them unless --no-lr / --no-integration. --policy (W17) adds the
 PREREG v1.4 exploration-policy block (nbr.policy) to the eval JSON; it needs both.
+With lr_repeat.itemcf_feature: true in the profile (PREREG v1.5, W19) tune also fits R2'
+(artifacts/<profile>/<dataset>_lr_repeat_icf.joblib) and selects r of C4, and evaluate adds the
+"v15" block (nbr.v15: H14, H15); no flag is needed.
 
 --final is the only way to read the Instacart eval split of a role == "final"
 profile (holdout); without it the holdout guard raises PermissionError.
