@@ -40,6 +40,10 @@ def test_short_bins_and_expected_from_w15():
     assert cpd.short_bins(6, labels) == ["(0,4]", "(4,6]"]
     assert cpd.short_bins(10, labels) == ["(0,4]", "(4,6]", "(6,10]"]
     assert cpd.short_bins(3, labels) == [] and cpd.short_bins(1000, labels) == labels[:4]
+    assert cpd.bin_edges(labels) == [4.0, 6.0, 10.0, 20.0]
+    assert cpd.checkable(4, labels) and cpd.checkable(10, labels) and not cpd.checkable(5, labels) and not cpd.checkable(1000, labels)
+    cj = ["(0,20]", "(20,50]", "(50,100]", "(100,inf)"]
+    assert cpd.short_bins(4, cj) == [] and not cpd.checkable(4, cj) and not cpd.checkable(6, cj) and cpd.checkable(20, cj)
     bins = {"ndcg": {"(0,4]": {"n_users": 4000, "diff": -0.006}, "(4,6]": {"n_users": 3000, "diff": -0.008}, "(6,10]": {"n_users": 0}}}
     assert cpd.expected_from_w15(bins, "ndcg", ["(0,4]"], 20000) == pytest.approx(-0.006 * 4000 / 20000)
     assert cpd.expected_from_w15(bins, "ndcg", ["(0,4]", "(4,6]", "(6,10]"], 20000) == pytest.approx((-0.006 * 4000 - 0.008 * 3000) / 20000)

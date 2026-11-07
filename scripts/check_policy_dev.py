@@ -15,7 +15,9 @@ Checks (all must pass; the script exits 1 otherwise):
 3. C3 (final_lr_ucf) NDCG@10 of the eval document rounds to the W8b/W15 value (Instacart 0.4274, Complete Journey 0.2046).
 4. Agreement with the W15 part C numbers (R2 + E2, r = 9 or 8 against r = 10): the policy's P_T-vs-C3 differences and the
    variants equal the W15 history-length-bin differences weighted by the bin user counts (|gap| <= 1e-9), and the policy's
-   (0,4] bin entries equal the W15 (0,4] entries (diff and 95 % CI).
+   first-bin entries equal the W15 first-bin entries (diff and 95 % CI). A comparison is checkable only when its T is an
+   upper edge of the dataset's history-length bins (Instacart: 4, 6, 10; the Complete Journey bins 20, 50, 100 make the
+   W15 numbers non-derivable for T in {4, 6, 10}, recorded as not applicable); the C3 list metrics are checked for both.
 
 Outputs: <out-dir>/policy_dev_<profile>.json (checks plus the full "policy" blocks of the eval documents) and
 policy_dev_<profile>.md (tables). This is a code check on development data, not a selection: nothing is changed on its
@@ -160,14 +162,24 @@ def expected_from_w15(bins: dict[str, dict[str, Any]], metric: str, short_bins: 
     return total / n_total
 
 
-def short_bins(threshold: int, labels: list[str]) -> list[str]:
-    """History-length bins whose upper edge is <= ``threshold`` (users with history_len <= threshold), e.g. T = 6 -> (0,4], (4,6]."""
-    out = []
+def bin_edges(labels: list[str]) -> list[float]:
+    """Finite upper edges of the bin ``labels`` ("(0,4]" -> 4.0; the open last bin has none)."""
+    edges = []
     for label in labels:
         upper = label.rstrip("])").split(",")[1]
-        if upper != "inf" and float(upper) <= threshold:
-            out.append(label)
-    return out
+        if upper != "inf":
+            edges.append(float(upper))
+    return edges
+
+
+def short_bins(threshold: int, labels: list[str]) -> list[str]:
+    """History-length bins whose upper edge is <= ``threshold`` (users with history_len <= threshold), e.g. T = 6 -> (0,4], (4,6]."""
+    return [label for label, upper in zip(labels, [*bin_edges(labels), math.inf]) if upper <= threshold]
+
+
+def checkable(threshold: int, labels: list[str]) -> bool:
+    """The users with history_len <= ``threshold`` form a union of bins exactly when ``threshold`` is a finite bin edge."""
+    return float(threshold) in bin_edges(labels)
 
 
 def check_w15_agreement(policy: dict[str, Any], w15: dict[str, Any], dataset: str) -> dict[str, Any]:
@@ -177,6 +189,11 @@ def check_w15_agreement(policy: dict[str, Any], w15: dict[str, Any], dataset: st
     rows = []
 
     def add(name: str, metric: str, bins: dict[str, dict[str, Any]], threshold: int, entry: dict[str, Any]) -> None:
+        if not checkable(threshold, labels):
+            rows.append({"comparison": name, "metric": metric, "policy_diff": float(entry["diff"]), "w15_implied_diff": None, "gap": None,
+                         "n_users": int(entry["n_users"]), "agree": None,
+                         "note": f"not applicable: T = {threshold} is not a bin edge of this dataset ({', '.join(labels)})"})
+            return
         expected = expected_from_w15(bins, W15_METRICS[metric], short_bins(threshold, labels), int(entry["n_users"]))
         rows.append({"comparison": name, "metric": metric, "policy_diff": float(entry["diff"]), "w15_implied_diff": expected,
                      "gap": abs(float(entry["diff"]) - expected), "n_users": int(entry["n_users"]),
@@ -190,12 +207,16 @@ def check_w15_agreement(policy: dict[str, Any], w15: dict[str, Any], dataset: st
         bins = eight if int(variant["r_short"]) == R_SHORT_VARIANT else nine
         for metric in ("ndcg", "new_hit_share", "recall", "new_recall", "repeat_recall"):
             add(f"{name} vs C3", metric, bins, int(variant["T"]), variant["comparisons"][metric])
-    # The (0,4] bin of the policy block against the W15 (0,4] bin (same users, same bootstrap draw).
+    # The first bin of the policy block against the W15 first bin (same users, same bootstrap draw) when its edge is T.
     bin_rows = []
     first = labels[0]
+    first_applicable = bin_edges(labels)[:1] == [float(policy["T"])]
     policy_first = next(row for row in policy["by_history_length"] if row["bin"] == first)
     for key, metric in (("H11_ndcg", "ndcg"), ("H12_new_hit_share", "new_hit_share"), ("P_T_vs_final_lr_ucf_recall", "recall"),
                         ("P_T_vs_final_lr_ucf_new_recall", "new_recall"), ("P_T_vs_final_lr_ucf_repeat_recall", "repeat_recall")):
+        if not first_applicable:
+            bin_rows.append({"bin": first, "key": key, "agree": None, "note": f"not applicable: the first bin edge is not T = {policy['T']}"})
+            continue
         ours, theirs = policy_first.get(key), nine[metric].get(first)
         if ours is None or theirs is None or not theirs.get("n_users"):
             bin_rows.append({"bin": first, "key": key, "agree": ours is None and (theirs is None or not theirs.get("n_users"))})
@@ -211,8 +232,10 @@ def check_w15_agreement(policy: dict[str, Any], w15: dict[str, Any], dataset: st
     for metric, w15_metric in W15_METRICS.items():
         ours, theirs = float(policy["list_metrics"]["final_lr_ucf"][metric]), float(table[("R2", 10)][w15_metric])
         c3_rows.append({"metric": metric, "policy_C3": ours, "w15_R2_r10": theirs, "agree": abs(ours - theirs) <= TOLERANCE})
+    applicable = [r for r in rows + bin_rows if r["agree"] is not None]
     return {"overall": rows, "first_bin": bin_rows, "c3_list_metrics": c3_rows,
-            "all_agree": all(r["agree"] for r in rows) and all(r["agree"] for r in bin_rows) and all(r["agree"] for r in c3_rows),
+            "n_applicable": len(applicable), "n_not_applicable": len(rows) + len(bin_rows) - len(applicable),
+            "all_agree": all(r["agree"] for r in applicable) and all(r["agree"] for r in c3_rows),
             "w15_meta": {k: w15.get("meta", {}).get(k) for k in ("git_commit", "utc_time")}}
 
 
@@ -298,9 +321,13 @@ def render_markdown(report: dict[str, Any]) -> str:
                 cells.append("-" if entry is None else f"{fd(entry['diff'])} {ci(entry['ci_0.95'])} (n = {entry['n_users']:,})")
             lines.append("| " + " | ".join(cells) + " |")
         agree = d["w15_agreement"]
-        lines += ["", f"### Agreement with the W15 part C numbers (R2 + E2; |gap| <= {TOLERANCE:g}): **{'yes' if agree['all_agree'] else 'NO'}**", "",
+        lines += ["", f"### Agreement with the W15 part C numbers (R2 + E2; |gap| <= {TOLERANCE:g}): **{'yes' if agree['all_agree'] else 'NO'}** "
+                  f"({agree['n_applicable']} checkable comparisons, {agree['n_not_applicable']} not applicable because T is not a bin edge of this dataset)", "",
                   "| comparison | metric | policy diff | W15-implied diff | gap | agree |", "| --- | --- | --- | --- | --- | --- |"]
         for row in agree["overall"]:
+            if row["agree"] is None:
+                lines.append(f"| {row['comparison']} | {row['metric']} | {row['policy_diff']:+.6f} | - | - | n/a |")
+                continue
             lines.append(f"| {row['comparison']} | {row['metric']} | {row['policy_diff']:+.6f} | {row['w15_implied_diff']:+.6f} | {row['gap']:.1e} | "
                          f"{'yes' if row['agree'] else 'NO'} |")
         lines += ["", "First bin (same users and bootstrap draw as W15):", "", "| key | policy diff [95 % CI] (n) | W15 diff [95 % CI] (n) | agree |",
@@ -309,6 +336,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             if "policy" in row:
                 lines.append(f"| {row['key']} | {fd(row['policy']['diff'])} {ci(row['policy']['ci_0.95'])} ({row['policy']['n_users']:,}) | "
                              f"{fd(row['w15']['diff'])} {ci(row['w15']['ci_0.95'])} ({row['w15']['n_users']:,}) | {'yes' if row['agree'] else 'NO'} |")
+            elif row["agree"] is None:
+                lines.append(f"| {row['key']} | - | - | n/a ({row['note']}) |")
             else:
                 lines.append(f"| {row['key']} | (no users) | (no users) | {'yes' if row['agree'] else 'NO'} |")
         lines += ["", "C3 list metrics against the W15 R2 r = 10 row: " + ", ".join(
