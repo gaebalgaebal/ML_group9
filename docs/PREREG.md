@@ -73,3 +73,16 @@ Decision: lower bound > 0 -> "improvement observed"; CI contains 0 -> "no differ
      H13: share of users with >= 1 new-item hit in a 10-item exploration list, S (E2) minus flat popularity excluding history items, over users with >= 1 new target item; improvement if the CI lower bound > 0.
   5. Secondary (no confirmatory claim): Recall@10, new-item Recall@10 and repeat Recall@10 of P_T vs C3; history-length bins; the r_u = 8 variant for short histories; T in {6, 10} as sensitivity; replication of H6, H7' and H8; Complete Journey refit and transfer with the same policy (same data as development, not independent).
   6. Inference: paired bootstrap over users, 1,000 resamples, seed 42; 95 % CIs reported alongside.
+- v1.5 (2026-11-07, after two post-hoc development checks on `medium`, before holdout4 is created or read).
+  1. Reason: the course instructor confirmed that the final system must use two collaborative-filtering methods. The v1.3 final system C3 uses one (E2, user-based CF); flat item-CF (H5) was evaluated only as a comparator.
+  2. Development checks (medium; files in `Claude outputs/ICF_feature_check` and `Claude outputs/CF_fusion_check`; not confirmatory):
+     a. Score fusion in the explore list, s = w * s_E2 / max_u + (1 - w) * s_itemcf / max_u, w in {0, 0.25, 0.5, 0.75, 1} selected by new-item Recall@10 on the fit split: w* = 1 (item-CF weight 0) on both datasets; every w < 1 scored lower on the fit split. Not carried forward.
+     b. Item-CF feature in R2: icf(u, i) = log(1 + sum over j in I(H_u) of sim(j, i)), i in I(H_u), where sim is taken from the top-20 cosine item-neighbour lists of the binary user x item matrix of the same history (the H5 neighbours; self excluded). Repeat Recall@10, R2 -> R2 + icf: Instacart +0.0002 [-0.0001, 0.0005], Complete Journey -0.0001 [-0.0012, 0.0009]; standardized icf coefficient 0.007 and -0.012. Carried forward as R2'.
+  3. Confirmatory sample: `holdout4` = 20,000 Instacart users with a public final order, drawn with seed 42 from the users not in `sample`, `medium`, `holdout`, `holdout2` or `holdout3` (49,936 remaining). Its Instacart eval split is read once, after this amendment is committed.
+  4. Systems: R2' = R2 with the feature icf added (13 features; neighbours computed on the history being scored: the fit history for training rows, the eval history for lists; 20 item neighbours, fixed). C4 = top r of R2' + top (10 - r) of E2. C3 (v1.3) is the comparator.
+  5. Selection (fit split only): as v1.3; the LR C is selected separately for R2 and R2', and r separately for C3 and C4. No icf variant is selected.
+  6. Primary hypotheses (Instacart holdout4, family of 2, two-sided 97.5 % CI = 1 - 0.05/2):
+     H14 (non-inferiority): NDCG@10 of C4 minus C3 over all users; non-inferior if the CI lower bound > -0.003 (the v1.4 margin).
+     H15: NDCG@10 of C4 minus personal frequency over all users; improvement if the CI lower bound > 0.
+  7. Secondary (no confirmatory claim): repeat Recall@10 of R2' vs R2 and R2' vs R1 (users with >= 1 repeat target item); Recall@10 of C4 vs C3; standardized coefficients of R2'; replication of H6, H7' and H8; history-length bins; Complete Journey refit and transfer (same data as development, not independent).
+  8. Inference: paired bootstrap over users, 1,000 resamples, seed 42; 95 % CIs reported alongside.
