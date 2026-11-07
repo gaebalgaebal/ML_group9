@@ -11,7 +11,7 @@ Commits of this branch before any holdout3 run (all before command 1):
 
 | Commit | Content |
 |---|---|
-| `0c7aa89` | src/nbr/policy.py (P_T, S, new-item hit share, H11-H13 block), `evaluate --policy` wiring, tests (262 passed), scripts/check_policy_dev.py |
+| `0c7aa89` | src/nbr/policy.py (P_T, S, new-item hit share, H11-H13 block), `evaluate --policy` wiring, tests (265 collected, all passed), scripts/check_policy_dev.py |
 | (P1.2) | reports/posthoc/policy_dev_medium.{json,md}: development check of the policy code on medium (not confirmatory) |
 | (P2) | configs/holdout3.yaml; holdout3 data (data/SOURCE.md, data/MANIFEST.sha256, reports/holdout_prep/holdout3_selection.json) |
 | (this file) | pre-specified key table and pre-check record |
