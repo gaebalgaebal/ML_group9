@@ -1,34 +1,49 @@
-"""Static audit of src/nbr and scripts/ with the ast module (no project code is executed).
+# *------------------- 2026 Fall Semester Machine Learning Term-project: Team 9 --------------------*
+# Code First written at 2026-11-06
+# Code Final Edited at 2026-11-13
+# Editor: Yejun Kim
 
+'''
+Purpose : Static audit of src/nbr and scripts/ with the ast module (no project code is
+          executed).
+          For every Python file under src/nbr and scripts/ of the repository (plus, optionally,
+          files of other branches read with ``git show`` via --extra), the script reports
+            1. module, class and public-function docstrings, and whether each docstring
+               mentions every parameter of its function;
+            2. calls into third-party libraries (numpy, pandas, scipy, sklearn, joblib, yaml,
+               matplotlib, pyarrow): the resolved call name, file and line, keyword arguments;
+            3. method calls on objects whose library could not be resolved statically;
+            4. standard-library calls (counts only);
+            5. source-attribution comments ("adapted from" and similar);
+            6. observations recorded by hand in OBSERVATIONS (checked against the current line
+               text).
+          Resolution levels of a call:
+            A  the call starts at an imported third-party name (``np.power``,
+               ``LogisticRegression(...)``);
+            B  the receiver is a variable whose type is known from a parameter annotation or
+               from an assignment of a level-A expression
+               (``scores: pd.DataFrame`` -> ``pandas.DataFrame.sort_values``,
+               ``m = sparse.csr_matrix(...)`` -> ``scipy.sparse.csr_matrix().tocsc``);
+            C  the receiver was derived from a level-A/B/C expression by indexing or a method
+               call (``events = history[...]`` -> ``pandas.*.merge``; the exact class is not
+               known);
+            S  standard-library call (counted separately); F first-party call (nbr, ml_group9;
+               not listed);
+            D  unresolved: listed by method name with a heuristic "probable library".
+Inputs  : Every Python file under src/nbr and scripts/ of the repository (--repo) and,
+          optionally, files of other branches given as --extra BRANCH:PATH (read with
+          ``git show``).
+Outputs : The output is Markdown (docs/CODE_AUDIT.md) and is deterministic for a given set of
+          inputs (no timestamps).
+Usage   :
     python scripts/audit_code.py [--repo DIR] [--out docs/CODE_AUDIT.md] [--extra BRANCH:PATH ...]
-
-For every Python file under src/nbr and scripts/ of the repository (plus, optionally, files of
-other branches read with ``git show`` via --extra), the script reports
-
-  1. module, class and public-function docstrings, and whether each docstring mentions
-     every parameter of its function;
-  2. calls into third-party libraries (numpy, pandas, scipy, sklearn, joblib, yaml,
-     matplotlib, pyarrow): the resolved call name, file and line, keyword arguments;
-  3. method calls on objects whose library could not be resolved statically;
-  4. standard-library calls (counts only);
-  5. source-attribution comments ("adapted from" and similar);
-  6. observations recorded by hand in OBSERVATIONS (checked against the current line text).
-
-The output is Markdown (docs/CODE_AUDIT.md) and is deterministic for a given set of inputs
-(no timestamps). Resolution levels of a call:
-
-  A  the call starts at an imported third-party name (``np.power``, ``LogisticRegression(...)``);
-  B  the receiver is a variable whose type is known from a parameter annotation or from an
-     assignment of a level-A expression (``scores: pd.DataFrame`` -> ``pandas.DataFrame.sort_values``,
-     ``m = sparse.csr_matrix(...)`` -> ``scipy.sparse.csr_matrix().tocsc``);
-  C  the receiver was derived from a level-A/B/C expression by indexing or a method call
-     (``events = history[...]`` -> ``pandas.*.merge``; the exact class is not known);
-  S  standard-library call (counted separately); F first-party call (nbr, ml_group9; not listed);
-  D  unresolved: listed by method name with a heuristic "probable library".
-"""
+'''
 
 from __future__ import annotations
 
+# ---------------------------------------------------------------------------
+# imports
+# ---------------------------------------------------------------------------
 import argparse
 import ast
 import hashlib
@@ -39,6 +54,9 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# constants
+# ---------------------------------------------------------------------------
 THIRD_PARTY = ("numpy", "pandas", "scipy", "sklearn", "joblib", "yaml", "matplotlib", "pyarrow")
 FIRST_PARTY = ("nbr", "ml_group9")
 STDLIB = set(getattr(sys, "stdlib_module_names", ()))
@@ -47,8 +65,9 @@ SELF_LABEL = "scripts/audit_code.py"
 ATTRIBUTION_PATTERN = re.compile(r"\badapted\b|\bported from\b|\bcopied from\b|\btaken from\b|\bborrowed from\b",
                                  re.IGNORECASE)
 
-# Heuristic receiver library for level-D method calls (method name -> probable library). Used
-# only for the "probable library" column; every entry is a guess from the method name alone.
+# Heuristic receiver library for level-D method calls (method name -> probable library).
+# It is used only for the "probable library" column.
+# Every entry is a guess from the method name alone.
 PROBABLE_LIBRARY = {
     **{m: "pandas (DataFrame/Series/Index)" for m in (
         "groupby", "merge", "drop_duplicates", "sort_values", "cumcount", "transform", "agg", "map", "fillna",
@@ -82,9 +101,10 @@ PROBABLE_LIBRARY = {
     )},
 }
 
-# Observations from reading the code (not detectable by the automatic checks). Each entry names the
-# file label as printed in section 1, the line, and a snippet that must occur on that line; a stale
-# entry is printed with a warning instead of silently disappearing.
+# Observations from reading the code (not detectable by the automatic checks).
+# Each entry names the file label as printed in section 1 and the line.
+# Each entry also names a snippet that must occur on that line.
+# A stale entry is printed with a warning instead of silently disappearing.
 OBSERVATIONS = [
     {"file": "src/nbr/usercf_eval.py", "line": 34, "snippet": "from nbr.usercf import _list_from_vectors",
      "kind": "style",
@@ -138,6 +158,7 @@ class Source:
 
 def git(repo: Path, *args: str) -> str:
     """Run ``git <args>`` in ``repo`` and return its stripped stdout."""
+    # Run git and raise when it exits with an error.
     result = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True)
     return result.stdout.strip()
 
@@ -145,12 +166,16 @@ def git(repo: Path, *args: str) -> str:
 def collect_sources(repo: Path, extras: list[str]) -> list[Source]:
     """All ``*.py`` files under src/nbr and scripts of ``repo`` plus the ``extras`` (BRANCH:PATH via git show)."""
     sources = []
+    # Read the Python files of both folders from the worktree in sorted order.
     for folder in ("src/nbr", "scripts"):
         for path in sorted((repo / folder).glob("*.py")):
             sources.append(Source(path.relative_to(repo).as_posix(), path.read_text(encoding="utf-8"), "worktree"))
     for spec in extras:
+        # Split the specification into the branch and the path.
         branch, _, path = spec.partition(":")
+        # Look up the short commit hash of the branch.
         commit = git(repo, "rev-parse", "--short", branch)
+        # Read the file text of that branch with git show.
         text = subprocess.run(["git", "show", f"{branch}:{path}"], cwd=repo, capture_output=True,
                               text=True, check=True, encoding="utf-8").stdout
         sources.append(Source(f"{branch}:{path}", text, f"git show {branch} ({commit})"))
@@ -175,20 +200,32 @@ class FunctionInfo:
 
 
 def _params(node: ast.FunctionDef | ast.AsyncFunctionDef, method: bool) -> list[str]:
+    '''Return the parameter names of the function ``node``; ``method`` drops a leading self/cls.
+
+    A variadic positional parameter gets the prefix "*" and a variadic keyword one "**".
+    '''
     args = node.args
+    # Collect the positional-only and the ordinary parameters.
     names = [a.arg for a in args.posonlyargs + args.args]
+    # Add the variadic positional parameter with a "*" prefix.
     if args.vararg:
         names.append("*" + args.vararg.arg)
+    # Add the keyword-only parameters.
     names += [a.arg for a in args.kwonlyargs]
+    # Add the variadic keyword parameter with a "**" prefix.
     if args.kwarg:
         names.append("**" + args.kwarg.arg)
+    # Drop the first parameter of a method when it is self or cls.
     if method and names and names[0] in ("self", "cls"):
         names = names[1:]
     return names
 
 
 def _mentioned(name: str, doc: str) -> bool:
+    '''Return True when the parameter ``name`` occurs as a whole word in the docstring ``doc``.'''
+    # Remove the "*" prefix of a variadic parameter.
     bare = name.lstrip("*")
+    # Search the bare name where no word character or dot precedes it and no word character follows.
     return re.search(rf"(?<![\w.]){re.escape(bare)}(?![\w])", doc) is not None
 
 
@@ -197,20 +234,29 @@ def function_infos(source: Source, tree: ast.Module) -> list[FunctionInfo]:
     infos = []
 
     def visit(node, prefix: str, method: bool) -> None:
+        '''Record ``node`` when it is a function or a class, and the children of a class.
+
+        ``prefix`` is the qualified-name prefix and ``method`` is True for a class member.
+        '''
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Record the function with its parameters and its docstring.
             params = _params(node, method)
             doc = ast.get_docstring(node)
             info = FunctionInfo(source.label, prefix + node.name, node.lineno, not node.name.startswith("_"),
                                 False, params, doc)
+            # List the parameters that the docstring does not mention.
             if doc is not None:
                 info.undocumented = [p for p in params if not _mentioned(p, doc)]
             infos.append(info)
         elif isinstance(node, ast.ClassDef):
+            # Record the class with its docstring.
             infos.append(FunctionInfo(source.label, prefix + node.name, node.lineno, not node.name.startswith("_"),
                                       True, [], ast.get_docstring(node)))
+            # Visit the members of the class with the class name as prefix.
             for child in node.body:
                 visit(child, prefix + node.name + ".", True)
 
+    # Visit every top-level statement of the module.
     for child in tree.body:
         visit(child, "", False)
     return infos
@@ -234,17 +280,23 @@ class CallSite:
 
 
 def _root_library(dotted: str) -> str:
+    '''Return the first component of the dotted name ``dotted``.'''
     return dotted.split(".")[0]
 
 
 def _classify(dotted: str) -> str:
+    '''Return the level letter of the imported dotted name ``dotted`` (A, F, T or S).'''
     root = _root_library(dotted)
+    # A listed third-party package gives level A.
     if root in THIRD_PARTY:
         return "A"
+    # A first-party package gives level F.
     if root in FIRST_PARTY:
         return "F"
+    # A typing or collections.abc name gives level T.
     if root == "typing" or dotted.startswith("collections.abc"):
         return "T"  # annotation-only names (typing.Any, collections.abc.Sequence): never bound or counted
+    # A standard-library module or __future__ gives level S.
     if root in STDLIB or root == "__future__":
         return "S"
     return "A"  # unknown package: treated as third-party
@@ -254,6 +306,7 @@ class Resolver(ast.NodeVisitor):
     """Collect import aliases, variable type labels and call sites of one module (``source``)."""
 
     def __init__(self, source: Source):
+        '''Start with no aliases, one empty module scope and no calls for ``source``.'''
         self.source = source
         self.aliases: dict[str, str] = {}         # local name -> dotted import name
         self.scopes: list[dict[str, tuple[str, str]]] = [{}]   # var -> (label, level)
@@ -263,6 +316,7 @@ class Resolver(ast.NodeVisitor):
     def visit_Import(self, node: ast.Import) -> None:
         """Register ``import a.b as c`` aliases (``node``)."""
         for alias in node.names:
+            # Map an explicit alias to the full module name, else the root name to itself.
             if alias.asname:
                 self.aliases[alias.asname] = alias.name
             else:
@@ -272,15 +326,19 @@ class Resolver(ast.NodeVisitor):
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         """Register ``from a import b as c`` aliases (``node``)."""
         module = node.module or ""
+        # Map each local name to the module name joined with the imported name.
         for alias in node.names:
             self.aliases[alias.asname or alias.name] = f"{module}.{alias.name}" if module else alias.name
         self.generic_visit(node)
 
     # -- scopes
     def _bind(self, name: str, label: str, level: str) -> None:
+        '''Bind the variable ``name`` to the type ``label`` and ``level`` in the innermost scope.'''
         self.scopes[-1][name] = (label, level)
 
     def _lookup(self, name: str) -> tuple[str, str] | None:
+        '''Return the (label, level) bound to ``name`` in the nearest scope, or None.'''
+        # Search the scopes from the innermost to the outermost.
         for scope in reversed(self.scopes):
             if name in scope:
                 return scope[name]
@@ -289,11 +347,13 @@ class Resolver(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Open a scope for ``node``, bind annotated parameters, visit the body."""
         self.scopes.append({})
+        # Bind every parameter whose annotation resolves to a level A, S or F name.
         for arg in node.args.posonlyargs + node.args.args + node.args.kwonlyargs:
             if arg.annotation is not None:
                 resolved = self._resolve_expr(arg.annotation)
                 if resolved is not None and resolved[1] in ("A", "S", "F"):
                     self._bind(arg.arg, resolved[0], _bound_level(resolved[1]))
+        # Visit the body and close the scope.
         self.generic_visit(node)
         self.scopes.pop()
 
@@ -301,29 +361,40 @@ class Resolver(ast.NodeVisitor):
 
     def visit_Assign(self, node: ast.Assign) -> None:
         """Bind the targets of ``node`` to the resolved type label of its value."""
+        # Visit the value first so that the calls inside it are recorded.
         self.visit(node.value)
+        # Resolve the value and bind every target to the result.
         resolved = self._resolve_expr(node.value)
         for target in node.targets:
             self._bind_target(target, resolved)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         """Bind an annotated assignment ``node`` through its annotation, else through its value."""
+        # Visit the value so that the calls inside it are recorded.
         if node.value is not None:
             self.visit(node.value)
         resolved = self._resolve_expr(node.annotation)
         if isinstance(node.target, ast.Name):
+            # Bind through the annotation when it resolves to a level A, S or F name.
             if resolved is not None and resolved[1] in ("A", "S", "F"):
                 self._bind(node.target.id, resolved[0], _bound_level(resolved[1]))
+            # Otherwise bind through the assigned value.
             elif node.value is not None:
                 self._bind_target(node.target, self._resolve_expr(node.value))
 
     def _bind_target(self, target: ast.expr, resolved: tuple[str, str] | None) -> None:
+        '''Bind the assignment ``target`` to ``resolved`` (label, level); None clears the binding.
+
+        The names of a tuple or list target are bound to the label with an "[i]" suffix.
+        '''
         if isinstance(target, ast.Name):
+            # Clear or set the binding of a single name.
             if resolved is None:
                 self.scopes[-1].pop(target.id, None)
             else:
                 self._bind(target.id, resolved[0], _bound_level(resolved[1]))
         elif isinstance(target, (ast.Tuple, ast.List)):
+            # Clear or set the binding of every name of the tuple or list by its position.
             for i, sub_target in enumerate(target.elts):
                 if isinstance(sub_target, ast.Name):
                     if resolved is None:
@@ -333,21 +404,26 @@ class Resolver(ast.NodeVisitor):
 
     # -- expression resolution: (label, level) or None
     def _resolve_expr(self, node: ast.expr) -> tuple[str, str] | None:
+        '''Return the (label, level) of the expression ``node``, or None when it is unresolved.'''
+        # A name resolves through the import aliases, else through the variable scopes.
         if isinstance(node, ast.Name):
             if node.id in self.aliases:
                 dotted = self.aliases[node.id]
                 return dotted, _classify(dotted)
             return self._lookup(node.id)
+        # An attribute appends its name to the label of its base and keeps the level.
         if isinstance(node, ast.Attribute):
             base = self._resolve_expr(node.value)
             if base is None:
                 return None
             return f"{base[0]}.{node.attr}", base[1]
+        # A call appends "()" to the label of the called expression and derives the level.
         if isinstance(node, ast.Call):
             base = self._resolve_expr(node.func)
             if base is None:
                 return None
             return f"{base[0]}()", _derived_level(base[1])
+        # A subscript appends "[...]" to the label of its base and derives the level.
         if isinstance(node, ast.Subscript):
             base = self._resolve_expr(node.value)
             if base is None:
@@ -360,10 +436,13 @@ class Resolver(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         """Record the call ``node`` with its resolution level and keyword-argument names."""
+        # Collect the keyword names ("**" for an unpacked mapping) and count positional arguments.
         keywords = [kw.arg if kw.arg is not None else "**" for kw in node.keywords]
         positional = len(node.args)
+        # Resolve the called expression.
         resolved = self._resolve_expr(node.func)
         if resolved is not None:
+            # Record a resolved call according to its level.
             label, level = resolved
             if level in ("F", "T"):
                 pass  # first-party call or typing name: not listed
@@ -376,6 +455,7 @@ class Resolver(ast.NodeVisitor):
                 self.calls.append(CallSite(self.source.label, node.lineno, label, level, _root_library(label),
                                            keywords, positional))
         elif isinstance(node.func, ast.Attribute):
+            # Record an unresolved method call at level D unless the receiver is self or cls.
             receiver = ast.unparse(node.func.value)
             if receiver not in ("self", "cls"):
                 self.calls.append(CallSite(self.source.label, node.lineno, node.func.attr, "D", "", keywords,
@@ -396,6 +476,7 @@ def _derived_level(level: str) -> str:
 
 def _collapse_derived(label: str) -> str:
     """"pandas.DataFrame[...].merge().groupby" -> "pandas.*.groupby" (exact class unknown after derivation)."""
+    # Keep the library name and the last method name of the label.
     library = _root_library(label)
     method = label.rsplit(".", 1)[-1]
     return f"{library}.*.{method}"
@@ -406,27 +487,35 @@ def _collapse_derived(label: str) -> str:
 # ---------------------------------------------------------------------------
 def md_table(headers: list[str], rows: list[list[str]]) -> list[str]:
     """Markdown table lines for ``headers`` and ``rows`` (pipes and newlines in cells are escaped)."""
+    # Build the header line and the separator line.
     out = ["| " + " | ".join(headers) + " |", "|" + "|".join(" --- " for _ in headers) + "|"]
+    # Add one line per row with escaped cells.
     for row in rows:
         out.append("| " + " | ".join(str(c).replace("|", "\\|").replace("\n", " ") for c in row) + " |")
     return out
 
 
 def _sites(sites: list[CallSite]) -> str:
+    '''Return the call ``sites`` as a comma-separated "file:line" list sorted by file and line.'''
     return ", ".join(f"{s.file}:{s.line}" for s in sorted(sites, key=lambda s: (s.file, s.line)))
 
 
 def _kw_union(sites: list[CallSite]) -> str:
+    '''Return the sorted keyword names used at any of ``sites``, comma-separated ("-" if none).'''
     counter: Counter[str] = Counter()
+    # Count the keyword names over all sites.
     for s in sites:
         counter.update(s.keywords)
+    # Join the names in sorted order.
     return ", ".join(f"{k}" for k, _ in sorted(counter.items())) or "-"
 
 
 def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
     """Render the Markdown audit of ``sources`` (``extras`` and the HEAD of ``repo`` are printed in the header)."""
+    # Read the short commit hash and the branch name of the worktree.
     head = git(repo, "rev-parse", "--short", "HEAD")
     branch = git(repo, "rev-parse", "--abbrev-ref", "HEAD")
+    # Write the header lines of the document.
     lines: list[str] = []
     lines.append("<!-- AUTO-GENERATED by scripts/audit_code.py (static ast audit; no project code is executed). "
                  "Do not edit by hand: re-run the script. -->")
@@ -438,6 +527,7 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
                  "Rules are listed at the end of this document.")
     lines.append("")
 
+    # Parse every source and collect its docstring facts and its call sites.
     trees: dict[str, ast.Module] = {}
     infos: list[FunctionInfo] = []
     calls: list[CallSite] = []
@@ -452,6 +542,7 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
     # 1. scope
     lines.append("## 1. Scope")
     lines.append("")
+    # List every audited file with its line count, its hash and its origin.
     rows = [[s.label, str(len(s.lines)), s.sha256, s.origin] for s in sources]
     lines += md_table(["file", "lines", "sha256 (file content)", "source"], rows)
     lines.append("")
@@ -462,14 +553,17 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
     rows = []
     totals: Counter[str] = Counter()
     for source in sources:
+        # Split the entries of the file into classes, public functions and private functions.
         mine = [i for i in infos if i.file == source.label]
         classes = [i for i in mine if i.is_class]
         funcs = [i for i in mine if not i.is_class]
         public = [i for i in funcs if i.public]
         private = [i for i in funcs if not i.public]
+        # Find the public functions without a docstring and those with unmentioned parameters.
         no_doc = [i for i in public if i.docstring is None]
         undocumented = [i for i in public if i.docstring is not None and i.undocumented]
         module_doc = ast.get_docstring(trees[source.label]) is not None
+        # Add the row of the file and update the totals.
         rows.append([source.label, "yes" if module_doc else "no", str(len(classes)), str(len(public)),
                      str(len(no_doc)), str(len(undocumented)), str(len(private)),
                      str(sum(1 for i in private if i.docstring is None))])
@@ -480,6 +574,7 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
     lines += md_table(["file", "module docstring", "classes", "public functions", "public without docstring",
                        "public with unmentioned parameters", "private functions", "private without docstring"], rows)
     lines.append("")
+    # Write the totals over all files.
     lines.append(f"Totals: {totals['public']} public functions/methods, {totals['no_doc']} without a docstring, "
                  f"{totals['undocumented']} with a docstring that does not mention every parameter; "
                  f"{totals['private']} private functions ({totals['private_no_doc']} without a docstring; no requirement); "
@@ -490,6 +585,7 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
     # 3. public functions without docstring
     lines.append("## 3. Public functions and classes without a docstring")
     lines.append("")
+    # List the public entries without a docstring, or write "None.".
     missing = [i for i in infos if i.public and i.docstring is None]
     if missing:
         rows = [[i.file, str(i.line), i.qualname, ", ".join(i.params) or "-"] for i in missing]
@@ -505,6 +601,7 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
                  "(plain or in double backticks). Parameters that are only described in the module docstring or by their "
                  "type annotation are listed here.")
     lines.append("")
+    # List the public functions with unmentioned parameters, or write "None.".
     partial = [i for i in infos if i.public and i.docstring is not None and i.undocumented]
     if partial:
         rows = [[i.file, str(i.line), i.qualname, ", ".join(i.undocumented),
@@ -522,10 +619,12 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
                  "method call (exact class unknown, shown as `library.*.method`). Keyword arguments are the union "
                  "over all sites.")
     lines.append("")
+    # Group the level A, B and C calls by library and by call name.
     resolved = [c for c in calls if c.level in ("A", "B", "C")]
     by_library: dict[str, dict[str, list[CallSite]]] = defaultdict(lambda: defaultdict(list))
     for c in resolved:
         by_library[c.library][c.name].append(c)
+    # Write one table per library with one row per call name.
     for number, library in enumerate(sorted(by_library), start=1):
         lines.append(f"### 5.{number} {library}")
         lines.append("")
@@ -538,6 +637,7 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
         lines.append("")
     lines.append("### 5.x Per-site keyword arguments of level-A and level-B calls")
     lines.append("")
+    # List every level A and level B call site with its argument counts and keyword names.
     rows = []
     for c in sorted(resolved, key=lambda c: (c.library, c.name, c.file, c.line)):
         if c.level == "C":
@@ -552,10 +652,12 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
     lines.append("The receiver's library could not be determined statically (e.g. a value returned by a first-party "
                  "function). The probable library is a heuristic from the method name only. Calls on `self` are omitted.")
     lines.append("")
+    # Group the level D calls by method name.
     unresolved = [c for c in calls if c.level == "D"]
     by_method: dict[str, list[CallSite]] = defaultdict(list)
     for c in unresolved:
         by_method[c.name].append(c)
+    # Write one row per method with its probable library, its receivers and its files.
     rows = []
     for method in sorted(by_method):
         sites = by_method[method]
@@ -572,10 +674,12 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
     # 7. stdlib
     lines.append("## 7. Standard-library calls (counts)")
     lines.append("")
+    # Group the level S calls by call name.
     stdlib_calls = [c for c in calls if c.level == "S"]
     by_name: dict[str, list[CallSite]] = defaultdict(list)
     for c in stdlib_calls:
         by_name[c.name].append(c)
+    # Write one row per call name with its site count, its keyword names and its files.
     rows = []
     for name in sorted(by_name):
         sites = by_name[name]
@@ -589,6 +693,7 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
     lines.append("Lines matching `adapted`, `ported from`, `copied from`, `taken from` or `borrowed from` "
                  "(case-insensitive) in comments or docstrings; scripts/audit_code.py itself is skipped because it quotes the patterns.")
     lines.append("")
+    # Collect the matching lines of every source except this script.
     rows = []
     for source in sources:
         if source.label == SELF_LABEL:
@@ -609,6 +714,7 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
     by_label = {s.label: s for s in sources}
     rows = []
     for i, obs in enumerate(OBSERVATIONS, start=1):
+        # Mark the entry as stale when its file, its line or its snippet is not found.
         source = by_label.get(obs["file"])
         status = "ok"
         if source is None:
@@ -635,20 +741,28 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
         "- Keyword arguments are listed by name only; positional values are not inspected.",
     ]
     lines.append("")
+    # Join the lines and end the text with a newline.
     return "\n".join(lines) + "\n"
 
 
+# ---------------------------------------------------------------------------
+# command-line entry
+# ---------------------------------------------------------------------------
 def main(argv: list[str] | None = None) -> None:
     """Command-line entry point: parse ``argv`` (``--repo``, ``--out``, ``--extra``) and write the audit."""
+    # Declare and parse the three options.
     parser = argparse.ArgumentParser(description="static audit of src/nbr and scripts/")
     parser.add_argument("--repo", default=str(Path(__file__).resolve().parents[1]))
     parser.add_argument("--out", default="docs/CODE_AUDIT.md", help="output path relative to --repo")
     parser.add_argument("--extra", action="append", default=None, help="BRANCH:PATH read with git show (repeatable)")
     args = parser.parse_args(argv)
+    # Resolve the repository folder and the list of extra files.
     repo = Path(args.repo).resolve()
     extras = args.extra if args.extra is not None else list(DEFAULT_EXTRA)
+    # Read the sources and render the report.
     sources = collect_sources(repo, extras)
     report = build_report(repo, sources, extras)
+    # Write the report with LF line endings and print the output path.
     out = repo / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(report, encoding="utf-8", newline="\n")
