@@ -56,6 +56,12 @@ def main():
         sys.exit(2)
     # Read the reference name and the directories to scan from the command line.
     ref, roots = sys.argv[1], sys.argv[2:]
+    # Stop when the reference does not name a commit, so that a mistyped ref cannot pass.
+    known = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+                           capture_output=True)
+    if known.returncode != 0:
+        print(f"unknown git ref: {ref}")
+        sys.exit(2)
     failed = 0
     for root in roots:
         for path in sorted(pathlib.Path(root).rglob("*.py")):
@@ -63,7 +69,7 @@ def main():
             # Read the version of the file stored at the reference.
             old = subprocess.run(["git", "show", f"{ref}:{rel}"], capture_output=True)
             if old.returncode != 0:
-                # The file does not exist at the reference, so there is nothing to compare.
+                # git show failed, so the file is treated as absent at the reference.
                 print(f"NEW      {rel}")
                 continue
             old_dump = normalized_dump(old.stdout.decode("utf-8-sig"))
