@@ -16,7 +16,8 @@ Purpose : Development check of the PREREG v1.4 exploration-policy code on the me
           2. The LR artifact file has the sha256 recorded in the tuning document, and the eval
              document used that artifact (lr_repeat.sha256).
           3. C3 (final_lr_ucf) NDCG@10 of the eval document rounds to the W8b/W15 value
-             (Instacart 0.4274, Complete Journey 0.2046).
+             (Instacart 0.4274, Complete Journey 0.2046), and the H11 comparator mean of the
+             policy block equals that list metric (|gap| <= 1e-9).
           4. Agreement with the W15 part C numbers (R2 + E2, r = 9 or 8 against r = 10): the
              policy's P_T-vs-C3 differences and the variants equal the W15 history-length-bin
              differences weighted by the bin user counts (|gap| <= 1e-9), and the policy's
@@ -37,9 +38,9 @@ Outputs : <out-dir>/policy_dev_<profile>.json (checks plus the full "policy" blo
           documents) and policy_dev_<profile>.md (tables).
 Usage   :
     python scripts/check_policy_dev.py [--profile medium] [--datasets instacart,complete_journey]
-                                       [--reference-tuning-dir PATH]
+                                       --reference-tuning-dir PATH
                                        [--w15-json reports/posthoc/explore_slot_medium.json]
-                                       [--out-dir reports/posthoc]
+                                       [--metrics-dir reports/metrics] [--out-dir reports/posthoc]
 '''
 
 from __future__ import annotations

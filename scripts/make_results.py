@@ -228,7 +228,7 @@ def build_registry(cfg: dict[str, Any]) -> Registry:
         # Load every file of the group as a Source.
         loaded = {name: load_source(f"{group}/{name}", p, spec["run"], spec["stage"], resolved[name][1])
                   for name, p in files.items()}
-        # Skip the group when a file still carries the commit prefix that marks it as not complete.
+        # Skip the group when a file carries the commit prefix of an incomplete run or no commit.
         stale = spec.get("complete_when_commit_is_not")
         if stale:
             stale_files = [name for name, s in loaded.items() if s.git_commit.startswith(stale) or not s.git_commit]
@@ -573,7 +573,7 @@ def table_t2(registry: Registry) -> pd.DataFrame:
             rows.append(_sel_row(source, dataset, "user-CF k", doc["selections"]["k"], doc["at_grid_edge"]["k"], sorted({g["k"] for g in doc["grid"]})))
             rows.append(_sel_row(source, dataset, "user-CF weighting", doc["selections"]["weighting"], doc["at_grid_edge"]["weighting"],
                                  sorted({g["weighting"] for g in doc["grid"]})))
-        # Add the C of both re-fitted rankers and the gamma read from the pipeline tuning.
+        # Add the C of the re-fitted repeat_lr and of repeat_r3 and the R1 gamma of the tuning file.
         elif "fit" in doc and "r3_config" in doc:  # W9
             for name in ("r2", "r3"):
                 block = doc["fit"][name]
@@ -1119,7 +1119,7 @@ def figure_f8(t1: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any
               f"policy:P_T_vs_{POLICY_C3}_recall": "P_T vs C3, Recall@10 (secondary)",
               f"policy:P_T_vs_{POLICY_C3}_new_recall": "P_T vs C3, new-item Recall@10 (secondary)",
               f"policy:P_T_vs_{POLICY_C3}_repeat_recall": "P_T vs C3, repeat Recall@10 (secondary)"}
-    # Read the non-inferiority margin from the configuration.
+    # Take the non-inferiority margin from cfg["policy_delta"], or 0.003 when the key is absent.
     delta = float(cfg.get("policy_delta", 0.003))  # PREREG v1.4 non-inferiority margin of H11
     # Draw the forest plot with the adjusted interval as the thin bar and the margin on its row.
     _forest(keep, path, "Exploration policy (holdout3, PREREG v1.4): primary H11 (non-inferiority), H12, H13; secondary P_T-vs-C3 metrics "
@@ -1175,7 +1175,7 @@ def figure_f9(t1: pd.DataFrame, out: Path, cfg: dict[str, Any]) -> dict[str, Any
               "v15:repeat_lri_vs_repeat_lr_repeat_recall": "R2' vs R2, repeat Recall@10 (secondary)",
               "v15:repeat_lri_vs_repeat_star_repeat_recall": "R2' vs R1, repeat Recall@10 (secondary)",
               "v15:final_lri_ucf_vs_final_lr_ucf_recall": "C4 vs C3, Recall@10 (secondary)"}
-    # Read the non-inferiority margin from the configuration.
+    # Take the non-inferiority margin from cfg["v15_delta"], or 0.003 when the key is absent.
     delta = float(cfg.get("v15_delta", 0.003))  # PREREG v1.5 non-inferiority margin of H14 (the v1.4 margin)
     # Draw the forest plot with the 97.5 % interval as the thin bar and the margin on its row.
     _forest(keep, path, "Two-CF final system (holdout4, PREREG v1.5): primary H14 (non-inferiority), H15; secondary R2' and C4 comparisons "

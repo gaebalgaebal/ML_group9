@@ -9,6 +9,7 @@ Purpose : W19 tests: the PREREG v1.5 two-CF final system (R2' = R2 + icf, C4 = R
           the "v15" block; nothing else changes). R2 is the logistic-regression repeat ranker,
           icf is the item-CF similarity feature and E2 is user-based collaborative filtering.
 Inputs  : The synthetic workspace fixture and the _config helper of tests.test_pipeline.
+          The default-value test also loads the sample configuration of the repository.
 Outputs : pytest pass/fail results; files are written only below the workspace of the fixture.
 Usage   :
     python -m pytest tests/test_v15.py
@@ -106,7 +107,7 @@ def test_tune_writes_v15_block_and_icf_artifact(workspace):
     assert [row["feature"] for row in document["lr_repeat"]["coefficients"]] == FEATURES
     assert "icf_neighbors" not in document["lr_repeat"]
     assert [row["C"] for row in icf["validation"]] == [0.1, 1.0] and icf["n_rows"] == document["lr_repeat"]["n_rows"]
-    # Expect the stored R2' model file to match the block and the R2 model file to stay as is.
+    # Expect the stored R2' model file to match the block and the R2 bundle to lack icf_neighbors.
     path = lr_artifact_path(config, "instacart", ICF_SUFFIX)
     assert path == workspace / "artifacts" / "sample" / "instacart_lr_repeat_icf.joblib" and path.exists()
     assert icf["artifact"] == str(path) and icf["sha256"] == sha256_of(path)

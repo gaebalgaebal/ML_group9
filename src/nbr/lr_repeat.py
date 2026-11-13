@@ -26,7 +26,7 @@ Outputs : build_training returns (X, y, groups); fit_select returns the fitted b
 Usage   :
     from nbr.lr_repeat import build_training, lr_repeat_list
     X, y, groups = build_training(history, target, gammas, icf_neighbors=icf_neighbors)
-    timed("repeat_lr", lambda: lr_repeat_list(history, lr_bundle, K, pop))
+    repeat_lr = lr_repeat_list(history, lr_bundle, K, pop)
 '''
 
 from __future__ import annotations

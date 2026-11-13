@@ -67,8 +67,8 @@ def row(label: str, dataset_text: str, stage: str, id_: str, dataset: str = "ins
 
 # Table name -> (format, rows).
 # Format "v15": 95 % and 97.5 % CIs with both decisions (rows of the PREREG v1.5 run, holdout4).
-# Every block of that run carries the 97.5 % level.
-# Format "v14": 95 % and 98.33 % CIs with both decisions (PREREG v1.4 policy rows).
+# Every block of that run except its policy blocks carries the 97.5 % level.
+# Format "v14": 95 % and 98.33 % CIs with both decisions (policy rows of PREREG v1.4 and v1.5.1).
 # Format "v13": 95 % and 99.375 % CIs with both decisions.
 # Format "v12": 95 % CI and its decision.
 TABLES: dict[str, tuple[str, list[dict]]] = {

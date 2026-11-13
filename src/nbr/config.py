@@ -8,8 +8,9 @@ Purpose : Configuration loading: configs/common.yaml overlaid with configs/<prof
           Also resolves the processed-data root and the folder of the tuning JSON files.
 Inputs  : A profile name, the YAML files configs/common.yaml, configs/<profile>.yaml and
           configs/usercf.yaml, and the environment variables NBR_DATA_DIR and NBR_TUNING_DIR.
-Outputs : load_config returns the merged config dict with the added keys profile, repo_root
-          and data_dir; resolve_data_dir and resolve_tuning_dir return a Path.
+Outputs : load_config returns the merged config dict with profile and usercf set when absent,
+          repo_root added and data_dir replaced by the resolved Path; resolve_data_dir and
+          resolve_tuning_dir return a Path.
 Usage   :
     from nbr.config import load_config
     config = load_config(args.profile)
@@ -58,7 +59,7 @@ def load_config(profile: str) -> dict[str, Any]:
     ``repo_root`` (Path) and ``data_dir`` (Path, see resolve_data_dir: the NBR_DATA_DIR
     environment variable wins over ``common.data_dir``, resolved relative to repo_root).
     """
-    # Reject a profile name with characters other than letters, digits, "_" and "-".
+    # Reject an empty profile name and one that is not alphanumeric after removing "_" and "-".
     if not profile or not profile.replace("_", "").replace("-", "").isalnum():
         raise ValueError(f"invalid profile name {profile!r}")
     # Read the common settings.

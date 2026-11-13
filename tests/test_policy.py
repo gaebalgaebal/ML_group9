@@ -141,7 +141,7 @@ def test_combine_policy_fills_short_repeat_lists_and_rejects_unknown_users():
     repeat, explore = _repeat_explore(["a", "b"], n_repeat=4)
     lengths = pd.Series([2, 9], index=["a", "b"])
     out = combine_policy(repeat, explore, lengths, 4, 9, 10)
-    # Expect explore items to fill the list and ValueError for bad lengths or slot counts.
+    # Expect explore items to fill the list and ValueError for a missing length, 11 slots or T = -1.
     assert out[out["user_id"] == "a"]["item_id"].tolist() == ["ar1", "ar2", "ar3", "ar4"] + [f"ae{i}" for i in range(1, 7)]
     assert out[out["user_id"] == "b"]["item_id"].tolist() == ["br1", "br2", "br3", "br4"] + [f"be{i}" for i in range(1, 7)]
     with pytest.raises(ValueError, match="history length"):
@@ -402,7 +402,7 @@ def test_run_evaluate_writes_policy_block_and_transfer(varied_workspace):
 def test_cli_policy_flag(monkeypatch):
     import nbr.__main__ as cli
 
-    # Replace load_config and run_evaluate by stubs that record the calls.
+    # Replace load_config by a stub and run_evaluate by a stub that records its calls.
     calls = []
     monkeypatch.setattr(cli, "load_config", lambda profile: {"profile": profile})
     monkeypatch.setattr(pipeline, "run_evaluate", lambda config, dataset, **kwargs: calls.append((config, dataset, kwargs)) or "out.json")

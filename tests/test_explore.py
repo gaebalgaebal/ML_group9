@@ -139,7 +139,7 @@ def test_explore_list_finite_alpha_hand_computed():
     assert list(u2["item_id"]) == ["a", "b", "d"]
     assert list(u2["rank"]) == [1, 2, 3]
     assert (lists["source"] == "explore").all()
-    # u1 (unbought: e(y, pop 1)): theta(y)/p(y) = ((1 + 3/7) / (4 + 1)) / (3/7)
+    # u1 (unbought: e(y, pop 1)): theta(y)/p(y) = ((1 + 3/7) / (5 + 1)) / (3/7)
     u1 = lists[lists["user_id"] == "u1"]
     assert list(u1["item_id"]) == ["e"]
     pd.testing.assert_frame_equal(lists, _brute_force(HISTORY, 3, 1.0, 1.0))
@@ -246,7 +246,7 @@ def test_category_rankings():
     # Each user's ranking lists the two categories with the highest theta.
     assert list(ranking.columns) == ["user_id", "category", "rank"]
     u1 = ranking[ranking["user_id"] == "u1"]
-    # u1 theta (gamma_c = 1, alpha = 1): x = (2 + 3/7) / 4 > y = (1 + 3/7) / 4 > z = (1 + 1/7) / 4
+    # u1 theta (gamma_c = 1, alpha = 1): x = (3 + 3/7) / 6 > y = (1 + 3/7) / 6 > z = (1 + 1/7) / 6
     assert list(u1["category"]) == ["x", "y"] and list(u1["rank"]) == [1, 2]
     u2 = ranking[ranking["user_id"] == "u2"]
     assert list(u2["category"]) == ["y", "x"] and list(u2["rank"]) == [1, 2]

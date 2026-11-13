@@ -203,7 +203,7 @@ def test_user_category_matrix_and_bootstrap():
     den = pec.user_category_matrix(frame, "L1", users, categories)
     num = pec.user_category_matrix(frame, "L1", users, categories, frame["is_new"].to_numpy())
     assert den.tolist() == [[1, 1], [2, 1], [0, 0]] and num.tolist() == [[1, 0], [1, 1], [0, 0]]   # user Z (not in users) ignored
-    # Expect rate and lift bounds per category that enclose the observed rate of c1.
+    # Expect rate and lift bounds per category and rate bounds of c1 that enclose its rate 2/3.
     ci = pec.bootstrap_ratios(num, den, n=200, seed=1)
     assert set(ci) == {"rate_lo", "rate_hi", "lift_lo", "lift_hi"} and ci["rate_lo"].shape == (2,)
     assert 0.0 <= ci["rate_lo"][0] <= 2 / 3 <= ci["rate_hi"][0] <= 1.0
@@ -309,7 +309,10 @@ def test_spearman_and_history_bins():
 # end-to-end runs
 # ---------------------------------------------------------------------------
 def _synthetic_dataset(folder, dataset, seed, n_users=200, n_items=40):
-    """Users with 3-9 history baskets plus one target basket, favourite items plus random ones, 4 coarse / 10 fine categories, one 'missing' item group."""
+    """Users with 3-9 history baskets plus one target basket, favourite items plus random ones.
+
+    Items carry 4 coarse and 9 fine categories; every tenth item is 'missing' at both levels.
+    """
     # Seed the generator and label every item, with every tenth item labelled missing.
     rng = np.random.default_rng(seed)
     coarse = [("missing" if j % 10 == 9 else f"dept{j % 4}") for j in range(n_items)]

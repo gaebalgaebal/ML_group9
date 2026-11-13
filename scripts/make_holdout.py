@@ -18,9 +18,10 @@ Purpose : Build an Instacart confirmatory profile: ``--size`` train-set users di
           is never read: its seeded draw is re-run from the eligible users minus its own
           exclusions, and the result must match the user-id digest recorded in the report
           (RuntimeError otherwise, without any fallback to the profile's files).
-Inputs  : The raw directory --raw-dir (instacart.zip and mapping/), the vendored
-          configs/medium.yaml, the eval targets and selection reports of the excluded profiles
-          (see above) and the medium Instacart items.parquet and attribute_categories.parquet.
+Inputs  : The raw directory --raw-dir (the Instacart ZIP, found by its member names, and
+          mapping/), the vendored configs/medium.yaml, the eval targets and selection reports
+          of the excluded profiles (see above) and the medium Instacart items.parquet and
+          attribute_categories.parquet.
 Outputs : Parquet files under <data_dir>/<name>/instacart, where data_dir follows nbr.config
           (the NBR_DATA_DIR environment variable, else <repo>/data/processed); intermediate
           files under artifacts/<name>; the selection report
@@ -107,7 +108,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="stop before the draw (nothing written) unless exactly this many users remain")
     # Parse the given arguments.
     args = parser.parse_args(argv)
-    # Reject a profile name with characters other than letters, digits, underscore and hyphen.
+    # Reject an empty name and one that is not alphanumeric after removing underscores and hyphens.
     if not args.name or not args.name.replace("_", "").replace("-", "").isalnum():
         parser.error(f"invalid --name {args.name!r}: letters, digits, underscore and hyphen only")
     # Turn the exclusion text into a list and require at least one name.

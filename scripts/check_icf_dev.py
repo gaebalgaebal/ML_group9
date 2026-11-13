@@ -23,7 +23,8 @@ Purpose : Development check of the PREREG v1.5 code (R2' = R2 + icf, C4 = R2' + 
           3. The R2 and R2' artifact files carry the sha256 recorded in the tuning document
              and the eval document used them.
           4. R2' was selected on the validation users of R2 (same count, flag written by
-             tune_v15) and has the 12 R2 features plus "icf".
+             tune_v15), its features are the R2 features plus "icf" in the tuning and the eval
+             document, and its C grid equals that of R2.
           Reported (no decision taken on it): repeat Recall@10 of R2' vs R2 and vs R1 with the
           expected approximate values of the ICF_feature_check development study (Instacart
           .5757 -> .5759, Complete Journey .2740 -> .2739), the v15 primary entries H14 and
@@ -228,7 +229,7 @@ def check_r2prime(tuning: dict[str, Any], evaluation: dict[str, Any]) -> dict[st
     features_r2p = [row["feature"] for row in block["lr_repeat_icf"]["coefficients"]]
     # List the feature names of R2' recorded in the eval document.
     eval_features = evaluation["v15"]["lr_repeat_icf"]["features"]
-    # Report the counts, the flag, the features, the C grids and whether all conditions hold.
+    # Report the counts, the flag, the R2' features, icf_neighbors, C_grid_equal and ok.
     return {
         "n_val_users_R2": lr["n_val_users"], "n_val_users_R2prime": block["lr"]["n_val_users"],
         "same_validation_users_flag": bool(block["lr"].get("same_validation_users_as_R2")),
@@ -476,7 +477,7 @@ def main(argv: list[str] | None = None) -> None:
         # Stop when the eval document lacks one of the two policy blocks.
         if not evaluation.get("policy") or not evaluation.get("policy_c4"):
             raise SystemExit(f"{eval_path}: no policy / policy_c4 block; run evaluate with --policy (drop --skip-run)")
-        # Stop when the settings of a policy block differ from T = 4, delta = 0.003 and r_short = 9.
+        # Stop when a policy block differs from T = 4, delta = 0.003, r_short = 9 or POLICY_LEVELS.
         for name in ("policy", "policy_c4"):
             pblock = evaluation[name]
             if (pblock["T"], pblock["delta"], pblock["r_short"]) != (4, 0.003, 9) or pblock["levels"] != [str(level) for level in POLICY_LEVELS]:

@@ -51,7 +51,8 @@ Inputs  : the fit and eval splits of the profile, the tuning document
           the script before the analysis. The LR artifact of this run is checked against the sha256
           recorded in the tuning document.
 Outputs : D. Outputs in --out-dir: explore_slot_<profile>.json (all numbers; meta with the code
-          commit and the sha256 of every input file), explore_slot_<profile>.md (tables),
+          commit; inputs_sha256 with the sha256 of every input file),
+          explore_slot_<profile>.md (tables),
           fig_new_rate_by_position.{png,csv}, fig_hit_probability_by_rank.{png,csv},
           fig_slot_effects.{png,csv} (each figure drawn from its own CSV).
 Usage   :
@@ -247,7 +248,10 @@ def compare(a: pd.Series, b: pd.Series, n: int, seed: int) -> dict[str, Any]:
 
 
 def compare_by_bin(a: pd.Series, b: pd.Series, lengths: pd.Series, dataset: str, n: int, seed: int) -> list[dict[str, Any]]:
-    """compare() restricted to the users of every T5 history-length bin (None when a bin has no scored user)."""
+    """compare() restricted to the users of every T5 history-length bin.
+
+    A bin without a scored user gives a row with only the bin name and n_users = 0.
+    """
     # Compare the two series on the users of each history-length bin.
     rows = []
     for name, lo, hi in bin_labels(HISTORY_BINS[dataset]):
@@ -404,7 +408,7 @@ def analyse_novelty(history: pd.DataFrame, target: pd.DataFrame, dataset: str) -
     all_baskets = pd.concat([history[["user_id", "basket_seq"]], target[["user_id", "basket_seq"]]]).drop_duplicates()
     # Group the distinct history basket_seq values by user.
     seq = history[["user_id", "basket_seq"]].drop_duplicates().groupby("user_id")["basket_seq"]
-    # Compute the share of users whose history starts at 1 and whose sequence is consecutive.
+    # Compute the share of users whose history starts at 1 and the share with consecutive values.
     starts_at_one = float((seq.min() == 1).mean())
     consecutive = float(((seq.max() - seq.min() + 1) == seq.size()).mean())
     # Compute the gap between the target basket_seq and the last history basket_seq.

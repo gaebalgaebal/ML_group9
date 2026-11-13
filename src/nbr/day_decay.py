@@ -22,7 +22,7 @@ Outputs : day_decay_scores returns [user_id, item_id, score]; day_decay_list ret
 Usage   :
     from nbr.day_decay import HALF_LIFE_GRID, day_decay_list, load_basket_days
     days = load_basket_days(config, dataset)
-    return per_user_recall(day_decay_list(history, days, h, K, pop), repeat_target, K)
+    lists = {h: day_decay_list(history, days, h, K, pop) for h in HALF_LIFE_GRID}
 '''
 
 from __future__ import annotations

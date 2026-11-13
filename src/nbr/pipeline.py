@@ -929,7 +929,7 @@ def evaluate(
         return per_user_ndcg(lists[name], target, K)
 
     # Primary hypotheses: comparator first, model second (diff = model - comparator).
-    # Build the model and the population category rankings of the users with a new target.
+    # Rank the categories of every user by theta and of the new-target users by population share.
     theta, p_c = category_profile(history, float(selections["gamma_c"]), float(selections["alpha"]), level)
     new_users = new_target["user_id"].drop_duplicates()
     model_rank = category_ranking(theta, K)

@@ -22,7 +22,8 @@ Inputs  : Command-line arguments (--profile, --dataset and the evaluate flags), 
           its datasets (nbr.data.load_split).
 Outputs : check prints the row/user counts of every dataset and split.
           tune writes reports/metrics/<profile>_<dataset>_tuning.json.
-          evaluate writes reports/metrics/<profile>_<dataset>_eval.json.
+          evaluate writes reports/metrics/<profile>_<dataset>_eval.json
+          (<profile>_<dataset>_eval_transfer.json with --transfer-from).
           tune and evaluate print the written path and the elapsed seconds.
 Usage   :
     python -m nbr check --profile P

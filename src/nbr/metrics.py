@@ -6,8 +6,9 @@
 '''
 Purpose : Per-user evaluation metrics and a paired bootstrap over users.
 Inputs  : Recommendation lists (columns user_id, item_id, rank), target frames (columns
-          user_id, item_id), a category ranking (columns user_id, category, rank) and two
-          per-user metric Series for the bootstrap.
+          user_id, item_id; per_user_category_hit also needs its ``level`` column), a category
+          ranking (columns user_id, category, rank) and two per-user metric Series for the
+          bootstrap.
 Outputs : All per_user_* functions return a float64 Series indexed by the users that
           have at least one row in the target frame (sorted by user_id).
           paired_bootstrap returns a dict with n_users, mean_a, mean_b, diff and one CI per level.

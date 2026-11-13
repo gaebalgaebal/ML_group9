@@ -23,10 +23,11 @@ Purpose : Post-hoc analysis: day-based recency decay for the repeat scorer (W14;
 Inputs  : The command-line options --profile, --datasets, --out-dir, --bootstrap-n and --seed.
           Per dataset the fit and eval splits of the profile (fit_history, fit_target,
           eval_history, eval_target parquet files) and its basket-day file.
-          Only the development profiles ``sample`` and ``medium`` are accepted; no file under
-          reports/final* or data/processed/holdout* is read.
-Outputs : In --out-dir: day_decay_<profile>.json (all numbers; meta with the code commit and
-          the sha256 of every input file), day_decay_<profile>.md (tables),
+          Only the profiles ``sample`` and ``medium`` are accepted and a profile whose role is
+          "final" is refused; the data files read are the four split files and
+          basket_days.parquet of nbr.data.dataset_dir(config, dataset).
+Outputs : In --out-dir: day_decay_<profile>.json (all numbers; meta with the code commit;
+          inputs_sha256 with the sha256 of every input file), day_decay_<profile>.md (tables),
           fig_recall_vs_halflife.png + .csv (fit recall vs half-life in days on a log axis;
           day decay solid, basket decay converted with the median gap dashed; one panel per
           dataset).

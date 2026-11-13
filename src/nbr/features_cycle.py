@@ -21,9 +21,9 @@ Purpose : Binned purchase-cycle features on top of nbr.features.repeat_features 
 Inputs  : A history DataFrame (the columns required by ``repeat_features``), a config mapping
           with the bin edges (configs/r3.yaml, key "r3") and a sequence of decay factors.
           Only the history frame is read; targets are never seen.
-Outputs : cycle_features returns [user_id, item_id] + cycle_feature_names(cfg) as float64,
-          one row per history pair. Values outside [edges[0], edges[-1]) raise ValueError
-          instead of being clipped silently.
+Outputs : cycle_features returns [user_id, item_id] + cycle_feature_names(cfg, decay_gammas)
+          as float64, one row per history pair. Values outside [edges[0], edges[-1]) raise
+          ValueError instead of being clipped silently.
 Usage   :
     from nbr.features_cycle import cycle_features
     features = cycle_features(fit_history, cfg, decay_gammas)

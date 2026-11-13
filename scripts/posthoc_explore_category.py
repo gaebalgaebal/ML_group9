@@ -1063,7 +1063,7 @@ def render_dataset(entry: dict[str, Any], dataset: str) -> list[str]:
               "The fit split shares most of its events with the eval split (Instacart: every basket but the last; Complete Journey: an earlier cutoff), "
               "so these correlations check the stability of the category values rather than provide independent evidence:", ""]
     lines += _table(["level", "categories", "volume (new-item events)", "propensity (rate)"], rows)
-    # Write the coarse new-item rate per history-length bin, categories sorted by volume.
+    # Write the coarse new-item rate per bin; a category is ordered by n_new of its first bin.
     bins = ev["coarse_propensity_by_history_bin"]
     categories = sorted({c["category"] for b in bins for c in b["categories"]}, key=lambda name: -next((c["n_new"] for b in bins for c in b["categories"] if c["category"] == name), 0))
     lines += ["Coarse new-item rate by T5 history-length bin (eval, history + target events; categories sorted by volume; '-' = no events in the bin):", ""]

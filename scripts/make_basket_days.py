@@ -11,7 +11,7 @@ Purpose : Derive the calendar day of every processed basket (W14; post-hoc, deve
           gap at 30 days; the share of capped gaps is reported.
           Complete Journey: ``DAY`` of the (household_key, BASKET_ID) in transaction_data.csv;
           every basket must have exactly one DAY.
-          Before any file is written the script verifies how the processed ``basket_id`` maps
+          Before a dataset's file is written the script checks how the processed ``basket_id`` maps
           to the raw ids (Instacart: basket_id == str(order_id), user_id == str(user_id),
           basket_seq == order_number; Complete Journey: basket_id == str(BASKET_ID),
           user_id == str(household_key), day non-decreasing in basket_seq) and that every
@@ -152,7 +152,7 @@ def processed_baskets(folder: Path) -> tuple[pd.DataFrame, dict[str, int]]:
         frame = frame.astype({"user_id": str, "basket_id": str, "basket_seq": "int64"}).drop_duplicates()
         counts[name] = int(len(frame))
         parts.append(frame)
-    # Stack the frames and drop baskets that occur in several frames.
+    # Stack the frames and keep one row per distinct (user_id, basket_id, basket_seq).
     baskets = pd.concat(parts, ignore_index=True).drop_duplicates().reset_index(drop=True)
     # Stop when one (user_id, basket_id) pair has several basket_seq values.
     if baskets.duplicated(KEY).any():
@@ -304,7 +304,7 @@ def check_mapping(dataset: str, baskets: pd.DataFrame, days: pd.DataFrame) -> tu
 # ---------------------------------------------------------------------------
 def read_instacart_orders(archive_path: Path) -> pd.DataFrame:
     '''Read the needed columns of orders.csv from the Instacart ZIP ``archive_path``.'''
-    # Open orders.csv inside the archive and parse the listed columns with fixed dtypes.
+    # Open orders.csv in the archive and parse the listed columns, four of them with fixed dtypes.
     with zipfile.ZipFile(archive_path) as archive, archive.open("orders.csv") as stream:
         return pd.read_csv(
             stream,

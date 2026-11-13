@@ -10,7 +10,8 @@ Inputs  : The profile name (first command-line argument, default medium) and the
           <split>_history.parquet and <split>_target.parquet.
           The data root follows nbr.config.load_config: the NBR_DATA_DIR environment variable
           wins over configs/common.yaml:data_dir (relative to the repository root).
-          Only history and target Parquet files are read; nothing is modified.
+          Only items.parquet and the history/target Parquet files are read; no data file is
+          modified.
 Outputs : reports/data_check/<profile>.json with the item-table sizes and the per-split
           statistics of every dataset found; the same JSON text is printed.
 Usage   :

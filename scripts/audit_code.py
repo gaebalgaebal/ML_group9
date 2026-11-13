@@ -347,7 +347,7 @@ class Resolver(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Open a scope for ``node``, bind annotated parameters, visit the body."""
         self.scopes.append({})
-        # Bind every parameter whose annotation resolves to a level A, S or F name.
+        # Bind each named parameter (not *args or **kwargs) annotated with a level A, S or F name.
         for arg in node.args.posonlyargs + node.args.args + node.args.kwonlyargs:
             if arg.annotation is not None:
                 resolved = self._resolve_expr(arg.annotation)
@@ -637,7 +637,7 @@ def build_report(repo: Path, sources: list[Source], extras: list[str]) -> str:
         lines.append("")
     lines.append("### 5.x Per-site keyword arguments of level-A and level-B calls")
     lines.append("")
-    # List every level A and level B call site with its argument counts and keyword names.
+    # List every level A and level B call site with its positional-argument count and keyword names.
     rows = []
     for c in sorted(resolved, key=lambda c: (c.library, c.name, c.file, c.line)):
         if c.level == "C":

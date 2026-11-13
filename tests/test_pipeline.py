@@ -280,7 +280,7 @@ def test_holdout_guard_in_evaluate(workspace):
 
 
 def test_no_leakage_from_target(workspace):
-    # Tune once, add a new user with never-seen items to the fit target only and tune again.
+    # Tune, add a new user with never-seen items to the fit target and the item table, then tune.
     config = _config(workspace)
     before = tune(config, "instacart")
     folder = workspace / "data" / "sample" / "instacart"
@@ -409,7 +409,7 @@ def test_h6_h7_direction_with_perfect_lr_lists(workspace, monkeypatch):
     monkeypatch.setattr(pipeline, "build_lists", patched)
     result = pipeline.evaluate(config, "instacart", load_selections(config, "instacart"), lr_bundle=bundle)
     primary = result["lr_repeat"]["primary"]
-    # Expect a mean of 1 and an improvement decision for every primary LR comparison.
+    # Expect a mean of 1 for H6 and H7 NDCG and an improvement decision for each primary comparison.
     assert primary["H6_repeat_recall"]["model_mean"] == pytest.approx(1.0)
     assert primary["H7_ndcg"]["model_mean"] == pytest.approx(1.0)
     for key in LR_PRIMARY:

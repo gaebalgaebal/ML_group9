@@ -359,7 +359,7 @@ def evaluate_policy(
     timings["primary_and_secondary"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
-    # Pair the comparator and model series of the primary and secondary comparisons.
+    # Pair the series of the three primary comparisons and of the P_T-vs-base secondary comparisons.
     pairs = {
         "H11_ndcg": (series["C3"]["ndcg"], series["P_T"]["ndcg"]),
         "H12_new_hit_share": (series["C3"]["new_hit_share"], series["P_T"]["new_hit_share"]),
