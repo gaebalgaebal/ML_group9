@@ -5,12 +5,13 @@
 
 '''
 Purpose : Slot combination of a repeat list and an explore list into one final list.
-Inputs  : A repeat list and an explore list (DataFrames with the columns of nbr.repeat.LIST_COLUMNS),
-          the number of repeat slots r and the list length k.
-Outputs : One DataFrame with the columns of LIST_COLUMNS, at most k rows per user, sorted by user_id, rank.
+Inputs  : A repeat list and an explore list (DataFrames with the columns of
+          nbr.repeat.LIST_COLUMNS), the number of repeat slots r and the list length k.
+Outputs : One DataFrame with the columns of LIST_COLUMNS, at most k rows per user,
+          sorted by user_id, rank.
 Usage   :
     from nbr.combine import combine
-    final = combine(repeat, explore, r, k)
+    final = combine(repeat_star, explore_star, r, K)
 '''
 
 from __future__ import annotations

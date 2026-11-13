@@ -5,14 +5,16 @@
 
 '''
 Purpose : Per-user evaluation metrics and a paired bootstrap over users.
-Inputs  : Recommendation lists (columns user_id, item_id, rank), target frames (columns user_id, item_id),
-          a category ranking (columns user_id, category, rank) and two per-user metric Series for the bootstrap.
+Inputs  : Recommendation lists (columns user_id, item_id, rank), target frames (columns
+          user_id, item_id), a category ranking (columns user_id, category, rank) and two
+          per-user metric Series for the bootstrap.
 Outputs : All per_user_* functions return a float64 Series indexed by the users that
           have at least one row in the target frame (sorted by user_id).
           paired_bootstrap returns a dict with n_users, mean_a, mean_b, diff and one CI per level.
 Usage   :
     from nbr.metrics import paired_bootstrap, per_user_ndcg, per_user_recall
-    recall = per_user_recall(lists, target, k)
+    stage3[r] = float(per_user_ndcg(final, target, K).mean())
+    result = paired_bootstrap(a, b, int(boot["n"]), int(boot["seed"]), levels)
 '''
 
 from __future__ import annotations
