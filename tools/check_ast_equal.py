@@ -1,3 +1,8 @@
+# *------------------- 2026 Fall Semester Machine Learning Term-project: Team 9 --------------------*
+# Code First written at 2026-11-13
+# Code Final Edited at 2026-11-13
+# Editor: Yejun Kim
+
 '''
 Purpose : Check that Python files differ from a reference git ref only in comments and docstrings.
 Inputs  : A git ref (tag, branch, or commit) and one or more directories inside the repository.
@@ -41,6 +46,10 @@ def normalized_dump(source):
 # comparison against the reference
 # ---------------------------------------------------------------------------
 def main():
+    '''
+    Compare every *.py file under the given directories with its version at the git ref.
+    Print SAME, CHANGED, or NEW per file and exit with 1 when any file is CHANGED.
+    '''
     # Stop with a usage line when the reference or the directories are missing.
     if len(sys.argv) < 3:
         print("usage: python tools/check_ast_equal.py <git-ref> <dir> [<dir> ...]")
