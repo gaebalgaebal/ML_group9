@@ -1,26 +1,50 @@
-"""Two-CF final system of PREREG v1.5 (W19): the eval block "v15" with H14, H15 and the secondary comparisons.
+# *------------------- 2026 Fall Semester Machine Learning Term-project: Team 9 --------------------*
+# Code First written at 2026-11-07
+# Code Final Edited at 2026-11-13
+# Editor: Yejun Kim
 
-Definitions (docs/PREREG.md v1.5, items 4-8):
-
-- R2' = ``repeat_lri``: the LR repeat ranker R2 (``repeat_lr``) with the item-CF similarity feature icf of
-  nbr.features_icf appended (13 features; neighbours computed on the history being scored; 20 item neighbours,
-  fixed). Its C is selected separately from R2 on the same validation users (nbr.pipeline.tune).
-- C4 = ``final_lri_ucf`` = combine(R2', E2 = ``usercf``, r) with r re-selected on the fit split the same way as
-  for C3 = ``final_lr_ucf`` (train-only R2' bundle, LR validation users, NDCG@10). C3 (PREREG v1.3) is the comparator.
-- Primary (Instacart holdout4, family of 2, two-sided 97.5 % CI = 1 - 0.05/2; the 95 % CI is reported alongside):
-  H14 (non-inferiority) NDCG@10 of C4 minus C3 over all users, "non-inferior" if the 97.5 % lower bound > -DELTA
-  (DELTA = 0.003, the v1.4 margin), else "non-inferiority not established"; H15 NDCG@10 of C4 minus personal
-  frequency over all users, "improvement observed" if the lower bound > 0, "lower" if the upper bound < 0, else
-  "no difference established".
-- Secondary (no confirmatory claim; CI only): repeat Recall@10 of R2' vs R2 and of R2' vs R1 (users with >= 1 repeat
-  target item), Recall@10 of C4 vs C3, the standardized coefficients and intercept of R2', history-length bins of H14.
-
-The functions never read files or targets other than the frames they receive; the lists come from
-nbr.pipeline.build_lists. The CI levels are constants of this module (not the profile's bootstrap levels).
-"""
+'''
+Purpose : Two-CF final system of PREREG v1.5 (W19): the eval block "v15" with H14, H15 and the
+          secondary comparisons.
+          Definitions (docs/PREREG.md v1.5, items 4-8):
+          - R2' = ``repeat_lri``: the LR repeat ranker R2 (``repeat_lr``) with the item-CF
+            similarity feature icf of nbr.features_icf appended (13 features; neighbours
+            computed on the history being scored; 20 item neighbours, fixed). Its C is
+            selected separately from R2 on the same validation users (nbr.pipeline.tune).
+          - C4 = ``final_lri_ucf`` = combine(R2', E2 = ``usercf``, r) with r re-selected on the
+            fit split the same way as for C3 = ``final_lr_ucf`` (train-only R2' bundle, LR
+            validation users, NDCG@10). C3 (PREREG v1.3) is the comparator. E2 is the
+            user-based collaborative-filtering explore list.
+          - Primary (Instacart holdout4, family of 2, two-sided 97.5 % CI = 1 - 0.05/2; the
+            95 % CI is reported alongside): H14 (non-inferiority) NDCG@10 of C4 minus C3 over
+            all users, "non-inferior" if the 97.5 % lower bound > -DELTA (DELTA = 0.003, the
+            v1.4 margin), else "non-inferiority not established"; H15 NDCG@10 of C4 minus
+            personal frequency over all users, "improvement observed" if the lower bound > 0,
+            "lower" if the upper bound < 0, else "no difference established".
+          - Secondary (no confirmatory claim; CI only): repeat Recall@10 of R2' vs R2 and of
+            R2' vs R1 (users with >= 1 repeat target item; R1 is the decayed purchase
+            frequency repeat list), Recall@10 of C4 vs C3, the standardized coefficients and
+            intercept of R2', history-length bins of H14.
+          The functions never read files or targets other than the frames they receive; the
+          lists come from nbr.pipeline.build_lists. The CI levels are constants of this module
+          (not the profile's bootstrap levels).
+Inputs  : The eval-split lists of nbr.pipeline.build_lists, the prepare() output of the split
+          (target, repeat_target, new_target), the history length of every user, the
+          history-length bin edges, the bootstrap n and seed of the configuration, the loaded
+          R2' bundle and the v15 tuning selections.
+Outputs : evaluate_v15 returns the "v15" block of the eval document (primary and secondary
+          comparisons, history-length bins of H14, list means, the R2' bundle summary).
+Usage   :
+    from nbr.v15 import evaluate_v15
+    v15_result = evaluate_v15(lists, data, lengths, HISTORY_BINS[dataset], config, icf_bundle, v15,
+                              label=run_label(config))
+'''
 
 from __future__ import annotations
 
+# ---------------------------------------------------------------------------
+# imports
+# ---------------------------------------------------------------------------
 import time
 from typing import Any
 
@@ -29,6 +53,9 @@ import pandas as pd
 from nbr.metrics import per_user_ndcg, per_user_recall
 from nbr.policy import by_history_length, compare, improvement_decision, noninferiority_decision
 
+# ---------------------------------------------------------------------------
+# constants
+# ---------------------------------------------------------------------------
 K = 10
 DELTA = 0.003                           # non-inferiority margin of H14 (NDCG@10), PREREG v1.5 item 6 (= the v1.4 margin)
 LEVELS = (0.95, 0.975)                  # CI levels: 95 % and 1 - 0.05/2 (family of 2)
@@ -45,9 +72,16 @@ ICF_DEFINITION = ("icf(u, i) = log(1 + sum over j in I(H_u) of sim(j, i)), sim f
                   "of the binary user x item matrix of the scored history (self excluded)")
 
 
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
 def _entry(comparator: str, model: str, metric: str, a: pd.Series, b: pd.Series, config: dict[str, Any],
            decision=None) -> dict[str, Any]:
+    '''One comparison entry: the names ``comparator`` / ``model``, the label and user group of
+    ``metric`` and nbr.policy.compare(``a``, ``b``, ``config``, LEVELS, ``decision``).'''
+    # Look up the printed metric name and the user group of the metric.
     label, users = METRICS[metric]
+    # Merge the names with the bootstrap result of the two series.
     return {"comparator": comparator, "model": model, "metric": label, "users": users, **compare(a, b, config, LEVELS, decision)}
 
 
@@ -64,6 +98,9 @@ def bundle_summary(icf_bundle: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# evaluation block
+# ---------------------------------------------------------------------------
 def evaluate_v15(
     lists: dict[str, pd.DataFrame],
     data: dict[str, Any],
@@ -88,16 +125,21 @@ def evaluate_v15(
     timings: dict[str, float] = {}
     t0 = time.perf_counter()
     names = LIST_SOURCES
+    # Stop when one of the required lists is missing.
     for key in ("R1", "R2", "R2'", "E2", "C3", "C4", "PF"):
         if names[key] not in lists:
             raise ValueError(f"evaluate_v15: the list {names[key]} ({key}) is missing")
     target, repeat_target = data["target"], data["repeat_target"]
+    # Compute the per-user NDCG of the two final lists and of the personal-frequency list.
     ndcg = {key: per_user_ndcg(lists[names[key]], target, K) for key in ("C3", "C4", "PF")}
+    # Compute the per-user recall of the two final lists.
     recall = {key: per_user_recall(lists[names[key]], target, K) for key in ("C3", "C4")}
+    # Compute the per-user repeat recall of the three repeat lists.
     repeat_recall = {key: per_user_recall(lists[names[key]], repeat_target, K) for key in ("R1", "R2", "R2'")}
     timings["metrics"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
+    # Build the two primary entries (H14, H15) with their decision rule.
     primary = {
         "H14_ndcg": {**_entry(names["C3"], names["C4"], "ndcg", ndcg["C3"], ndcg["C4"], config,
                               lambda ci: noninferiority_decision(ci, delta)),
@@ -106,6 +148,7 @@ def evaluate_v15(
                      "rule": f"improvement observed if the {PRIMARY_LEVEL} lower bound > 0"},
     }
     r1, r2, r2p, c3, c4 = names["R1"], names["R2"], names["R2'"], names["C3"], names["C4"]
+    # Build the three secondary entries, without a decision.
     secondary = {
         f"{r2p}_vs_{r2}_repeat_recall": _entry(r2, r2p, "repeat_recall", repeat_recall["R2"], repeat_recall["R2'"], config),
         f"{r2p}_vs_{r1}_repeat_recall": _entry(r1, r2p, "repeat_recall", repeat_recall["R1"], repeat_recall["R2'"], config),
@@ -114,15 +157,19 @@ def evaluate_v15(
     timings["primary_and_secondary"] = time.perf_counter() - t0
 
     t0 = time.perf_counter()
+    # Repeat the H14 comparison within each history-length bin.
     breakdown = by_history_length({"H14_ndcg": (ndcg["C3"], ndcg["C4"])}, lengths, edges, config)
     timings["by_history_length"] = time.perf_counter() - t0
 
+    # Count the distinct users of the target.
     all_users = int(target["user_id"].nunique())
+    # Collect the mean NDCG, recall and repeat recall of the lists.
     list_metrics = {names[key]: {"ndcg": float(ndcg[key].mean())} for key in ("C3", "C4", "PF")}
     for key in ("C3", "C4"):
         list_metrics[names[key]]["recall"] = float(recall[key].mean())
     for key in ("R1", "R2", "R2'"):
         list_metrics[names[key]] = {"repeat_recall": float(repeat_recall[key].mean())}
+    # Return the block with settings, the R2' summary, user counts, list means and comparisons.
     return {
         "label": label,
         "prereg": PREREG,

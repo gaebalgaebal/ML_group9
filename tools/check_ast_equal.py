@@ -1,3 +1,8 @@
+# *------------------- 2026 Fall Semester Machine Learning Term-project: Team 9 --------------------*
+# Code First written at 2026-11-13
+# Code Final Edited at 2026-11-13
+# Editor: Yejun Kim
+
 '''
 Purpose : Check that Python files differ from a reference git ref only in comments and docstrings.
 Inputs  : A git ref (tag, branch, or commit) and one or more directories inside the repository.
@@ -41,12 +46,22 @@ def normalized_dump(source):
 # comparison against the reference
 # ---------------------------------------------------------------------------
 def main():
+    '''
+    Compare every *.py file under the given directories with its version at the git ref.
+    Print SAME, CHANGED, or NEW per file and exit with 1 when any file is CHANGED.
+    '''
     # Stop with a usage line when the reference or the directories are missing.
     if len(sys.argv) < 3:
         print("usage: python tools/check_ast_equal.py <git-ref> <dir> [<dir> ...]")
         sys.exit(2)
     # Read the reference name and the directories to scan from the command line.
     ref, roots = sys.argv[1], sys.argv[2:]
+    # Stop when the reference does not name a commit, so that a mistyped ref cannot pass.
+    known = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+                           capture_output=True)
+    if known.returncode != 0:
+        print(f"unknown git ref: {ref}")
+        sys.exit(2)
     failed = 0
     for root in roots:
         for path in sorted(pathlib.Path(root).rglob("*.py")):
@@ -54,7 +69,7 @@ def main():
             # Read the version of the file stored at the reference.
             old = subprocess.run(["git", "show", f"{ref}:{rel}"], capture_output=True)
             if old.returncode != 0:
-                # The file does not exist at the reference, so there is nothing to compare.
+                # git show failed, so the file is treated as absent at the reference.
                 print(f"NEW      {rel}")
                 continue
             old_dump = normalized_dump(old.stdout.decode("utf-8-sig"))
