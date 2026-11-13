@@ -1,5 +1,22 @@
-"""W19 tests (PREREG v1.5.1): the exploration policy with C4 as the base (nbr.policy base="C4") and the "policy_c4" block."""
+# *------------------- 2026 Fall Semester Machine Learning Term-project: Team 9 --------------------*
+# Code First written at 2026-11-07
+# Code Final Edited at 2026-11-13
+# Editor: Yejun Kim
 
+'''
+Purpose : W19 tests (PREREG v1.5.1): the exploration policy with C4, the two-CF final system,
+          as the base (nbr.policy base="C4") and the "policy_c4" block.
+Inputs  : The varied_workspace fixture and the key sets of tests.test_policy; _icf_config and
+          _stable of tests.test_v15.
+Outputs : pytest pass/fail results; tuning and evaluation files are written under tmp_path
+          only.
+Usage   :
+    python -m pytest tests/test_policy_c4.py
+'''
+
+# ---------------------------------------------------------------------------
+# imports
+# ---------------------------------------------------------------------------
 import json
 
 import pandas as pd
@@ -13,7 +30,11 @@ from tests.test_policy import POLICY_PRIMARY, POLICY_SECONDARY, VARIANTS, VOLATI
 from tests.test_v15 import _icf_config, _stable
 
 
+# ---------------------------------------------------------------------------
+# base definitions and labels
+# ---------------------------------------------------------------------------
 def test_bases():
+    # Expect the list names of both bases and the label of each profile and role.
     assert LIST_SOURCES is BASES["C3"] and set(BASES) == {"C3", "C4"}
     assert BASES["C3"] == {"C3": "final_lr_ucf", "repeat": "repeat_lr", "explore": "usercf", "flat": "flat_explore"}
     assert BASES["C4"] == {"C3": "final_lri_ucf", "repeat": "repeat_lri", "explore": "usercf", "flat": "flat_explore"}
@@ -22,17 +43,27 @@ def test_bases():
     assert policy_label({"profile": "holdout3", "role": "final"}) == "final (holdout3)"
 
 
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
 def _lists(config, dataset="instacart"):
+    '''Build the eval lists of ``dataset`` for ``config``; return data, lists and selections.'''
+    # Load the eval split and the tuned selections.
     data = pipeline.prepare(config, dataset, "eval")
     integration = pipeline.load_integration_selections(config, dataset)
     v15 = load_v15_selections(config, dataset)
+    # Build all lists with the two logistic-regression bundles, with skip_l3 set.
     lists, _ = pipeline.build_lists(data["history"], data["pop"], pipeline.load_selections(config, dataset), config,
                                     lr_bundle=pipeline.load_lr_repeat(config, dataset), integration=integration,
                                     icf_bundle=pipeline.load_lr_repeat(config, dataset, ICF_SUFFIX), v15=v15, skip_l3=True)
     return data, lists, integration, v15
 
 
+# ---------------------------------------------------------------------------
+# policy block with the C4 base
+# ---------------------------------------------------------------------------
 def test_base_c4_block_on_synthetic_data(varied_workspace):
+    # Tune, build the lists and evaluate the policy with the C4 base and with the default base.
     config = _icf_config(varied_workspace)
     pipeline.run_tune(config, "instacart")
     data, lists, integration, v15 = _lists(config)
@@ -41,6 +72,7 @@ def test_base_c4_block_on_synthetic_data(varied_workspace):
     edges = pipeline.HISTORY_BINS["instacart"]
     block = evaluate_policy(lists, data, lengths, edges, config, r4, base="C4", label="x")
     base = evaluate_policy(lists, data, lengths, edges, config, r3, label="x")
+    # Expect the same block layout with the final_lri_ucf and repeat_lri lists in place.
     assert set(block) == set(base) and block["label"] == "x" and block["r_default"] == r4
     assert block["lists"] == {"P_T": f"combine_policy(repeat_lri, usercf, T=4, r_short=9, r_default={r4})", "C3": "final_lri_ucf",
                               "S": "usercf", "flat": "flat_explore"}
@@ -77,6 +109,7 @@ def test_base_c4_block_on_synthetic_data(varied_workspace):
 
 
 def test_base_c3_is_unchanged_by_the_parameter(varied_workspace):
+    # Evaluate the policy with the default base and with the same base named explicitly.
     config = _icf_config(varied_workspace)
     pipeline.run_tune(config, "instacart")
     data, lists, integration, _ = _lists(config)
@@ -84,14 +117,20 @@ def test_base_c3_is_unchanged_by_the_parameter(varied_workspace):
     r3 = int(integration["r"]["final_lr_ucf"])
     default = evaluate_policy(lists, data, lengths, pipeline.HISTORY_BINS["instacart"], config, r3, label="x")
     explicit = evaluate_policy(lists, data, lengths, pipeline.HISTORY_BINS["instacart"], config, r3, label="x", base="C3")
+    # Expect equal blocks that use the final_lr_ucf and repeat_lr lists.
     assert _stable(default) == _stable(explicit)
     assert default["lists"]["C3"] == "final_lr_ucf" and default["lists"]["P_T"].startswith("combine_policy(repeat_lr, usercf")
 
 
+# ---------------------------------------------------------------------------
+# policy_c4 block written by run_evaluate
+# ---------------------------------------------------------------------------
 def test_run_evaluate_policy_c4_block(varied_workspace):
+    # Tune and write the evaluation with the policy flag.
     config = _icf_config(varied_workspace)
     pipeline.run_tune(config, "instacart")
     with_c4 = json.loads(pipeline.run_evaluate(config, "instacart", skip_l3=True, include_policy=True).read_text(encoding="utf-8"))
+    # Expect a policy_c4 block next to the policy block, each with its own lists and r_default.
     assert set(with_c4["policy_c4"]) == set(with_c4["policy"]) and with_c4["policy"]["label"] == with_c4["policy_c4"]["label"] == "smoke (sample)"
     assert with_c4["policy"]["lists"]["C3"] == "final_lr_ucf" and with_c4["policy_c4"]["lists"]["C3"] == "final_lri_ucf"
     assert with_c4["policy_c4"]["r_default"] == with_c4["v15"]["selections"]["r"]["final_lri_ucf"]
@@ -113,7 +152,11 @@ def test_run_evaluate_policy_c4_block(varied_workspace):
     assert transfer["policy_c4"]["r_default"] == with_c4["policy_c4"]["r_default"] and transfer["policy_c4"]["lists"]["C3"] == "final_lri_ucf"
 
 
+# ---------------------------------------------------------------------------
+# label of the holdout4 profile
+# ---------------------------------------------------------------------------
 def test_policy_c4_label_for_holdout4_profile(varied_workspace, monkeypatch):
+    # Build the lists, then evaluate the policy under a holdout4 profile with the role final.
     config = _icf_config(varied_workspace)
     pipeline.run_tune(config, "instacart")
     data, lists, integration, v15 = _lists(config)
@@ -121,4 +164,5 @@ def test_policy_c4_label_for_holdout4_profile(varied_workspace, monkeypatch):
     holdout = {**config, "profile": "holdout4", "role": "final"}
     block = evaluate_policy(lists, data, lengths, pipeline.HISTORY_BINS["instacart"], holdout, int(v15["r"]["final_lri_ucf"]),
                             label=policy_label(holdout), base="C4")
+    # Expect the secondary-replication label and an unchanged policy.PREREG value.
     assert block["label"] == "secondary replication on holdout4 (PREREG v1.5.1)" and policy.PREREG == "v1.4"
