@@ -4,8 +4,8 @@
 # Editor: Yejun Kim
 
 '''
-Purpose : Tests for scripts/posthoc_explore_slot.py: argument guard, per-basket new-item
-          measures, aggregation, rank hits, slot metrics, setup check, and an end-to-end run
+Purpose : Tests for scripts/posthoc_explore_slot.py: argument guard, per-basket novelty,
+          aggregation, rank hits, slot metrics, setup check, and an end-to-end run
           (tune + analysis) on synthetic sample data.
 Inputs  : Small hand-built frames, hand-built tuning documents and synthetic parquet files
           written under pytest's tmp_path.
