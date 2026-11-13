@@ -995,7 +995,7 @@ def figure_new_rate(entries: dict[str, dict[str, Any]], out_dir: Path) -> dict[s
 
 
 def rank_hit_rows(entries: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    '''F-B numbers: one row per dataset, list (repeat_R2, explore_E2) and rank of the eval split.'''
+    '''F-B rows from ``entries``: one per dataset, list (repeat_R2, explore_E2) and eval-split rank.'''
     rows = []
     # Copy every per-rank row of both lists with the dataset and the list name.
     for dataset, entry in entries.items():

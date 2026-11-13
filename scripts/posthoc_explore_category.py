@@ -316,7 +316,7 @@ def category_table(events: pd.DataFrame, rows: pd.DataFrame, level: str, users: 
         "n_users_new": events[events["is_new"]].groupby(level)["user_id"].nunique(),
         "n_new_known_category": events[events["is_new"]].groupby(level)[known].sum().astype("int64"),
     }).fillna(0)
-    # Count the users with any row in the category, taken from all deduplicated rows.
+    # Count the users with any row in the category over all deduplicated rows.
     table["n_users_bought"] = rows.groupby(level)["user_id"].nunique().reindex(table.index).fillna(0).astype("int64")
     # Store the counts as integers.
     for column in ("n_events", "n_new", "n_users_new", "n_new_known_category"):
