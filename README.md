@@ -460,5 +460,7 @@ vendor/      ml_group9_e11b365 (unmodified preprocessing snapshot, release/term-
 | `reports/eda/eda_summary.md` | exploratory data analysis of the development data (Korean) |
 
 ## Team and contributions
+kim yejun: main code editor, PPT
+gu bonjun: code: item-based CF + LR, report
+Yang sungwoo: code: user-based CF, presentation
 
-TBD (team members, roles and contribution shares to be filled in by the team).
